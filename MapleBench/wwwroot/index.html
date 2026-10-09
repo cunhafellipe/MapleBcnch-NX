@@ -47,15 +47,15 @@
     <div class="brand">
       <div class="brand-mark" id="brand-mark" aria-hidden="true"></div>
       <div class="brand-text">
-        <span class="brand-name">MapleBenchX</span>
-        <span class="brand-sub">WZ &amp; NX Workbench</span>
+        <span class="brand-name" data-i18n="MapleBenchX">MapleBenchX</span>
+        <span class="brand-sub" data-i18n="WZ &amp; NX Workbench">WZ &amp; NX Workbench</span>
       </div>
     </div>
 
     <div class="omnibox">
-      <button class="omnibox-btn" id="omnibox" data-tip="Jump to any node, or run a command · Ctrl P">
+      <button class="omnibox-btn" id="omnibox" data-i18n-attr="data-tip:Jump to any node, or run a command · Ctrl P" data-tip="Jump to any node, or run a command · Ctrl P">
         <span class="om-icon" aria-hidden="true"></span>
-        <span class="om-label">Go to a node or command</span>
+        <span class="om-label" data-i18n="Go to a node or command">Go to a node or command</span>
         <span class="kbd">Ctrl P</span>
       </button>
     </div>
@@ -66,17 +66,17 @@
          top-level buttons, so adding Database, Skills and NPCs does not grow
          this row every time. -->
     <div class="mode-switch" role="group" aria-label="Editor mode">
-      <button id="mode-explorer" aria-pressed="true" data-tip="Browse and edit any WZ node · Ctrl 1">Explorer</button>
-      <button id="mode-sections" aria-pressed="false" data-tip="Focused editors · Ctrl 2">Editors</button>
+      <button id="mode-explorer" aria-pressed="true" data-i18n-attr="data-tip:Browse and edit any WZ node · Ctrl 1" data-tip="Browse and edit any WZ node · Ctrl 1" data-i18n="Explorer">Explorer</button>
+      <button id="mode-sections" aria-pressed="false" data-i18n-attr="data-tip:Focused editors · Ctrl 2" data-tip="Focused editors · Ctrl 2" data-i18n="Editors">Editors</button>
     </div>
 
     <div class="topbar-actions">
-      <span class="dirty-chip num" id="dirty-chip" data-tip="Unsaved changes — click to review"></span>
+      <span class="dirty-chip num" id="dirty-chip" data-i18n-attr="data-tip:Unsaved changes — click to review" data-tip="Unsaved changes — click to review"></span>
       <span class="divider-v"></span>
-      <button class="btn btn-icon btn-ghost" id="btn-undo" data-tip="Undo · Ctrl Z" aria-label="Undo" disabled></button>
-      <button class="btn btn-icon btn-ghost" id="btn-redo" data-tip="Redo · Ctrl Shift Z" aria-label="Redo" disabled></button>
-      <button class="btn btn-primary" id="btn-save" data-tip="Write changes to disk · Ctrl S" disabled>
-        <span id="save-label">Save</span>
+      <button class="btn btn-icon btn-ghost" id="btn-undo" data-i18n-attr="data-tip:Undo · Ctrl Z;aria-label:Undo" data-tip="Undo · Ctrl Z" aria-label="Undo" disabled></button>
+      <button class="btn btn-icon btn-ghost" id="btn-redo" data-i18n-attr="data-tip:Redo · Ctrl Shift Z;aria-label:Redo" data-tip="Redo · Ctrl Shift Z" aria-label="Redo" disabled></button>
+      <button class="btn btn-primary" id="btn-save" data-i18n-attr="data-tip:Write changes to disk · Ctrl S" data-tip="Write changes to disk · Ctrl S" disabled>
+        <span id="save-label" data-i18n="Save">Save</span>
       </button>
       <span class="divider-v"></span>
       <!-- Import lived only on the welcome screen, which is gone the moment
@@ -86,7 +86,12 @@
               data-tip="Import from another client · Ctrl I" aria-label="Import from another client"></button>
       <button class="btn btn-sm btn-ghost topbar-import" id="btn-dual" hidden
               data-tip="Open another client beside this one" aria-label="Open Dual Client View"></button>
-      <button class="btn btn-icon btn-ghost" id="btn-more" data-tip="Theme, shortcuts and more" aria-label="More"></button>
+      <button class="btn btn-icon btn-ghost" id="btn-more" data-i18n-attr="data-tip:Theme, shortcuts and more;aria-label:More" data-tip="Theme, shortcuts and more" aria-label="More"></button>
+      <!-- The label says the language it switches TO, not the one in use: a
+           button reading 繁中 while the app is in English can only mean "click
+           for Chinese". Reading EN means the opposite, and both need no
+           tooltip to be understood. -->
+      <button class="btn btn-sm btn-ghost" id="btn-lang" data-tip="Switch language">繁中</button>
     </div>
   </header>
 

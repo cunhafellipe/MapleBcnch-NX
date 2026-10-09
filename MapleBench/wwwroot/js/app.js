@@ -5,6 +5,9 @@
 
 import { api } from './api.js';
 import {
+  t, setLocale, toggleLocale, initLocale, onLocaleChange, otherLocale, LOCALE_LABELS, coverage,
+} from './i18n.js';
+import {
   el, $, clear, toast, toastError, fmt, modal, confirmDialog, promptForText, debounce,
   runOnce, isRunning, SORT_MODES, archiveQualifiers, motionIn, motionOut, replayMotion,
 } from './ui.js';
@@ -40,6 +43,30 @@ const STORE = {
   lastDir: 'mb.lastDir',
 };
 
+/**
+ * Redraws whatever is on screen after a language change.
+ *
+ * Static chrome is already handled -- i18n.js rewrote it in place. What is left
+ * is everything a view built from data: the tree labels, the inspector, the
+ * section panels. Those re-render from their own state, so the switch costs one
+ * repaint rather than a reload, and an archive that took nine seconds to open
+ * does not have to be opened again to be read in Chinese.
+ */
+function redrawAfterLocaleChange() {
+  const app = window.app;
+  if (!app) return;
+  try {
+    app.tree?.scheduleRender?.();
+    if (app.currentPath) app.navigate(app.currentPath);
+    else app.refreshFiles();
+  } catch (e) {
+    // A view that cannot redraw is not a reason to leave the button dead: the
+    // chrome is already in the new language and the next navigation will pick
+    // it up.
+    console.error('[i18n] redraw after locale change failed', e);
+  }
+}
+
 /** One key for every write to disk: a save and a save-as must not overlap either. */
 const SAVE_KEY = 'save';
 
@@ -74,17 +101,22 @@ function closeDiscardMessage(dirty, counted, total) {
   if (dirty.length === 1) {
     const count = counted.get(dirty[0].id);
     const held = count
-      ? `${count} unsaved change${count === 1 ? ' has' : 's have'} not been written to disk. `
-      : 'This archive holds unsaved work that has not been written to disk. ';
-    return held + 'Closing discards it. The file on disk is not changed.';
+      ? t(count === 1
+        ? '{n} unsaved change has not been written to disk.'
+        : '{n} unsaved changes have not been written to disk.', { n: count }) + ' '
+      : t('This archive holds unsaved work that has not been written to disk.') + ' ';
+    return held + t('Closing discards it. The file on disk is not changed.');
   }
   const shown = dirty.slice(0, 5).map((file) => file.name);
   const rest = dirty.length - shown.length;
-  const names = shown.join(', ') + (rest ? ` and ${rest} more` : '');
+  const names = shown.join(', ') + (rest ? t(' and {n} more', { n: rest }) : '');
   const held = total
-    ? `${total} unsaved change${total === 1 ? ' has' : 's have'} not been written to disk. `
-    : 'They hold unsaved work that has not been written to disk. ';
-  return `${names} hold unsaved work. ${held}Closing discards them. Nothing on disk is changed.`;
+    ? t(total === 1
+      ? '{n} unsaved change has not been written to disk.'
+      : '{n} unsaved changes have not been written to disk.', { n: total }) + ' '
+    : t('They hold unsaved work that has not been written to disk.') + ' ';
+  return t('{names} hold unsaved work. ', { names }) + held
+    + t('Closing discards them. Nothing on disk is changed.');
 }
 
 class App {
@@ -157,6 +189,12 @@ class App {
     /** Whether the type-filter chips have been opened; see setPanel. */
     this.typesOpen = false;
 
+    // Before the first view draws, so nothing is built in the wrong language
+    // and then has to be redrawn. Reads the stored choice, then the browser's.
+    initLocale();
+    onLocaleChange(redrawAfterLocaleChange);
+    this.paintLangButton();
+
     installTooltips();
     installHoverPreview();
     this.installContextMenus();
@@ -212,7 +250,7 @@ class App {
     } catch (error) {
       // Nothing else can be said about a session that could not be read, so say
       // that, and let the welcome screen offer the way out of it.
-      toastError(error, 'Could not read the open files');
+      toastError(error, t('Could not read the open files'));
     }
     this.pendingFiles = null;
     if (!this.files.length) this.showWelcome();
@@ -366,10 +404,10 @@ class App {
       control.style.display = treeMode ? '' : 'none';
     }
     $('#pane-label').textContent =
-      panel === 'files' ? 'Files'
-      : panel === 'pinned' ? 'Pinned'
-      : panel === 'results' ? 'Results'
-      : 'Unsaved changes';
+      panel === 'files' ? t('Files')
+      : panel === 'pinned' ? t('Pinned')
+      : panel === 'results' ? t('Results')
+      : t('Unsaved changes');
 
     if (panel === 'pinned') this.pins.render($('#panel-pinned'));
     else if (panel === 'changes') renderChanges($('#panel-changes'), this);
@@ -405,7 +443,7 @@ class App {
     set('btn-redo', 'redo');
     const importButton = $('#btn-import');
     clear(importButton);
-    importButton.append(icon('download', { size: 15 }), el('span', { text: 'Import' }));
+    importButton.append(icon('download', { size: 15 }), el('span', { text: t('Import') }));
     this.paintDualButton();
     set('btn-more', 'more');
     set('insp-icon', 'eye', 13);
@@ -439,9 +477,9 @@ class App {
     clear(button);
     button.append(
       icon(active ? 'close' : 'grid', { size: 15 }),
-      el('span', { text: active ? 'Exit Dual View' : 'Dual View' }));
+      el('span', { text: active ? t('Exit Dual View') : t('Dual View') }));
     button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    button.dataset.tip = active ? 'Return to Explorer' : 'Open another client beside this one';
+    button.dataset.tip = active ? t('Return to Explorer') : t('Open another client beside this one');
   }
 
   showWelcome() {
@@ -463,35 +501,37 @@ class App {
     const actions = el('div', { class: 'welcome-actions' },
       el('button', {
         class: 'btn btn-primary btn-lg',
-        'data-tip': 'Choose a MapleStory client folder or WZ archive',
+        'data-tip': t('Choose a MapleStory client folder or WZ archive'),
         onclick: () => this.openFilePicker(),
-      }, icon('folderOpen', { size: 17 }), 'Open client'),
+      }, icon('folderOpen', { size: 17 }), t('Open client')),
       el('button', {
         class: 'btn btn-lg',
-        'data-tip': 'Import selected content from a classic or split client with dependency review',
+        'data-tip': t('Import selected content from a classic or split client with dependency review'),
         onclick: () => this.openImporter(),
-      }, icon('archive', { size: 16 }), 'Import from client'),
+      }, icon('archive', { size: 16 }), t('Import from client')),
       previous.length
         ? el('button', {
             class: 'btn btn-lg',
             'data-tip': previous.map((f) => f.path).join('\n'),
             onclick: () => this.restoreSession(previous),
           }, icon('refresh', { size: 16 }),
-            `Reopen last session (${previous.length} file${previous.length === 1 ? '' : 's'})`)
+            t(previous.length === 1
+              ? 'Reopen last session ({n} file)'
+              : 'Reopen last session ({n} files)', { n: previous.length }))
         : null);
 
     const inner = el('div', { class: 'welcome-inner' },
       mark,
       el('h1', { text: 'MapleBenchX' }),
       el('p', {
-        text: 'Open a MapleStory client to browse and edit its WZ archives, or import content from ' +
-              'another client with dependency review. Changes stay in the session until you save.',
+        text: t('Open a MapleStory client to browse and edit its WZ archives, or import content '
+          + 'from another client with dependency review. Changes stay in the session until you save.'),
       }),
       actions);
 
     if (recents.length) {
       const list = el('div', { class: 'recents stagger' });
-      list.append(el('div', { class: 'recents-title', text: 'Recent' }));
+      list.append(el('div', { class: 'recents-title', text: t('Recent') }));
       for (const path of recents.slice(0, 5)) {
         list.append(el('button', { class: 'recent-item', onclick: () => this.openPath(path) },
           icon('archive', { size: 17 }),
@@ -507,8 +547,8 @@ class App {
 
     clear($('#breadcrumb'));
     clear($('#inspector-body'));
-    $('#inspector-body').append(emptyState('info', 'Nothing selected',
-      'Pick a node in the tree and its details appear here.'));
+    $('#inspector-body').append(emptyState('info', t('Nothing selected'),
+      t('Pick a node in the tree and its details appear here.')));
   }
 
   async restoreSession(previous) {
@@ -526,6 +566,24 @@ class App {
   rememberRecent(path) {
     const list = [path, ...this.recents().filter((p) => p !== path)].slice(0, 10);
     localStorage.setItem(STORE.recents, JSON.stringify(list));
+  }
+
+  /**
+   * Keeps the language button showing the language it switches to.
+   *
+   * Not a toggle rendered once: after a switch the same button has to offer the
+   * other way back, and getting that backwards is how a language control ends
+   * up as a one-way door.
+   */
+  paintLangButton() {
+    const button = $('#btn-lang');
+    if (!button) return;
+    const next = otherLocale();
+    button.textContent = LOCALE_LABELS[next] ?? next;
+    button.setAttribute('aria-label', next === 'zh-Hant'
+      ? t('Switch to Traditional Chinese') : t('Switch to English'));
+    button.setAttribute('data-tip', next === 'zh-Hant'
+      ? t('Switch to Traditional Chinese') : t('Switch to English'));
   }
 
   /* ============================================================
@@ -549,11 +607,11 @@ class App {
   async openImporter(startPath) {
     if (!this.files.some((file) => !file.readOnly)) {
       const open = await confirmDialog({
-        title: 'Open the client you want to edit first',
-        message: 'MapleBenchX imports into an open writable client. Open that client before choosing '
-          + 'content from a read-only source.',
-        confirmLabel: 'Open client',
-        cancelLabel: 'Not now',
+        title: t('Open the client you want to edit first'),
+        message: t('MapleBenchX imports into an open writable client. Open that client before choosing '
+          + 'content from a read-only source.'),
+        confirmLabel: t('Open client'),
+        cancelLabel: t('Not now'),
         danger: false,
       });
       if (open) this.openFilePicker();
@@ -570,11 +628,11 @@ class App {
     }
     if (!this.files.some((file) => !file.readOnly)) {
       const open = await confirmDialog({
-        title: 'Open the client you want to edit first',
-        message: 'Dual Client View needs a writable target client before it can open a read-only '
-          + 'source beside it.',
-        confirmLabel: 'Open client',
-        cancelLabel: 'Not now',
+        title: t('Open the client you want to edit first'),
+        message: t('Dual Client View needs a writable target client before it can open a read-only '
+          + 'source beside it.'),
+        confirmLabel: t('Open client'),
+        cancelLabel: t('Not now'),
         danger: false,
       });
       if (open) this.openFilePicker();
@@ -667,13 +725,17 @@ class App {
   }
 
   async openPath(path, options = {}) {
-    const busy = toast(`Opening ${path.split(/[\\/]/).pop()}…`, 'info');
+    const busy = toast(t('Opening {name}…', { name: path.split(/[\\/]/).pop() }), 'info');
     try {
       const file = await api.open({ path, ...options });
       busy.remove();
       this.rememberRecent(path);
       await this.refreshFiles();
-      toast(`${file.name} opened — ${file.mapleVersion} encryption${file.gameVersion ? `, v${file.gameVersion}` : ''}.`, 'success');
+      toast(t('{name} opened — {version} encryption{extra}.', {
+        name: file.name,
+        version: file.mapleVersion,
+        extra: file.gameVersion ? ` (v${file.gameVersion})` : '',
+      }), 'success');
       await this.tree.expand(file.id);
       this.navigate(file.id);
     } catch (error) {
@@ -687,24 +749,24 @@ class App {
     const select = el('select', { style: 'width:100%;height:34px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg-field);padding:0 8px' },
       ['GMS', 'EMS', 'BMS', 'CLASSIC'].map((v) => el('option', { value: v, text: v })));
     const iv = el('input', {
-      placeholder: 'Custom IV, e.g. 4D23C72B (optional)',
+      placeholder: t('Custom IV, e.g. 4D23C72B (optional)'),
       style: 'width:100%;height:34px;margin-top:10px;padding:0 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-field)',
     });
 
     modal({
-      title: 'Could not open that file',
+      title: t('Could not open that file'),
       width: '480px',
       body: el('div', {},
         el('p', { style: 'margin:0 0 14px;color:var(--text-2);line-height:1.5', text: error.message }),
-        el('label', { style: 'font-size:var(--fs-11);font-weight:600;color:var(--text-2)', text: 'Try a specific encryption' }),
+        el('label', { style: 'font-size:var(--fs-11);font-weight:600;color:var(--text-2)', text: t('Try a specific encryption') }),
         select, iv,
         el('div', { class: 'field-hint', style: 'margin-top:10px',
-          text: 'A file that will not parse has almost always been read with the wrong encryption ' +
-                'for the region it came from. Try the others before assuming the file is damaged.' })),
+          text: t('A file that will not parse has almost always been read with the wrong encryption '
+                + 'for the region it came from. Try the others before assuming the file is damaged.') })),
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
-          label: 'Try again',
+          label: t('Try again'),
           class: 'btn-primary',
           run: () => {
             this.openPath(path, { mapleVersion: select.value, iv: iv.value.trim() || null });
@@ -753,11 +815,11 @@ class App {
 
     bar.append(el('div', { class: 'nav-group' },
       el('button', {
-        class: 'btn btn-icon btn-sm btn-ghost', 'data-tip': 'Back · Alt ←',
+        class: 'btn btn-icon btn-sm btn-ghost', 'data-tip': t('Back · Alt ←'),
         disabled: this.historyIndex <= 0, onclick: () => this.back(),
       }, icon('arrowLeft', { size: 15 })),
       el('button', {
-        class: 'btn btn-icon btn-sm btn-ghost', 'data-tip': 'Forward · Alt →',
+        class: 'btn btn-icon btn-sm btn-ghost', 'data-tip': t('Forward · Alt →'),
         disabled: this.historyIndex >= this.history.length - 1, onclick: () => this.forward(),
       }, icon('arrowRight', { size: 15 }))));
 
@@ -791,7 +853,8 @@ class App {
         if (index === 1 && hidden.length) {
           bar.append(
             el('button', {
-              class: 'crumb', 'data-tip': `${hidden.length} more level${hidden.length === 1 ? '' : 's'}`,
+              class: 'crumb', 'data-tip': t(hidden.length === 1
+                ? '{n} more level' : '{n} more levels', { n: hidden.length }),
               onclick: (event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 this.showMenu(hidden.map((h) => ({
@@ -815,8 +878,8 @@ class App {
 
   updateStatus() {
     if (this.dualToken) {
-      $('#status-path').textContent = 'Dual Client View';
-      $('#status-counts').textContent = 'Drag from source to target';
+      $('#status-path').textContent = t('Dual Client View');
+      $('#status-counts').textContent = t('Drag from source to target');
       $('#status-version').textContent = '';
       return;
     }
@@ -834,7 +897,8 @@ class App {
     $('#status-version').textContent = file ? `${file.mapleVersion}${file.gameVersion ? ` v${file.gameVersion}` : ''}${file.is64Bit ? ' 64-bit' : ''}` : '';
     const node = this.currentPath ? this.tree.getNode(this.currentPath) : null;
     $('#status-counts').textContent = node && node.childCount >= 0
-      ? `${fmt.format(node.childCount)} ${node.childCount === 1 ? 'child' : 'children'}`
+      ? t(node.childCount === 1
+        ? '{n} child' : '{n} children', { n: fmt.format(node.childCount) })
       : '';
   }
 
@@ -852,14 +916,15 @@ class App {
     const file = this.files.find((f) => f.id === id);
     if (file) return file.name;
     const family = this.families?.find((f) => f.id === id);
-    if (family) return `${family.name} (${family.members.length} files)`;
+    if (family) return t(family.members.length === 1
+      ? '{name} ({n} file)' : '{name} ({n} files)', { name: family.name, n: family.members.length });
     return id;
   }
 
   copyPath(path) {
     navigator.clipboard.writeText(decodeURIComponent(path))
-      .then(() => toast('Path copied.', 'success'))
-      .catch(() => toast('Could not copy to the clipboard.', 'error'));
+      .then(() => toast(t('Path copied.'), 'success'))
+      .catch(() => toast(t('Could not copy to the clipboard.'), 'error'));
   }
 
   async followUol(node) {
@@ -876,7 +941,7 @@ class App {
       await api.node(target);
       this.navigate(target);
     } catch {
-      toast(`The link target "${link}" could not be resolved from here.`, 'warning');
+      toast(t('The link target "{link}" could not be resolved from here.', { link }), 'warning');
     }
   }
 
@@ -899,10 +964,10 @@ class App {
     const chip = $('#dirty-chip');
     chip.dataset.visible = anyDirty || mapEdits ? 'true' : 'false';
     const combined = total + mapEdits;
-    chip.textContent = combined ? `${combined} unsaved` : 'unsaved';
+    chip.textContent = combined ? t('{n} unsaved', { n: combined }) : t('unsaved');
     chip.title = mapEdits
-      ? `${mapEdits} map-editor edit${mapEdits === 1 ? '' : 's'} save from the Map Editor section; ` +
-        'the Save button here writes the session archives.'
+      ? t('{n} map-editor edits save from the Map Editor section; the Save button here writes '
+        + 'the session archives.', { n: mapEdits })
       : '';
     // The Save button saves ARCHIVES; map-editor documents save from their own
     // section, so they light the chip but never this button.
@@ -921,27 +986,29 @@ class App {
       $('#btn-undo').disabled = state.undoDepth === 0;
       $('#btn-redo').disabled = state.redoDepth === 0;
       $('#btn-redo').style.display = state.redoDepth ? '' : 'none';
-      $('#btn-undo').dataset.tip = state.nextUndo ? `Undo ${state.nextUndo} · Ctrl Z` : 'Undo · Ctrl Z';
-      $('#btn-redo').dataset.tip = state.nextRedo ? `Redo ${state.nextRedo} · Ctrl Shift Z` : 'Redo · Ctrl Shift Z';
+      $('#btn-undo').dataset.tip = state.nextUndo
+        ? t('Undo {what} · Ctrl Z', { what: state.nextUndo }) : t('Undo · Ctrl Z');
+      $('#btn-redo').dataset.tip = state.nextRedo
+        ? t('Redo {what} · Ctrl Shift Z', { what: state.nextRedo }) : t('Redo · Ctrl Shift Z');
     } catch { /* history is advisory */ }
   }
 
   async undo() {
     try {
       const result = await api.undo();
-      if (!result.applied) { toast('Nothing left to undo.', 'info'); return; }
-      toast(`Undid: ${result.applied}`, 'success');
+      if (!result.applied) { toast(t('Nothing left to undo.'), 'info'); return; }
+      toast(t('Undid: {what}', { what: result.applied }), 'success');
       this.afterStructureChange(...(result.affected || []));
-    } catch (error) { toastError(error, 'Could not undo'); }
+    } catch (error) { toastError(error, t('Could not undo')); }
   }
 
   async redo() {
     try {
       const result = await api.redo();
-      if (!result.applied) { toast('Nothing left to redo.', 'info'); return; }
-      toast(`Redid: ${result.applied}`, 'success');
+      if (!result.applied) { toast(t('Nothing left to redo.'), 'info'); return; }
+      toast(t('Redid: {what}', { what: result.applied }), 'success');
       this.afterStructureChange(...(result.affected || []));
-    } catch (error) { toastError(error, 'Could not redo'); }
+    } catch (error) { toastError(error, t('Could not redo')); }
   }
 
   /** Re-reads anything whose children may have changed. */
@@ -965,11 +1032,11 @@ class App {
     // 'Image' means a .img container, which is a completely different thing
     // from a Canvas (a picture). Spelling that out stops the usual mix-up.
     const LABELS = {
-      Image: 'Image  (.img container)',
-      Directory: 'Directory  (folder)',
-      Canvas: 'Canvas  (picture)',
-      SubProperty: 'SubProperty  (folder of properties)',
-      UOL: 'UOL  (link to another node)',
+      Image: t('Image  (.img container)'),
+      Directory: t('Directory  (folder)'),
+      Canvas: t('Canvas  (picture)'),
+      SubProperty: t('SubProperty  (folder of properties)'),
+      UOL: t('UOL  (link to another node)'),
       Vector: 'Vector  (x, y)',
     };
     const options = isDirectory ? ['Image', 'Directory'] : await this.ensurePropertyTypes();
@@ -978,13 +1045,13 @@ class App {
       options.map((t) => el('option', {
         value: t, text: LABELS[t] ?? t, selected: t === presetType,
       })));
-    const nameInput = el('input', { class: 'field-input no-icon', name: 'name', placeholder: 'Name' });
-    const valueInput = el('input', { class: 'field-input no-icon', name: 'value', placeholder: 'Value (optional)' });
+    const nameInput = el('input', { class: 'field-input no-icon', name: 'name', placeholder: t('Name') });
+    const valueInput = el('input', { class: 'field-input no-icon', name: 'value', placeholder: t('Value (optional)') });
 
     /* --- picture picker, shown only for Canvas --- */
     let picked = null;
     const fileInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none' });
-    const pickedLabel = el('span', { class: 'muted', style: 'font-size:var(--fs-12)', text: 'No picture chosen' });
+    const pickedLabel = el('span', { class: 'muted', style: 'font-size:var(--fs-12)', text: t('No picture chosen') });
     const preview = el('div', {
       class: 'preview-stage', style: 'min-height:120px;display:none;margin-top:8px',
     });
@@ -1000,7 +1067,7 @@ class App {
 
     fileInput.addEventListener('change', () => {
       picked = fileInput.files?.[0] ?? null;
-      pickedLabel.textContent = picked ? picked.name : 'No picture chosen';
+      pickedLabel.textContent = picked ? picked.name : t('No picture chosen');
       clear(preview);
       dropPreviewUrl();
       if (picked) {
@@ -1019,14 +1086,14 @@ class App {
     });
 
     const pictureRow = el('div', { style: 'display:none;flex-direction:column;gap:8px' },
-      el('label', { class: 'muted', style: 'font-size:var(--fs-11);font-weight:700', text: 'Picture' }),
+el('label', { class: 'muted', style: 'font-size:var(--fs-11);font-weight:700', text: t('Picture') }),
       el('div', { style: 'display:flex;align-items:center;gap:10px' },
         el('button', {
           class: 'btn', type: 'button', onclick: () => fileInput.click(),
-        }, icon('upload', { size: 14 }), 'Choose a picture\u2026'),
+        }, icon('upload', { size: 14 }), t('Choose a picture…')),
         pickedLabel),
       preview,
-      el('div', { class: 'field-hint', text: 'Optional. Leave it empty to create a blank 1x1 canvas you can paint later.' }),
+      el('div', { class: 'field-hint', text: t('Optional. Leave it empty to create a blank 1x1 canvas you can paint later.') }),
       fileInput);
 
     const syncType = () => {
@@ -1043,21 +1110,21 @@ class App {
       el('label', { class: 'muted', style: 'font-size:var(--fs-11);font-weight:700', text: label }), control);
 
     const { dialog } = modal({
-      title: 'Add a child node',
-      subtitle: `Inside ${decodeURIComponent(parentPath.split('/').pop())}`,
+      title: t('Add a child node'),
+      subtitle: t('Inside {name}', { name: decodeURIComponent(parentPath.split('/').pop()) }),
       width: '460px',
       body: el('div', { style: 'display:flex;flex-direction:column;gap:12px' },
-        field('Type', typeSelect),
-        field('Name', nameInput),
-        field('Value', valueInput),
+        field(t('Type'), typeSelect),
+        field(t('Name'), nameInput),
+        field(t('Value'), valueInput),
         pictureRow),
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
-          label: 'Add',
+          label: t('Add'),
           class: 'btn-primary',
           run: async (close) => {
-            if (!nameInput.value.trim()) { toast('Give the node a name first.', 'warning'); return false; }
+            if (!nameInput.value.trim()) { toast(t('Give the node a name first.'), 'warning'); return false; }
             try {
               const created = await api.addNode({
                 path: parentPath, type: typeSelect.value,
@@ -1067,13 +1134,13 @@ class App {
               if (picked && typeSelect.value === 'Canvas') {
                 const result = await api.replaceCanvas(created.path, picked);
                 bustThumb(created.path);
-                if (result?.warning) toast(result.warning, 'warning', { title: 'Image format changed' });
+                if (result?.warning) toast(result.warning, 'warning', { title: t('Image format changed') });
               }
               close();
-              toast(`Added ${nameInput.value}.`, 'success');
+              toast(t('Added {name}.', { name: nameInput.value }), 'success');
               this.afterStructureChange(parentPath);
             } catch (error) {
-              toastError(error, 'Could not add that node');
+              toastError(error, t('Could not add that node'));
             }
             return false;
           },
@@ -1098,12 +1165,12 @@ class App {
         // /api/thumb is cached for an hour, so the row thumbnail and every
         // parent's preview would keep showing the old sprite without this.
         bustThumb(path);
-        toast('Canvas image replaced. Save the file to write it to disk.', 'success');
-        if (result?.warning) toast(result.warning, 'warning', { title: 'Image format changed' });
+        toast(t('Canvas image replaced. Save the file to write it to disk.'), 'success');
+        if (result?.warning) toast(result.warning, 'warning', { title: t('Image format changed') });
         this.markDirty();
         this.inspector.refresh();
       } catch (error) {
-        toastError(error, 'Could not replace the canvas image');
+        toastError(error, t('Could not replace the canvas image'));
       }
     };
 
@@ -1121,9 +1188,10 @@ class App {
   async duplicate(paths) {
     try {
       const created = await api.duplicate(paths);
-      toast(`Duplicated ${created.length} node${created.length === 1 ? '' : 's'}.`, 'success');
+      toast(t(created.length === 1
+        ? 'Duplicated {n} node.' : 'Duplicated {n} nodes.', { n: created.length }), 'success');
       this.afterStructureChange(...paths.map((p) => p.slice(0, p.lastIndexOf('/'))));
-    } catch (error) { toastError(error, 'Could not duplicate'); }
+    } catch (error) { toastError(error, t('Could not duplicate')); }
   }
 
   // Del auto-repeats and the confirm is an await away, so a held key opened one
@@ -1132,43 +1200,50 @@ class App {
     return runOnce(`delete:${paths.join(',')}`, async () => {
       const label = paths.length === 1
         ? decodeURIComponent(paths[0].split('/').pop())
-        : `${paths.length} nodes`;
+        : t('{n} nodes', { n: paths.length });
       const ok = await confirmDialog({
-        title: `Delete ${label}?`,
-        message: 'This removes the node and everything under it. Nothing is written to disk until you save, ' +
-                 'and you can undo this straight away.',
-        confirmLabel: 'Delete',
+        title: t('Delete {label}?', { label }),
+        message: t('This removes the node and everything under it. Nothing is written to disk '
+                 + 'until you save, and you can undo this straight away.'),
+        confirmLabel: t('Delete'),
       });
       if (!ok) return;
 
       try {
         const result = await api.deleteNodes(paths);
-        toast(`Deleted ${result.removed} node${result.removed === 1 ? '' : 's'}.`, 'success',
-          { action: { label: 'Undo', run: () => this.undo() } });
+        toast(t(result.removed === 1
+          ? 'Deleted {n} node.' : 'Deleted {n} nodes.', { n: result.removed }), 'success',
+          { action: { label: t('Undo'), run: () => this.undo() } });
         this.afterStructureChange(...paths.map((p) => p.slice(0, p.lastIndexOf('/'))));
         const parent = paths[0].slice(0, paths[0].lastIndexOf('/'));
         if (parent) this.navigate(parent);
-      } catch (error) { toastError(error, 'Could not delete'); }
+      } catch (error) { toastError(error, t('Could not delete')); }
     });
   }
 
   // Likewise Ctrl+V: two transfers into one parent land two copies of everything.
   paste(targetPath, move = false) {
-    if (!this.clipboard?.length) { toast('Nothing copied yet.', 'info'); return; }
+    if (!this.clipboard?.length) { toast(t('Nothing copied yet.'), 'info'); return; }
     return runOnce(`paste:${targetPath}`, async () => {
       try {
         const result = await api.transfer({ paths: this.clipboard, targetPath, move, overwrite: false });
-        toast(`${move ? 'Moved' : 'Copied'} ${result.length} node${result.length === 1 ? '' : 's'}.`, 'success');
+        toast(move
+          ? t(result.length === 1 ? 'Moved {n} node.' : 'Moved {n} nodes.', { n: result.length })
+          : t(result.length === 1 ? 'Copied {n} node.' : 'Copied {n} nodes.', { n: result.length }),
+        'success');
         if (move) this.clipboard = null;
         this.afterStructureChange(targetPath);
-      } catch (error) { toastError(error, 'Could not paste'); }
+      } catch (error) { toastError(error, t('Could not paste')); }
     });
   }
 
   copyNodes(paths, cut = false) {
     this.clipboard = paths;
     this.clipboardCut = cut;
-    toast(`${cut ? 'Cut' : 'Copied'} ${paths.length} node${paths.length === 1 ? '' : 's'}.`, 'info');
+    toast(cut
+      ? t(paths.length === 1 ? 'Cut {n} node.' : 'Cut {n} nodes.', { n: paths.length })
+      : t(paths.length === 1 ? 'Copied {n} node.' : 'Copied {n} nodes.', { n: paths.length }),
+    'info');
   }
 
   openPixelEditor(node) {
@@ -1177,21 +1252,21 @@ class App {
 
   /** Recursive expand, capped, saying so when it stops short. */
   async expandAll(path) {
-    const busy = toast('Expanding…', 'info');
+    const busy = toast(t('Expanding…'), 'info');
     try {
       const { truncated, opened } = await this.tree.expandAll(path);
       busy.remove();
       if (truncated) {
         toast(
-          `Opened ${fmt.format(opened)} nodes and stopped there. ` +
-          'Expanding a whole archive would take minutes, so this stops at a safe depth.',
-          'warning', { title: 'Partly expanded' });
+          t('Opened {n} nodes and stopped there. Expanding a whole archive would take minutes, '
+            + 'so this stops at a safe depth.', { n: fmt.format(opened) }),
+          'warning', { title: t('Partly expanded') });
       } else {
-        toast(`Expanded ${fmt.format(opened)} nodes.`, 'success');
+        toast(t('Expanded {n} nodes.', { n: fmt.format(opened) }), 'success');
       }
     } catch (error) {
       busy.remove();
-      toastError(error, 'Could not expand that node');
+      toastError(error, t('Could not expand that node'));
     }
   }
 
@@ -1207,7 +1282,7 @@ class App {
     document.body.append(link);
     link.click();
     link.remove();
-    toast('Building the download — it will save on its own when it is ready.', 'info');
+    toast(t('Building the download — it will save on its own when it is ready.'), 'info');
   }
 
   /* ============================================================
@@ -1220,7 +1295,7 @@ class App {
     if (this.saveBusy()) return;
 
     const dirtyFiles = this.files.filter((f) => f.dirty);
-    if (!dirtyFiles.length) { toast('No changes to save.', 'info'); return; }
+    if (!dirtyFiles.length) { toast(t('No changes to save.'), 'info'); return; }
 
     // Both halves of "unsaved", not just the changed images. dirtyNodeCount
     // counts images, and a delete or a rename marks none -- so this list used
@@ -1242,8 +1317,9 @@ class App {
           el('span', {
             style: 'color:var(--text-3)',
             text: count
-              ? ` — ${count} unsaved change${count === 1 ? '' : 's'}`
-              : ' — unsaved work that cannot be listed',
+              ? t(count === 1
+                ? ' — {n} unsaved change' : ' — {n} unsaved changes', { n: count })
+              : t(' — unsaved work that cannot be listed'),
           })),
       ));
     }
@@ -1259,27 +1335,30 @@ class App {
         if (box) { box.checked = false; box.disabled = true; }
         list.append(el('div', {
           style: 'font-size:var(--fs-12);color:var(--red-ink);padding-left:26px;white-space:pre-wrap',
-          text: `${file.name} cannot be saved yet:\n` + result.problems.slice(0, 3).join('\n'),
+          text: t('{name} cannot be saved yet:\n{problems}', {
+            name: file.name, problems: result.problems.slice(0, 3).join('\n'),
+          }),
         }));
       }).catch(() => { /* preflight is advisory; the save re-checks */ });
     }
 
     modal({
-      title: 'Save changes',
+      title: t('Save changes'),
       width: '520px',
       body: el('div', {},
         el('p', { style: 'margin:0 0 14px;color:var(--text-2);line-height:1.5',
-          text: 'The new file is written alongside the original and swapped in only once it is complete. ' +
-                'Close MapleStory first — Windows will not let the file be replaced while the client has it open.' }),
+          text: t('The new file is written alongside the original and swapped in only once it is '
+                + 'complete. Close MapleStory first — Windows will not let the file be replaced '
+                + 'while the client has it open.') }),
         list,
         el('label', { class: 'check-row', style: 'margin-top:14px' }, backup,
-          'Keep a timestamped backup of the original'),
+          t('Keep a timestamped backup of the original')),
         el('p', { style: 'margin:12px 0 0;font-size:var(--fs-12);color:var(--text-3)',
-          text: 'Saving reloads the file, which clears the undo history.' })),
+          text: t('Saving reloads the file, which clears the undo history.') })),
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
-          label: 'Save now',
+          label: t('Save now'),
           class: 'btn-primary',
           run: (close) => {
             const selected = dirtyFiles.filter((f) => checks.get(f.id).checked);
@@ -1307,7 +1386,7 @@ class App {
   /** True when a write is already under way, and says so rather than ignoring the click. */
   saveBusy() {
     if (!isRunning(SAVE_KEY)) return false;
-    toast('A save is already running — wait for it to finish.', 'info');
+    toast(t('A save is already running — wait for it to finish.'), 'info');
     return true;
   }
 
@@ -1315,21 +1394,27 @@ class App {
     const busyBar = el('div', { class: 'busy-bar' });
     document.querySelector('.topbar').append(busyBar);
     for (const file of files) {
-      const busy = toast(`Saving ${file.name}…`, 'info');
+      const busy = toast(t('Saving {name}…', { name: file.name }), 'info');
       try {
         const result = await api.save({ fileId: file.id, backup });
         busy.remove();
 
         const size = `${(result.bytes / 1048576).toFixed(1)} MB`;
         toast(
-          `${file.name} saved — ${size}, ${result.imagesRewritten} image${result.imagesRewritten === 1 ? '' : 's'} rewritten` +
-          (result.backupPath ? `\nBackup: ${result.backupPath.split(/[\\/]/).pop()}` : ''),
-          'success', { title: 'Saved and verified' });
+          t('{name} saved — {size}, {images} rewritten{backup}', {
+            name: file.name,
+            size,
+            images: t(result.imagesRewritten === 1
+              ? '{n} image' : '{n} images', { n: result.imagesRewritten }),
+            backup: result.backupPath
+              ? t('\nBackup: {file}', { file: result.backupPath.split(/[\\/]/).pop() }) : '',
+          }),
+          'success', { title: t('Saved and verified') });
 
         for (const warning of result.warnings || []) toast(warning, 'warning');
       } catch (error) {
         busy.remove();
-        toastError(error, `Could not save ${file.name}`);
+        toastError(error, t('Could not save {name}', { name: file.name }));
       }
     }
     busyBar.remove();
@@ -1354,19 +1439,19 @@ class App {
 
     if (window.mapleBenchDesktop) {
       target = await window.mapleBenchDesktop.savePath(
-        `Save ${file.name} as`, suggested, 'WZ archives|*.wz|All files|*.*');
+        t('Save {name} as', { name: file.name }), suggested, 'WZ archives|*.wz|All files|*.*');
       if (!target) return;   // cancelled
     } else {
       // In a plain browser there is no native dialog, and the path has to be
       // one the *server* can write, so it is typed rather than picked.
       target = await promptForText({
-        title: `Save ${file.name} as`,
-        message: 'Full path to write to. The original is left untouched, and nothing is ' +
-                 'overwritten without asking.',
+        title: t('Save {name} as', { name: file.name }),
+        message: t('Full path to write to. The original is left untouched, and nothing is '
+                 + 'overwritten without asking.'),
         // Both separators: a Windows path has no forward slashes at all, so
         // matching only '/' would have replaced the entire path.
         value: file.filePath.replace(/[^\\/]+$/, suggested),
-        confirmLabel: 'Save a copy',
+        confirmLabel: t('Save a copy'),
       });
       if (!target) return;
 
@@ -1380,19 +1465,22 @@ class App {
     // open for as long as the user likes without blocking an ordinary save.
     if (this.saveBusy()) return;
     await runOnce(SAVE_KEY, async () => {
-      const busy = toast(`Saving ${file.name} to ${target}…`, 'info');
+      const busy = toast(t('Saving {name} to {target}…', { name: file.name, target }), 'info');
       try {
         // backup:true is what makes an existing destination survive: the server
         // renames it to a timestamped .bak rather than dropping it.
         const result = await api.save({ fileId: file.id, targetPath: target, backup: true });
         busy.remove();
-        toast(`Saved to ${result.savedTo} — ${(result.bytes / 1048576).toFixed(1)} MB in ` +
-              `${result.seconds.toFixed(1)}s.`, 'success', { title: 'Copy written' });
+        toast(t('Saved to {path} — {size} MB in {seconds}s.', {
+          path: result.savedTo,
+          size: (result.bytes / 1048576).toFixed(1),
+          seconds: result.seconds.toFixed(1),
+        }), 'success', { title: t('Copy written') });
         for (const warning of result.warnings || []) toast(warning, 'warning');
         await this.refreshFiles();
       } catch (error) {
         busy.remove();
-        toastError(error, `Could not save ${file.name}`);
+        toastError(error, t('Could not save {name}', { name: file.name }));
       }
     });
   }
@@ -1418,11 +1506,11 @@ class App {
     if (!clash) return true;
 
     return confirmDialog({
-      title: `Replace ${name}?`,
-      message: `There is already a file at ${target}. Writing this copy over it keeps the ` +
-               'existing file as a timestamped .bak alongside, but it is no longer what that ' +
-               'name points at.',
-      confirmLabel: 'Replace it',
+      title: t('Replace {name}?', { name }),
+      message: t('There is already a file at {target}. Writing this copy over it keeps the '
+               + 'existing file as a timestamped .bak alongside, but it is no longer what that '
+               + 'name points at.', { target }),
+      confirmLabel: t('Replace it'),
     });
   }
 
@@ -1430,11 +1518,11 @@ class App {
   async revealInExplorer(file) {
     if (!file) return;
     if (!window.mapleBenchDesktop) {
-      toast('Opening the folder needs the desktop window; a browser tab cannot do it.', 'warning');
+      toast(t('Opening the folder needs the desktop window; a browser tab cannot do it.'), 'warning');
       return;
     }
     const ok = await window.mapleBenchDesktop.showInExplorer(file.filePath);
-    if (!ok) toast(`Could not open the folder for ${file.name}.`, 'error');
+    if (!ok) toast(t('Could not open the folder for {name}.', { name: file.name }), 'error');
   }
 
   /**
@@ -1454,16 +1542,16 @@ class App {
 
       const target = index + delta;
       if (target < 0 || target >= siblings.length) {
-        toast(delta < 0 ? 'Already first.' : 'Already last.', 'info');
+        toast(delta < 0 ? t('Already first.') : t('Already last.'), 'info');
         return;
       }
 
       await api.reorder(path, target);
       this.afterStructureChange(parent);
-      toast(`Moved ${delta < 0 ? 'up' : 'down'}.`, 'success',
-        { action: { label: 'Undo', run: () => this.undo() } });
+      toast(delta < 0 ? t('Moved up.') : t('Moved down.'), 'success',
+        { action: { label: t('Undo'), run: () => this.undo() } });
     } catch (error) {
-      toastError(error, 'Could not reorder');
+      toastError(error, t('Could not reorder'));
     }
   }
 
@@ -1504,8 +1592,8 @@ class App {
         if (plan.kind === 'reorder') {
           await api.reorder(plan.paths[0], index);
           this.afterStructureChange(plan.targetPath);
-          toast(`Moved ${plan.nodes[0].name} to position ${index + 1}.`, 'success',
-            { action: { label: 'Undo', run: () => this.undo() } });
+          toast(t('Moved {name} to position {at}.', { name: plan.nodes[0].name, at: index + 1 }), 'success',
+            { action: { label: t('Undo'), run: () => this.undo() } });
           return;
         }
 
@@ -1523,9 +1611,9 @@ class App {
         });
         this.afterStructureChange(plan.targetPath, ...plan.paths);
         toast(this.describeMove(plan, moved), 'success',
-          { action: { label: 'Undo', run: () => this.undo() } });
+          { action: { label: t('Undo'), run: () => this.undo() } });
       } catch (error) {
-        toastError(error, 'Could not move that');
+        toastError(error, t('Could not move that'));
       }
     });
   }
@@ -1534,14 +1622,15 @@ class App {
   describeMove(plan, moved) {
     const renamed = moved.filter((node, i) => node.name !== plan.nodes[i]?.name);
     const base = moved.length === 1
-      ? `Moved ${moved[0].name} into ${plan.targetName}.`
-      : `Moved ${moved.length} nodes into ${plan.targetName}.`;
+      ? t('Moved {name} into {target}.', { name: moved[0].name, target: plan.targetName })
+      : t('Moved {n} nodes into {target}.', { n: moved.length, target: plan.targetName });
     // An auto-rename is the one outcome that differs from what the drag
     // promised, so it is said out loud rather than left to be discovered.
     return renamed.length
-      ? `${base} ${renamed.length === 1
-          ? `A node of that name was already there, so it was renamed to ${renamed[0].name}.`
-          : `${renamed.length} clashed with names already there and were renamed.`}`
+      ? base + ' ' + (renamed.length === 1
+          ? t('A node of that name was already there, so it was renamed to {name}.',
+              { name: renamed[0].name })
+          : t('{n} clashed with names already there and were renamed.', { n: renamed.length }))
       : base;
   }
 
@@ -1557,13 +1646,21 @@ class App {
   confirmCrossFileMove(plan) {
     const from = this.files.find((f) => f.id === plan.nodes[0].path.split('/')[0]);
     const to = this.files.find((f) => f.id === plan.targetPath.split('/')[0]);
-    const what = plan.nodes.length === 1 ? plan.nodes[0].name : `${plan.nodes.length} nodes`;
+    const what = plan.nodes.length === 1
+      ? plan.nodes[0].name : t('{n} nodes', { n: plan.nodes.length });
     return confirmDialog({
-      title: `Move ${what} to ${to?.name ?? 'another archive'}?`,
-      message: `${what} would be removed from ${from?.name ?? 'its archive'} and added to ` +
-               `${to?.name ?? 'the other one'}, leaving both with unsaved changes. ` +
-               'Nothing is written to disk until you save, and you can undo this straight away.',
-      confirmLabel: 'Move it',
+      title: t('Move {what} to {target}?', {
+        what,
+        target: to?.name ?? t('another archive'),
+      }),
+      message: t('{what} would be removed from {from} and added to {to}, leaving both with '
+             + 'unsaved changes. Nothing is written to disk until you save, and you can undo '
+             + 'this straight away.', {
+        what,
+        from: from?.name ?? t('its archive'),
+        to: to?.name ?? t('the other one'),
+      }),
+      confirmLabel: t('Move it'),
       danger: false,
     });
   }
@@ -1585,9 +1682,9 @@ class App {
       const found = at < 0 ? null : siblings[at];
       if (!found || found.name !== node.name || found.kind !== node.kind
           || (found.type ?? null) !== node.type) {
-        throw new Error(
-          `${node.name} is not where it was when the drag started, so nothing was moved. ` +
-          'Something else changed the tree in the meantime — try the drag again.');
+        throw new Error(t('{name} is not where it was when the drag started, so nothing was moved. '
+            + 'Something else changed the tree in the meantime — try the drag again.',
+          { name: node.name }));
       }
       positions.set(node.path, at);
     }
@@ -1606,9 +1703,9 @@ class App {
     const at = siblings.findIndex((child) => child.path === plan.anchorPath);
     const found = at < 0 ? null : siblings[at];
     if (!found || found.name !== plan.anchor.name || (found.type ?? null) !== plan.anchor.type) {
-      throw new Error(
-        `${plan.anchor.name} is not where it was when the drag started, so nothing was moved. ` +
-        'Something else changed the tree in the meantime — try the drag again.');
+      throw new Error(t('{name} is not where it was when the drag started, so nothing was moved. '
+          + 'Something else changed the tree in the meantime — try the drag again.',
+          { name: plan.anchor.name }));
     }
 
     if (plan.kind !== 'reorder') {
@@ -1712,13 +1809,22 @@ class App {
     $('#rail-changes').onclick = () => this.setPanel('changes');
     $('#btn-import').onclick = () => this.openImporter();
     $('#btn-dual').onclick = () => this.openDualView();
+    // The language button lives beside "More" rather than inside it: it is the
+    // one setting a user changes while working, not once while configuring.
+    $('#btn-lang').onclick = () => {
+      const next = toggleLocale();
+      this.paintLangButton();
+      toast(next === 'zh-Hant' ? t('已切換為繁體中文') : t('Switched to English'), 'success');
+    };
+    onLocaleChange(() => this.paintLangButton());
+
     $('#btn-more').onclick = (event) => {
       const rect = event.currentTarget.getBoundingClientRect();
       this.showMenu([
         [
           {
             icon: document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon',
-            label: 'Switch theme',
+            label: t('Switch theme'),
             run: () => this.toggleTheme(),
           },
         ],
@@ -1727,12 +1833,12 @@ class App {
         // single archive open, where right-clicking that archive is the same
         // action under a shorter name.
         this.files.length > 1
-          ? [{ icon: 'close', label: `Close all ${this.files.length} archives`, shortcut: 'Ctrl Shift W',
+          ? [{ icon: 'close', label: t('Close all {n} archives', { n: this.files.length }), shortcut: 'Ctrl Shift W',
               danger: true, run: () => this.closeAllFiles() }]
           : [],
         [
-          { icon: 'help', label: 'Keyboard shortcuts', shortcut: '?', run: () => this.showShortcuts() },
-          { icon: 'info', label: 'About MapleBenchX', run: () => this.showAbout() },
+          { icon: 'help', label: t('Keyboard shortcuts'), shortcut: '?', run: () => this.showShortcuts() },
+          { icon: 'info', label: t('About MapleBenchX'), run: () => this.showAbout() },
         ],
       ], rect.right - 200, rect.bottom + 6);
     };
@@ -1796,7 +1902,7 @@ class App {
     if (title && !title.querySelector('.sort-toggle')) {
       title.append(el('button', {
         class: 'btn btn-sm btn-icon btn-ghost sort-toggle',
-        'data-tip': 'Change how these children are ordered',
+        'data-tip': t('Change how these children are ordered'),
         onclick: (event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           this.showMenu(SORT_MODES.map(([value, label]) => ({
@@ -1815,7 +1921,7 @@ class App {
     if (title && !title.querySelector('.types-toggle')) {
       const toggle = el('button', {
         class: 'btn btn-sm btn-ghost types-toggle',
-        'data-tip': 'Filter these children by property type',
+        'data-tip': t('Filter these children by property type'),
         'aria-pressed': 'false',
         onclick: () => {
           const open = host.style.display === 'none';
@@ -1825,7 +1931,7 @@ class App {
           // it was rather than simply visible.
           this.typesOpen = open;
         },
-      }, icon('filter', { size: 12 }), el('span', { text: 'Types' }));
+      }, icon('filter', { size: 12 }), el('span', { text: t('Types') }));
       title.append(toggle);
     }
   }
@@ -1946,24 +2052,24 @@ class App {
       const item = this.shop.items.find((i) => i.itemId === itemId);
       if (item) {
         return [
-          { icon: 'edit', label: 'Edit item…', run: () => this.shop.openItemDialog(item) },
-          { icon: 'copy', label: 'Duplicate with a new serial', run: () => this.shop.clone(item) },
-          { icon: 'copy', label: `Copy item ID ${item.itemId}`, run: () => this.copyText(String(item.itemId)) },
-          { icon: 'copy', label: `Copy serial ${item.sn}`, run: () => this.copyText(String(item.sn)) },
-          { icon: 'externalLink', label: 'Show in Explorer', run: () => {
+          { icon: 'edit', label: t('Edit item…'), run: () => this.shop.openItemDialog(item) },
+          { icon: 'copy', label: t('Duplicate with a new serial'), run: () => this.shop.clone(item) },
+          { icon: 'copy', label: t('Copy item ID {id}', { id: item.itemId }), run: () => this.copyText(String(item.itemId)) },
+          { icon: 'copy', label: t('Copy serial {sn}', { sn: item.sn }), run: () => this.copyText(String(item.sn)) },
+          { icon: 'externalLink', label: t('Show in Explorer'), run: () => {
             this.setMode('explorer');
             this.navigate(item.path);
           } },
-          { icon: 'trash', label: 'Delete item', danger: true, run: () => this.shop.remove(item) },
+          { icon: 'trash', label: t('Delete item'), danger: true, run: () => this.shop.remove(item) },
         ];
       }
     }
 
     if (target.closest?.('.shop') && this.inSection('cashshop')) {
       return [
-        { icon: 'plus', label: 'Add item…', run: () => this.shop.openItemDialog() },
-        { icon: 'list', label: 'Bulk add…', run: () => this.shop.openBulkDialog() },
-        { icon: 'refresh', label: 'Reload the item list', run: () => this.shop.load() },
+        { icon: 'plus', label: t('Add item…'), run: () => this.shop.openItemDialog() },
+        { icon: 'list', label: t('Bulk add…'), run: () => this.shop.openBulkDialog() },
+        { icon: 'refresh', label: t('Reload the item list'), run: () => this.shop.load() },
       ];
     }
 
@@ -1980,10 +2086,10 @@ class App {
 
       if (target.closest?.('.mobs')) {
         return [
-          { icon: 'sliders', label: 'Bulk edit the selected mobs…', run: () => this.mobs.openBulkDialog() },
-          { icon: 'close', label: 'Clear the selection',
+          { icon: 'sliders', label: t('Bulk edit the selected mobs…'), run: () => this.mobs.openBulkDialog() },
+          { icon: 'close', label: t('Clear the selection'),
             run: () => { this.mobs.selection.clear(); this.mobs.render(); } },
-          { icon: 'refresh', label: 'Reload the mob list', run: () => this.mobs.load() },
+          { icon: 'refresh', label: t('Reload the mob list'), run: () => this.mobs.load() },
         ];
       }
     }
@@ -2005,18 +2111,19 @@ class App {
     /* ---------- empty space in the stage: act on the open node ---------- */
     if (target.closest?.('.stage-body, .stage') && this.currentPath) {
       return [
-        { icon: 'plus', label: 'Add child…', run: () => this.promptAddChild(this.currentPath) },
-        { icon: 'image', label: 'Add a canvas from a picture…',
+        { icon: 'plus', label: t('Add child…'), run: () => this.promptAddChild(this.currentPath) },
+        { icon: 'image', label: t('Add a canvas from a picture…'),
           run: () => this.promptAddChild(this.currentPath, 'Canvas') },
         this.clipboard?.length
-          ? { icon: 'upload', label: `Paste ${this.clipboard.length} node${this.clipboard.length === 1 ? '' : 's'}`, shortcut: 'Ctrl V',
+          ? { icon: 'upload', label: t(this.clipboard.length === 1
+              ? 'Paste {n} node' : 'Paste {n} nodes', { n: this.clipboard.length }), shortcut: 'Ctrl V',
               run: () => this.paste(this.currentPath, this.clipboardCut) }
           : null,
-        { icon: 'replace', label: 'Find and replace here…',
+        { icon: 'replace', label: t('Find and replace here…'),
           run: () => openFindReplace(this, this.currentPath) },
-        { icon: 'download', label: 'Export images (ZIP)',
+        { icon: 'download', label: t('Export images (ZIP)'),
           run: () => this.download(api.exportImagesUrl(this.currentPath)) },
-        { icon: 'refresh', label: 'Reload this node', run: () => {
+        { icon: 'refresh', label: t('Reload this node'), run: () => {
           this.tree.invalidate(this.currentPath);
           this.inspector.refresh();
         } },
@@ -2035,55 +2142,55 @@ class App {
   nodeMenuItems(path, node) {
     const isCanvas = node?.type === 'Canvas' || node?.kind === 'Canvas';
     return [
-      { icon: 'externalLink', label: 'Open', run: () => this.navigate(path) },
+      { icon: 'externalLink', label: t('Open'), run: () => this.navigate(path) },
       node?.hasChildren
-        ? { icon: 'chevronDown', label: this.tree.expanded.has(path) ? 'Collapse' : 'Expand',
+        ? { icon: 'chevronDown', label: this.tree.expanded.has(path) ? t('Collapse') : t('Expand'),
             run: () => this.tree.toggle(path) }
         : null,
       node?.hasChildren
-        ? { icon: 'layers', label: 'Expand everything below', shortcut: '*',
+        ? { icon: 'layers', label: t('Expand everything below'), shortcut: '*',
             run: () => this.expandAll(path) }
         : null,
       node?.hasChildren && this.tree.expanded.has(path)
-        ? { icon: 'list', label: 'Collapse everything below',
+        ? { icon: 'list', label: t('Collapse everything below'),
             run: () => this.tree.collapseAll(path) }
         : null,
       isCanvas
-        ? { icon: 'upload', label: 'Replace canvas image…', run: () => this.replaceCanvasFile(path) }
+        ? { icon: 'upload', label: t('Replace canvas image…'), run: () => this.replaceCanvasFile(path) }
         : null,
       isCanvas
-        ? { icon: 'brush', label: 'Pixel edit…', run: () => this.openPixelEditor(node) }
+        ? { icon: 'brush', label: t('Pixel edit…'), run: () => this.openPixelEditor(node) }
         : null,
       isCanvas
-        ? { icon: 'download', label: 'Export this PNG', run: () => this.download(canvasUrl(path)) }
+        ? { icon: 'download', label: t('Export this PNG'), run: () => this.download(canvasUrl(path)) }
         : null,
       // The quick items above are the one-click answers for the node kinds that
       // have one. This asks the server what this node is and offers everything
       // it can produce, each with what that format loses.
-      { icon: 'download', label: 'Export…', run: () => openExportDialog(this, path) },
+      { icon: 'download', label: t('Export…'), run: () => openExportDialog(this, path) },
       node?.kind === 'Image'
-        ? { icon: 'download', label: 'Export as .img', run: () => this.download(api.exportImgUrl(path)) }
+        ? { icon: 'download', label: t('Export as .img'), run: () => this.download(api.exportImgUrl(path)) }
         : null,
-      { icon: 'plus', label: 'Add child…', run: () => this.promptAddChild(path) },
-      { icon: 'copy', label: 'Duplicate', run: () => this.duplicate([path]) },
+      { icon: 'plus', label: t('Add child…'), run: () => this.promptAddChild(path) },
+      { icon: 'copy', label: t('Duplicate'), run: () => this.duplicate([path]) },
       node?.kind === 'Property'
-        ? { icon: 'arrowUp', label: 'Move up', shortcut: 'Alt ↑', run: () => this.moveNode(path, -1) }
+        ? { icon: 'arrowUp', label: t('Move up'), shortcut: 'Alt ↑', run: () => this.moveNode(path, -1) }
         : null,
       node?.kind === 'Property'
-        ? { icon: 'arrowDown', label: 'Move down', shortcut: 'Alt ↓', run: () => this.moveNode(path, 1) }
+        ? { icon: 'arrowDown', label: t('Move down'), shortcut: 'Alt ↓', run: () => this.moveNode(path, 1) }
         : null,
-      { icon: 'copy', label: 'Copy', shortcut: 'Ctrl C', run: () => this.copyNodes([path]) },
-      { icon: 'star', label: this.pins.has(path) ? 'Unpin' : 'Pin', shortcut: 'Ctrl D',
+      { icon: 'copy', label: t('Copy'), shortcut: 'Ctrl C', run: () => this.copyNodes([path]) },
+      { icon: 'star', label: this.pins.has(path) ? t('Unpin') : t('Pin'), shortcut: 'Ctrl D',
         run: () => this.togglePin(path) },
-      { icon: 'copy', label: 'Copy path', run: () => this.copyPath(path) },
-      { icon: 'trash', label: 'Delete', shortcut: 'Del', danger: true, run: () => this.deleteNodes([path]) },
+      { icon: 'copy', label: t('Copy path'), run: () => this.copyPath(path) },
+      { icon: 'trash', label: t('Delete'), shortcut: 'Del', danger: true, run: () => this.deleteNodes([path]) },
     ].filter(Boolean);
   }
 
   copyText(value) {
     navigator.clipboard.writeText(value)
-      .then(() => toast(`Copied ${value}.`, 'success'))
-      .catch(() => toast('Could not copy to the clipboard.', 'error'));
+      .then(() => toast(t('Copied {value}.', { value }), 'success'))
+      .catch(() => toast(t('Could not copy to the clipboard.'), 'error'));
   }
 
   /**
@@ -2102,12 +2209,12 @@ class App {
       await this.refreshFiles();
       toast(
         readOnly
-          ? `${file.name} is now reference-only. Edits below it will be refused.`
-          : `${file.name} can be edited again.`,
+          ? t('{name} is now reference-only. Edits below it will be refused.', { name: file.name })
+          : t('{name} can be edited again.', { name: file.name }),
         'success',
       );
     } catch (error) {
-      toastError(error, `Could not change ${file.name}`);
+      toastError(error, t('Could not change {name}', { name: file.name }));
     }
   }
 
@@ -2173,10 +2280,11 @@ class App {
       const total = dirty.reduce((sum, file) => sum + (counted.get(file.id) ?? 0), 0);
       const ok = await confirmDialog({
         title: dirty.length === 1
-          ? `Close ${dirty[0].name} with unsaved changes?`
-          : `Close ${dirty.length} archives with unsaved changes?`,
+          ? t('Close {name} with unsaved changes?', { name: dirty[0].name })
+          : t('Close {n} archives with unsaved changes?', { n: dirty.length }),
         message: closeDiscardMessage(dirty, counted, total),
-        confirmLabel: dirty.length === 1 ? 'Discard and close' : `Discard and close ${dirty.length}`,
+        confirmLabel: dirty.length === 1
+          ? t('Discard and close') : t('Discard and close {n}', { n: dirty.length }),
       });
       if (!ok) return;
     }
@@ -2217,11 +2325,11 @@ class App {
     await this.refreshFiles();
     if (!this.files.length) this.showWelcome();
 
-    if (closed.length === 1) toast(`${closed[0].name} closed.`, 'success');
-    else if (closed.length) toast(`${closed.length} archives closed.`, 'success');
+    if (closed.length === 1) toast(t('{name} closed.', { name: closed[0].name }), 'success');
+    else if (closed.length) toast(t('{n} archives closed.', { n: closed.length }), 'success');
     // One toast per failure: which ones failed is the whole answer, and a
     // single "some could not be closed" would leave the user guessing which.
-    for (const { file, error } of failed) toastError(error, `Could not close ${file.name}`);
+    for (const { file, error } of failed) toastError(error, t('Could not close {name}', { name: file.name }));
   }
 
   /**
@@ -2278,47 +2386,47 @@ class App {
       const batch = selected.length > 1 && selected.includes(path) ? selected : [path];
       event.preventDefault();
       this.showMenu([
-        { icon: 'chevronDown', label: this.tree.expanded.has(path) ? 'Collapse' : 'Expand',
+        { icon: 'chevronDown', label: this.tree.expanded.has(path) ? t('Collapse') : t('Expand'),
           run: () => this.tree.toggle(path) },
-        { icon: 'layers', label: 'Expand everything below', run: () => this.expandAll(path) },
-        { icon: 'list', label: 'Collapse everything', run: () => this.tree.collapseEverything() },
+        { icon: 'layers', label: t('Expand everything below'), run: () => this.expandAll(path) },
+        { icon: 'list', label: t('Collapse everything'), run: () => this.tree.collapseEverything() },
         // NX is saved in place by the writer in Services/Nx, the same way a classic
         // archive is, so these items are not gated on kind. It used to offer only
         // "Save a copy as .nx" because writing back in place did not exist yet.
         file?.kind !== 'img-folder'
-          ? { icon: 'save', label: 'Save this file', run: () => file && this.runSave([file], true) }
+          ? { icon: 'save', label: t('Save this file'), run: () => file && this.runSave([file], true) }
           : null,
         file?.kind !== 'img-folder'
-          ? { icon: 'save', label: 'Save as…', shortcut: 'Ctrl Shift S', run: () => this.saveAs(file) }
+          ? { icon: 'save', label: t('Save as…'), shortcut: 'Ctrl Shift S', run: () => this.saveAs(file) }
           : null,
         file?.kind === 'img'
-          ? { icon: 'download', label: 'Export as .img', run: () => this.download(api.exportImgUrl(path)) }
+          ? { icon: 'download', label: t('Export as .img'), run: () => this.download(api.exportImgUrl(path)) }
           : null,
-        { icon: 'download', label: 'Export as JSON', run: () => this.download(api.exportJsonUrl(path)) },
-        { icon: 'download', label: 'Export as server XML', run: () => this.download(api.exportXmlZipUrl(path)) },
+        { icon: 'download', label: t('Export as JSON'), run: () => this.download(api.exportJsonUrl(path)) },
+        { icon: 'download', label: t('Export as server XML'), run: () => this.download(api.exportXmlZipUrl(path)) },
         // Everything else this archive can produce, including the dump to a
         // folder on disk -- which for a whole archive is the only one of these
         // that runs as a job you can watch and cancel.
-        { icon: 'download', label: 'Export…', run: () => openExportDialog(this, path) },
-        { icon: 'externalLink', label: 'Show in Explorer', run: () => this.revealInExplorer(file) },
-        { icon: 'copy', label: 'Copy file path', run: () => file && this.copyPath(file.filePath) },
+        { icon: 'download', label: t('Export…'), run: () => openExportDialog(this, path) },
+        { icon: 'externalLink', label: t('Show in Explorer'), run: () => this.revealInExplorer(file) },
+        { icon: 'copy', label: t('Copy file path'), run: () => file && this.copyPath(file.filePath) },
         // A mounted IMG folder is a collection rather than one destination file, so it keeps
         // no toggle. Everything else, NX included, gets the ordinary session lock.
         file?.kind !== 'img-folder'
           ? { icon: file?.readOnly ? 'edit' : 'lock',
-              label: file?.readOnly ? 'Allow editing' : 'Open for reference only',
+              label: file?.readOnly ? t('Allow editing') : t('Open for reference only'),
               run: () => file && this.setReadOnly(file, !file.readOnly) }
           : null,
         batch.length > 1
-          ? { icon: 'close', label: `Close ${batch.length} archives`, danger: true,
+          ? { icon: 'close', label: t('Close {n} archives', { n: batch.length }), danger: true,
               run: () => this.closeFiles(batch) }
-          : { icon: 'close', label: 'Close file', danger: true, run: () => this.closeFile(path) },
+          : { icon: 'close', label: t('Close file'), danger: true, run: () => this.closeFile(path) },
         // Offered even when the selection is a subset, because "close all of
         // them" is the thing people actually want once they have started
         // closing archives one at a time -- and it is the only entry point that
         // survives the selection being a single row.
         this.files.length > batch.length
-          ? { icon: 'close', label: `Close all ${this.files.length} archives`, danger: true,
+          ? { icon: 'close', label: t('Close all {n} archives', { n: this.files.length }), danger: true,
               run: () => this.closeAllFiles() }
           : null,
       ], event.clientX, event.clientY);
@@ -2332,36 +2440,36 @@ class App {
       || node?.type === 'Convex';
     const groups = [
       [
-        { icon: 'externalLink', label: 'Open', run: () => this.navigate(path) },
+        { icon: 'externalLink', label: t('Open'), run: () => this.navigate(path) },
         node?.hasChildren
-          ? { icon: 'chevronDown', label: this.tree.expanded.has(path) ? 'Collapse' : 'Expand',
+          ? { icon: 'chevronDown', label: this.tree.expanded.has(path) ? t('Collapse') : t('Expand'),
               run: () => this.tree.toggle(path) }
           : null,
         node?.hasChildren
-          ? { icon: 'layers', label: 'Expand everything below', shortcut: '*',
+          ? { icon: 'layers', label: t('Expand everything below'), shortcut: '*',
               run: () => this.expandAll(path) }
           : null,
         node?.hasChildren && this.tree.expanded.has(path)
-          ? { icon: 'list', label: 'Collapse everything below',
+          ? { icon: 'list', label: t('Collapse everything below'),
               run: () => this.tree.collapseAll(path) }
           : null,
-        { icon: 'plus', label: 'Add child…', run: () => this.promptAddChild(path) },
+        { icon: 'plus', label: t('Add child…'), run: () => this.promptAddChild(path) },
         canContainCanvas
-          ? { icon: 'image', label: 'Add a canvas from a picture…',
+          ? { icon: 'image', label: t('Add a canvas from a picture…'),
               run: () => this.promptAddChild(path, 'Canvas') }
           : null,
         isCanvas
-          ? { icon: 'upload', label: 'Replace canvas image…', run: () => this.replaceCanvasFile(path) }
+          ? { icon: 'upload', label: t('Replace canvas image…'), run: () => this.replaceCanvasFile(path) }
           : null,
         isCanvas
-          ? { icon: 'brush', label: 'Pixel edit…', run: () => this.openPixelEditor(node) }
+          ? { icon: 'brush', label: t('Pixel edit…'), run: () => this.openPixelEditor(node) }
           : null,
         isCanvas
-          ? { icon: 'download', label: 'Export this PNG',
+          ? { icon: 'download', label: t('Export this PNG'),
               run: () => this.download(canvasUrl(path)) }
           : null,
         multiple
-          ? { icon: 'edit', label: `Set value on ${selection.length} nodes…`, shortcut: 'Ctrl E',
+          ? { icon: 'edit', label: t('Set value on {n} nodes…', { n: selection.length }), shortcut: 'Ctrl E',
               run: () => openBulkEdit(this, selection) }
           : null,
       ],
@@ -2371,21 +2479,21 @@ class App {
         // drag lives and a gesture with no menu equivalent is a gesture some
         // people cannot perform at all.
         node?.kind === 'Property'
-          ? { icon: 'arrowUp', label: 'Move up', shortcut: 'Alt ↑', run: () => this.moveNode(path, -1) }
+          ? { icon: 'arrowUp', label: t('Move up'), shortcut: 'Alt ↑', run: () => this.moveNode(path, -1) }
           : null,
         node?.kind === 'Property'
-          ? { icon: 'arrowDown', label: 'Move down', shortcut: 'Alt ↓', run: () => this.moveNode(path, 1) }
+          ? { icon: 'arrowDown', label: t('Move down'), shortcut: 'Alt ↓', run: () => this.moveNode(path, 1) }
           : null,
-        { icon: 'copy', label: 'Duplicate', run: () => this.duplicate(selection) },
-        { icon: 'copy', label: 'Copy', shortcut: 'Ctrl C', run: () => this.copyNodes(selection) },
-        { icon: 'replace', label: 'Cut', shortcut: 'Ctrl X', run: () => this.copyNodes(selection, true) },
+        { icon: 'copy', label: t('Duplicate'), run: () => this.duplicate(selection) },
+        { icon: 'copy', label: t('Copy'), shortcut: 'Ctrl C', run: () => this.copyNodes(selection) },
+        { icon: 'replace', label: t('Cut'), shortcut: 'Ctrl X', run: () => this.copyNodes(selection, true) },
         this.clipboard?.length
-          ? { icon: 'upload', label: 'Paste into', shortcut: 'Ctrl V',
+          ? { icon: 'upload', label: t('Paste into'), shortcut: 'Ctrl V',
               run: () => this.paste(path, this.clipboardCut) }
           : null,
       ],
       [
-        { icon: 'star', label: this.pins.has(path) ? 'Unpin' : 'Pin', shortcut: 'Ctrl D',
+        { icon: 'star', label: this.pins.has(path) ? t('Unpin') : t('Pin'), shortcut: 'Ctrl D',
           run: () => this.togglePin(path) },
         // Scoped search. The panel already accepts a root; without a way to
         // set one, "find every maxHP" always meant every open archive.
@@ -2404,28 +2512,28 @@ class App {
         node?.kind === 'Directory'
           ? { icon: 'externalLink',
               label: folders.length > 1
-                ? `Import these ${folders.length} folders into another client…`
-                : 'Import this folder into another client…',
+                ? t('Import these {n} folders into another client…', { n: folders.length })
+                : t('Import this folder into another client…'),
               run: () => openPortDialog({
                 app: this, kind: 'item', paths: folders, scope: 'folder',
                 sourceFileId: path.split('/')[0],
               }) }
           : null,
-        { icon: 'search', label: 'Search inside this…', run: () => this.openSearch(path) },
-        { icon: 'replace', label: 'Find and replace here…', run: () => openFindReplace(this, path) },
-        { icon: 'download', label: 'Export images (ZIP)',
+        { icon: 'search', label: t('Search inside this…'), run: () => this.openSearch(path) },
+        { icon: 'replace', label: t('Find and replace here…'), run: () => openFindReplace(this, path) },
+        { icon: 'download', label: t('Export images (ZIP)'),
           run: () => this.download(api.exportImagesUrl(path)) },
-        { icon: 'download', label: 'Export as JSON', run: () => this.download(api.exportJsonUrl(path)) },
+        { icon: 'download', label: t('Export as JSON'), run: () => this.download(api.exportJsonUrl(path)) },
         node?.kind === 'Image'
-          ? { icon: 'download', label: 'Export as .img', run: () => this.download(api.exportImgUrl(path)) }
+          ? { icon: 'download', label: t('Export as .img'), run: () => this.download(api.exportImgUrl(path)) }
           : null,
         // The two above are shortcuts for the two most common answers. This one
         // asks what the node is first, and says what each format leaves behind.
-        { icon: 'download', label: 'Export…', run: () => openExportDialog(this, path) },
-        { icon: 'copy', label: 'Copy path', shortcut: 'Alt C', run: () => this.copyPath(path) },
+        { icon: 'download', label: t('Export…'), run: () => openExportDialog(this, path) },
+        { icon: 'copy', label: t('Copy path'), shortcut: 'Alt C', run: () => this.copyPath(path) },
       ],
       [
-        { icon: 'trash', label: 'Delete', shortcut: 'Del', danger: true,
+        { icon: 'trash', label: t('Delete'), shortcut: 'Del', danger: true,
           run: () => this.deleteNodes(selection) },
       ],
     ];
@@ -2435,35 +2543,38 @@ class App {
 
   showShortcuts() {
     const rows = [
-      ['Ctrl P', 'Jump to any node'], ['Ctrl Shift P', 'Command palette'],
-      ['Ctrl Shift F', 'Search all open files'], ['Ctrl S', 'Save'],
-      ['Ctrl Shift W', 'Close every open archive'],
-      ['Ctrl Z / Ctrl Shift Z', 'Undo / Redo'],
-      ['Ctrl 1 / Ctrl 2', 'Explorer / Editors'],
-      ['Ctrl 3 / Ctrl 4 / Ctrl 5', 'Cash Shop / Mobs / Game Data Search'],
-      ['Alt ← / Alt →', 'Back / Forward'], ['/', 'Filter the current children'],
-      ['↑ ↓', 'Move through the tree'], ['→ / ←', 'Expand / Collapse'],
-      ['Alt ↑ / Alt ↓', 'Reorder the selected node among its siblings'],
-      ['Drag a row', 'Between rows reorders; onto a row moves it there'],
-      ['a–z', 'Type-ahead jump'], ['F2', 'Rename'], ['Delete', 'Delete selected'],
-      ['*', 'Expand everything below'], ['-', 'Collapse everything below'],
-      ['Ctrl C / Ctrl X / Ctrl V', 'Copy / Cut / Paste nodes'],
-      ['Ctrl D', 'Pin / unpin the current node'],
-      ['Ctrl H', 'Find and replace'],
-      ['Ctrl E', 'Change every selected value — *1.5, +50, -10%, clamp 1 999'],
-      ['Ctrl A', 'In the results panel: select every editable result'],
-      ['Ctrl Click / Shift Click', 'Multi-select in the tree'],
-      ['?', 'This list'],
+      ['Ctrl P', t('Jump to any node')], ['Ctrl Shift P', t('Command palette')],
+      ['Ctrl Shift F', t('Search all open files')], ['Ctrl S', t('Save')],
+      ['Ctrl Shift W', t('Close every open archive')],
+      ['Ctrl Z / Ctrl Shift Z', t('Undo / Redo')],
+      ['Ctrl 1 / Ctrl 2', t('Explorer / Editors')],
+      ['Ctrl 3 / Ctrl 4 / Ctrl 5', t('Cash Shop / Mobs / Game Data Search')],
+      ['Alt ← / Alt →', t('Back / Forward')], ['/', t('Filter the current children')],
+      ['↑ ↓', t('Move through the tree')], ['→ / ←', t('Expand / Collapse')],
+      ['Alt ↑ / Alt ↓', t('Reorder the selected node among its siblings')],
+      // The left column is the key, so Ctrl P stays Latin -- but a row like
+      // "Drag a row" is prose wearing a key's clothes, and it read as English
+      // in a Chinese dialog.
+      [t('Drag a row'), t('Between rows reorders; onto a row moves it there')],
+      [t('a–z'), t('Type-ahead jump')], ['F2', t('Rename')], [t('Delete'), t('Delete selected')],
+      ['*', t('Expand everything below')], ['-', t('Collapse everything below')],
+      ['Ctrl C / Ctrl X / Ctrl V', t('Copy / Cut / Paste nodes')],
+      ['Ctrl D', t('Pin / unpin the current node')],
+      ['Ctrl H', t('Find and replace')],
+      ['Ctrl E', t('Change every selected value — *1.5, +50, -10%, clamp 1 999')],
+      ['Ctrl A', t('In the results panel: select every editable result')],
+      ['Ctrl Click / Shift Click', t('Multi-select in the tree')],
+      ['?', t('This list')],
     ];
     const groups = [
       // Sliced, not bucketed, so every row lands in exactly one group. The
       // bounds are the row indices, and adding a row means moving them.
-      ['General', rows.slice(0, 8)],
-      ['Explorer', rows.slice(8, 19)],
-      ['Editing', rows.slice(19)],
+      [t('General'), rows.slice(0, 8)],
+      [t('Explorer'), rows.slice(8, 19)],
+      [t('Editing'), rows.slice(19)],
     ];
     modal({
-      title: 'Keyboard shortcuts',
+      title: t('Keyboard shortcuts'),
       width: '520px',
       body: el('div', { class: 'shortcut-groups' }, ...groups.map(([label, shortcuts]) =>
         el('section', { class: 'shortcut-group' },
@@ -2479,21 +2590,21 @@ class App {
     try { about = { ...about, ...(await api.about()) }; } catch { /* static details remain useful */ }
 
     modal({
-      title: 'About MapleBenchX',
+      title: t('About MapleBenchX'),
       width: '520px',
       body: el('div', { class: 'about-sheet' },
         el('div', { class: 'about-brand' }, brandMark(24),
           el('div', {}, el('h2', { text: 'MapleBenchX' }),
-            el('p', { text: `Version ${about.version}` }))),
-        el('p', { text: 'A Windows WZ editor and dependency-aware client importer for MapleStory.' }),
+            el('p', { text: t('Version {version}', { version: about.version }) }))),
+        el('p', { text: t('A Windows WZ editor and dependency-aware client importer for MapleStory.') }),
         el('dl', {},
-          el('dt', { text: 'Created by' }), el('dd', { text: 'Kiro' }),
-          el('dt', { text: 'License' }), el('dd', { text: about.license }),
-          el('dt', { text: 'Source formats' }), el('dd', { text: 'Classic .wz and split Data clients' })),
-        el('p', { class: 'about-note', text: 'Saves are written to a temporary file and reopened for '
-          + 'verification before the destination is replaced.' }),
+          el('dt', { text: t('Created by') }), el('dd', { text: 'Kiro' }),
+          el('dt', { text: t('License') }), el('dd', { text: about.license }),
+          el('dt', { text: t('Source formats') }), el('dd', { text: t('Classic .wz and split Data clients') })),
+        el('p', { class: 'about-note', text: t('Saves are written to a temporary file and reopened for '
+          + 'verification before the destination is replaced.') }),
         el('a', { class: 'btn', href: 'https://github.com/xkiro-dev/MapleBench', target: '_blank',
-          rel: 'noreferrer', text: 'View source on GitHub' })),
+          rel: 'noreferrer', text: t('View source on GitHub') })),
     });
   }
 
@@ -2530,51 +2641,52 @@ class App {
     let active = 0;
 
     const commands = [
-      { label: 'Open client or archive…', run: () => this.openFilePicker() },
-      { label: 'Import from another client…',
-        sub: 'One importer for classic WZ and split Data clients, with dependencies included',
+      { label: t('Open client or archive…'), run: () => this.openFilePicker() },
+      { label: t('Import from another client…'),
+        sub: t('One importer for classic WZ and split Data clients, with dependencies included'),
         run: () => this.openImporter() },
-      { label: 'Browse a split archive as one tree…',
-        sub: 'Skill.wz with Skill001-003.wz is one archive in four files',
+      { label: t('Browse a split archive as one tree…'),
+        sub: t('Skill.wz with Skill001-003.wz is one archive in four files'),
         run: () => this.openFamilyPicker() },
       ...(this.families ?? []).map((family) => ({
-        label: `Check ${family.name} for duplicate image names…`,
-        sub: `${family.members.length} archives merged — a name in two of them resolves by mount order`,
+        label: t('Check {name} for duplicate image names…', { name: family.name }),
+        sub: t('{n} archives merged — a name in two of them resolves by mount order',
+          { n: family.members.length }),
         run: () => showShadows(this, family.id),
       })),
-      { label: 'Save changes', when: () => !$('#btn-save').disabled, run: () => this.save() },
-      { label: 'Undo', when: () => !$('#btn-undo').disabled, run: () => this.undo() },
-      { label: 'Redo', when: () => !$('#btn-redo').disabled, run: () => this.redo() },
-      { label: 'Switch to Explorer', run: () => this.setMode('explorer') },
-      { label: 'Switch to Editors', sub: 'The workspace you were last in',
+      { label: t('Save changes'), when: () => !$('#btn-save').disabled, run: () => this.save() },
+      { label: t('Undo'), when: () => !$('#btn-undo').disabled, run: () => this.undo() },
+      { label: t('Redo'), when: () => !$('#btn-redo').disabled, run: () => this.redo() },
+      { label: t('Switch to Explorer'), run: () => this.setMode('explorer') },
+      { label: t('Switch to Editors'), sub: t('The workspace you were last in'),
         run: () => this.setMode('sections') },
       // One per section, spelled out, because "everything in a context menu is
       // also in the palette" is what makes a collapsed list safe to collapse.
       ...SECTION_IDS.map((id) => ({
-        label: `Open the ${sectionLabel(id)} section`,
+        label: t('Open the {section} section', { section: sectionLabel(id) }),
         run: () => this.openSection(id),
       })),
-      { label: 'Search the client database…',
+      { label: t('Search the client database…'),
         run: async () => { await this.openSection('database'); this.db.focusSearch(); } },
-      { label: 'Bulk edit the selected mobs…',
+      { label: t('Bulk edit the selected mobs…'),
         run: async () => { await this.openSection('mobs'); this.mobs.openBulkDialog(); } },
-      { label: 'Toggle theme', run: () => this.toggleTheme() },
-      { label: 'Keyboard shortcuts', run: () => this.showShortcuts() },
-      { label: 'Search all open files…', run: () => this.openSearch(null) },
-      { label: 'Search inside the current node…', when: () => Boolean(this.currentPath),
+      { label: t('Toggle theme'), run: () => this.toggleTheme() },
+      { label: t('Keyboard shortcuts'), run: () => this.showShortcuts() },
+      { label: t('Search all open files…'), run: () => this.openSearch(null) },
+      { label: t('Search inside the current node…'), when: () => Boolean(this.currentPath),
         run: () => this.currentPath && this.openSearch(this.currentPath) },
-      { label: 'Find and replace…', when: () => Boolean(this.currentPath),
+      { label: t('Find and replace…'), when: () => Boolean(this.currentPath),
         run: () => openFindReplace(this, this.currentPath) },
-      { label: 'Show unsaved changes', when: () => this.files.some((file) => file.dirty),
+      { label: t('Show unsaved changes'), when: () => this.files.some((file) => file.dirty),
         run: () => this.setPanel('changes') },
-      { label: 'Show pinned nodes', run: () => this.setPanel('pinned') },
-      { label: 'Pin the current node', when: () => Boolean(this.currentPath),
+      { label: t('Show pinned nodes'), run: () => this.setPanel('pinned') },
+      { label: t('Pin the current node'), when: () => Boolean(this.currentPath),
         run: () => this.currentPath && this.togglePin(this.currentPath) },
-      { label: 'Export images under this node (ZIP)', when: () => Boolean(this.currentPath),
+      { label: t('Export images under this node (ZIP)'), when: () => Boolean(this.currentPath),
         run: () => this.currentPath && this.download(api.exportImagesUrl(this.currentPath)) },
-      { label: 'Export this node as JSON', when: () => Boolean(this.currentPath),
+      { label: t('Export this node as JSON'), when: () => Boolean(this.currentPath),
         run: () => this.currentPath && this.download(api.exportJsonUrl(this.currentPath)) },
-      { label: 'Copy the current path', when: () => Boolean(this.currentPath),
+      { label: t('Copy the current path'), when: () => Boolean(this.currentPath),
         run: () => this.currentPath && this.copyPath(this.currentPath) },
     ];
 
@@ -2586,7 +2698,7 @@ class App {
     const paint = () => {
       clear(list);
       if (!results.length) {
-        list.append(el('div', { class: 'palette-empty', text: 'No matches. Type > for commands.' }));
+        list.append(el('div', { class: 'palette-empty', text: t('No matches. Type > for commands.') }));
         return;
       }
       results.forEach((result, index) => {
@@ -2842,9 +2954,10 @@ class App {
       const names = [...(event.dataTransfer?.files ?? [])].map((f) => f.name);
       if (!names.length) return;
       toast(
-        `A dropped file does not carry the folder it came from, so it cannot be opened directly. ` +
-        `Pick "${names[0]}" here instead — the folder you last browsed is already open.`,
-        'info', { title: 'Dropping opens the picker' });
+        t('A dropped file does not carry the folder it came from, so it cannot be opened '
+          + 'directly. Pick "{name}" here instead — the folder you last browsed is already open.',
+          { name: names[0] }),
+        'info', { title: t('Dropping opens the picker') });
       this.openFilePicker();
     });
   }
