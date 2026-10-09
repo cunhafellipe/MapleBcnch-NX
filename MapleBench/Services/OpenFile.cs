@@ -195,6 +195,49 @@ public sealed class OpenFile : IDisposable
     }
 
     /// <summary>
+    /// Clears every dirty flag below this file, and the session entry's own.
+    ///
+    /// Only for a save that actually wrote this file. It has to exist because
+    /// <see cref="CountDirtyImages"/> reads MapleLib's flags, and for a classic
+    /// .wz those are cleared as a side effect of MapleLib writing the image --
+    /// a save path that serialises the bytes itself never touches them.
+    ///
+    /// The NX writer is exactly that case. It reads the tree and lays the bytes
+    /// out itself, so after a successful in-place save the images the user had
+    /// edited still carried Changed == true: the Files panel showed a permanent
+    /// unsaved marker, /api/changes kept listing the archive, and closing it
+    /// asked "discard 1 unsaved change" for work that was already on disk --
+    /// which is the one prompt a user must never learn to click past.
+    ///
+    /// Deliberately not called after "save as": that writes a copy somewhere
+    /// else and leaves the session pointing at the untouched original, so the
+    /// edits really are still unsaved *here*.
+    /// </summary>
+    public void MarkAllImagesClean()
+    {
+        Dirty = false;
+
+        if (LooseImage != null)
+        {
+            LooseImage.Changed = false;
+            return;
+        }
+        if (RootDirectory != null)
+            MarkAllImagesClean(RootDirectory);
+    }
+
+    private static void MarkAllImagesClean(WzDirectory dir)
+    {
+        foreach (WzImage image in dir.WzImages)
+        {
+            if (image.Changed)
+                image.Changed = false;
+        }
+        foreach (WzDirectory sub in dir.WzDirectories)
+            MarkAllImagesClean(sub);
+    }
+
+    /// <summary>
     /// Every <see cref="WzImage"/> below this file, dirty or not.
     ///
     /// Loose .img entries are deliberately excluded: the caller this exists for

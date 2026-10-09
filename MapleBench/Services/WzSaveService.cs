@@ -191,6 +191,14 @@ public sealed class WzSaveService
             : $"Saved in place ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes). " +
               $"The previous file is at '{Path.GetFileName(backup)}'.");
 
+        // The bytes on disk and the tree in memory now agree, so the archive
+        // stops being dirty. In-place only: a "save as" left the session
+        // pointing at the original, which the copy did not touch.
+        if (!saveAs)
+        {
+            file.MarkAllImagesClean();
+        }
+
         return new SaveResult
         {
             FileId = file.Id,
