@@ -75,6 +75,15 @@ public sealed class WzSaveService
                 $"'{file.Name}' is open for reference only, so it was not written. Unlock it in the Files " +
                 "panel if you meant to change it, or use Save as to write a copy somewhere else.");
         }
+        // Nothing to save. Checked here rather than at the top of Save() because this
+        // branch sits above the shared code, and below the reference-only refusal
+        // because "reference only" is a statement about what the caller may ask for,
+        // not about whether there is anything to do.
+
+        if (NothingToWrite(file, request, wholeArchiveNote: null))
+        {
+            return NoWritesNeeded(file, request);
+        }
 
         bool saveAs = !string.IsNullOrWhiteSpace(request.TargetPath);
         string source = Path.GetFullPath(file.FilePath);
@@ -402,6 +411,21 @@ public sealed class WzSaveService
             // question as "what did the user edit" -- see the method.
             string? wholeArchiveNote = file.Kind == "img" ? null : WhyEveryImageIsRewritten(file, request);
 
+            // Same judgement as the NX branch above, and in the same place: after
+            // the refusals that are about what the caller is allowed to ask for,
+            // before anything expensive or irreversible. This is what stops a
+            // clean archive from being repacked, backed up and swapped over
+            // itself with identical bytes.
+            //
+            // Placed here rather than inside SaveArchive because a classic save
+            // is not the only thing below: this also covers the loose .img path,
+            // where the same reasoning holds for the same reasons -- the bytes
+            // already on disk are the bytes the writer would produce.
+            if (NothingToWrite(file, request, wholeArchiveNote))
+            {
+                return NoWritesNeeded(file, request);
+            }
+
             // Before Preflight, which is the first thing that allocates: it parses
             // images and forces every canvas in them to produce its compressed
             // bytes. Everything from here to the end of the save is inside the one
@@ -663,6 +687,93 @@ public sealed class WzSaveService
             // honest answer rather than the cheap, hopeful one.
         }
         return $"the archive is being re-encrypted as {saveAs}";
+    }
+
+    /// <summary>
+    /// True when this request would rewrite a file whose bytes on disk already are
+    /// what the caller is holding, so the whole write comes back out identical.
+    ///
+    /// <para>The judgement is the pair the rest of the codebase already uses —
+    /// <c>!file.Dirty &amp;&amp; file.CountDirtyImages() == 0</c>, the same shape
+    /// <c>ClientImportService</c> and <c>CompositionBuilder</c> test before they
+    /// decide an archive needs no work. One half counts edits no
+    /// <see cref="WzImage.Changed"/> flag can see (adding, removing, renaming and
+    /// reordering images and directories); the other half reads MapleLib's own
+    /// per-image flags, which is the only thing that knows about a mutated canvas.
+    /// Either alone reports clean over real work, so it takes both.</para>
+    ///
+    /// <para><b>Save as is never a no-op.</b> It writes a different path, so there
+    /// is no file on disk whose bytes could already match; refusing it would
+    /// break "save a copy of this archive somewhere else" for every clean file.
+    /// The same goes for a request that re-encrypts: the output is not the input
+    /// whatever the tree holds, and <see cref="WhyEveryImageIsRewritten"/> being
+    /// non-null means exactly that. So does an explicit <see cref="SaveRequest.Save64Bit"/>,
+    /// which asks for the 32/64-bit layout to be chosen for the output rather
+    /// than copied from the archive being opened.</para>
+    ///
+    /// <para><b>Only in place.</b> That is the one case where the bytes already
+    /// exist to be compared against, and it is the case that produced a spurious
+    /// timestamped <c>.bak</c> of an unmodified archive and bumped its mtime for
+    /// no reason.</para>
+    /// </summary>
+    private static bool NothingToWrite(OpenFile file, SaveRequest request, string? wholeArchiveNote)
+    {
+        if (!string.IsNullOrWhiteSpace(request.TargetPath))
+            return false;                       // save as: a copy, not an in-place rewrite
+
+        if (wholeArchiveNote != null)
+            return false;                       // re-encrypting: the output is deliberately not the input
+
+        if (request.Save64Bit.HasValue)
+            return false;                       // asked for a specific output layout
+
+        return !file.Dirty && file.CountDirtyImages() == 0;
+    }
+
+    /// <summary>
+    /// The success result for a save that had nothing to do.
+    ///
+    /// <para>Same shape as every other save, deliberately: the HTTP endpoint hands
+    /// this straight back as JSON, the front end reads
+    /// <c>savedTo</c>/<c>bytes</c>/<c>imagesRewritten</c>/<c>warnings</c> off it,
+    /// and <c>MapEditorService</c> copies <c>SavedTo</c> and <c>BackupPath</c> into
+    /// its own DTOs. Adding a field would mean every one of them learns about a
+    /// concept none of them has; saying it in <see cref="SaveResult.Warnings"/>
+    /// means the existing warning channel carries it and every caller already
+    /// displays warnings.</para>
+    ///
+    /// <para><c>Bytes</c> reports the file's actual size rather than zero, because
+    /// a reader sizing the archive off it would otherwise conclude the archive is
+    /// empty. <c>SavedTo</c> is the existing file, since that is where the content
+    /// is and always was; <c>BackupPath</c> stays null because no backup was made,
+    /// and both it and the unchanged mtime are what callers use to tell whether a
+    /// file was replaced.</para>
+    /// </summary>
+    private SaveResult NoWritesNeeded(OpenFile file, SaveRequest request)
+    {
+        string path = Path.GetFullPath(request.TargetPath ?? file.FilePath);
+
+        long bytes = 0;
+        try { bytes = new FileInfo(path).Length; }
+        catch { /* the size is for the message only, and a missing file is the caller's problem */ }
+
+        _log.LogInformation(
+            "Save of {Name} was a no-op: nothing in the tree differs from {Path}, so no file was written",
+            file.Name, path);
+
+        return new SaveResult
+        {
+            FileId = file.Id,
+            SavedTo = path,
+            BackupPath = null,
+            ImagesRewritten = 0,
+            Bytes = bytes,
+            Warnings =
+            [
+                $"'{Path.GetFileName(path)}' was already up to date — nothing in it differs from what was " +
+                "open, so no file was written and no backup was made."
+            ],
+        };
     }
 
     /// <summary>
