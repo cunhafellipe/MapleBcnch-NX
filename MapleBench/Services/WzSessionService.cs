@@ -228,57 +228,30 @@ public sealed class WzSessionService : IDisposable
         if (!File.Exists(path))
             throw new FileNotFoundException($"File not found: {path}");
 
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+
+        // Format is decided by the file's own first four bytes, not by its name.
+        //
+        // The extension is a claim the user or a downloader makes; the magic is a fact
+        // about the content. A .wz that is actually a PKG4 would otherwise be handed to
+        // the encryption sniffer and produce a baffling "could not parse" for a file that
+        // parses fine, and a .nx named .wz would be refused as a List file. The check reads
+        // four bytes, so running it on every open costs nothing.
+        //
+        // It runs ahead of the gate because the NX branch it selects needs the gate for
+        // almost none of its work and needs it least for its 7.6 seconds; see
+        // OpenNx. For every other format it costs one small read that the gate used to
+        // wrap, and it changes nothing else about them.
+        if (Services.Nx.NxArchive.IsNxFile(path))
+        {
+            return OpenNx(request, path);
+        }
+
         lock (Gate)
         {
-            OpenFile? existing = _files.Values.FirstOrDefault(
-                f => string.Equals(f.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            OpenFile? existing = FindOpenFile(path);
             if (existing != null)
-            {
-                if (request.ReadOnly && !existing.ReadOnly)
-                {
-                    if (existing.Dirty || existing.CountDirtyImages() > 0)
-                    {
-                        throw new InvalidOperationException(
-                            $"'{existing.Name}' already has unsaved changes, so it cannot be reused as a " +
-                            "read-only import source. Save or close that copy first; nothing was changed.");
-                    }
-                    existing.ReadOnly = true;
-                }
-                return existing;
-            }
-
-            string extension = Path.GetExtension(path).ToLowerInvariant();
-
-            // Format is decided by the file's own first four bytes, not by its name.
-            //
-            // The extension is a claim the user or a downloader makes; the magic is a fact
-            // about the content. A .wz that is actually a PKG4 would otherwise be handed to
-            // the encryption sniffer and produce a baffling "could not parse" for a file that
-            // parses fine, and a .nx named .wz would be refused as a List file. The check reads
-            // four bytes, so running it on every open costs nothing.
-            //
-            // It runs after the already-open test, so reopening something the session already
-            // holds is still free and still cannot be refused, and before anything is allocated.
-            bool isNx = Services.Nx.NxArchive.IsNxFile(path);
-
-            if (isNx)
-            {
-                RefuseIfMemoryIsShortForNx(path);
-                OpenFile nxFile = OpenNxFile(path);
-
-                // Unlike a classic WZ import, an NX entry takes its editability from the
-                // request like any other archive. It used to be forced to read-only here
-                // because the save path ended in WzFile.SaveToDisk, which would have
-                // replaced the archive with classic WZ bytes; the NX writer in Services/Nx
-                // now handles it, so nothing here overrides the caller.
-                _files[nxFile.Id] = nxFile;
-                InvalidateResolution();
-                _log.LogInformation(
-                    "Opened {Name} (nx) as {Id}: {Images} images, {Nodes:N0} nodes, {Canvases:N0} canvases",
-                    nxFile.Name, nxFile.Id, nxFile.NxConversion?.Images ?? 0,
-                    nxFile.NxConversion?.Nodes ?? 0, nxFile.NxConversion?.Canvases ?? 0);
-                return nxFile;
-            }
+                return ReuseOpenFile(existing, request);
 
             RefuseIfMemoryIsShort(path, extension);
 
@@ -302,36 +275,94 @@ public sealed class WzSessionService : IDisposable
     }
 
     /// <summary>
-    /// Opens an NX (PKG4) archive and materialises it as a MapleLib tree.
+    /// The open entry for an exact path, or null. Caller holds <see cref="Gate"/>.
     /// </summary>
+    private OpenFile? FindOpenFile(string path)
+        => _files.Values.FirstOrDefault(f => string.Equals(f.FilePath, path, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Applies a repeat open of a path the session already holds. Caller holds
+    /// <see cref="Gate"/>.
+    /// </summary>
+    private OpenFile ReuseOpenFile(OpenFile existing, OpenRequest request)
+    {
+        if (request.ReadOnly && !existing.ReadOnly)
+        {
+            if (existing.Dirty || existing.CountDirtyImages() > 0)
+            {
+                throw new InvalidOperationException(
+                    $"'{existing.Name}' already has unsaved changes, so it cannot be reused as a " +
+                    "read-only import source. Save or close that copy first; nothing was changed.");
+            }
+            existing.ReadOnly = true;
+        }
+        return existing;
+    }
+
+    /// <summary>
+    /// Opens an NX (PKG4) archive, converting it outside the gate.
+    ///
     /// <remarks>
     /// <para>
-    /// The synthetic <see cref="WzFile"/> is what makes NX usable by the rest of the
-    /// application rather than only by the NX layer: the session, the tree endpoints, the
-    /// search grammar, the export and dump services and the map editor all walk
-    /// <c>WzFile</c>/<c>WzImage</c>/<c>WzImageProperty</c>, so giving them the shape they
-    /// already expect is what keeps them from needing to know NX exists at all.
+    /// This is the whole reason NX does not take <see cref="Gate"/> for its open. The
+    /// conversion builds every node in the archive as a real MapleLib object, and on this
+    /// machine <c>Character.nx</c> took 7.6 seconds that way — during which every request
+    /// that touches the session queued behind it: <c>/api/files</c>, <c>/api/changes</c>,
+    /// browsing any other open archive. None of that work touches the session's own state.
+    /// The archive's mapping and its synthetic tree are produced here, off-gate, and only
+    /// the registration is left inside.
     /// </para>
     /// <para>
-    /// No encryption is involved and none is guessed at. A .wz open spends most of its time
-    /// deciding which of GMS/EMS/BMS the key is and re-detecting on failure; an NX open has
-    /// nothing to decide, so that entire failure surface simply does not exist here.
+    /// The gate protects MapleLib objects that other requests can already reach. A tree
+    /// nobody holds a reference to is not one of those, which is why building it outside is
+    /// safe; it is registered, and so becomes reachable, only under the gate.
     /// </para>
     /// </remarks>
-    private OpenFile OpenNxFile(string path)
+    private OpenFile OpenNx(OpenRequest request, string path)
+    {
+        // Before anything expensive, and still off the gate: an open that is going to be
+        // refused must cost nothing but the refusal. This reads one small header.
+        RefuseIfMemoryIsShortForNx(path);
+
+        // Checked off-gate too, so that reopening an archive the session already holds stays
+        // free — it is what this test was before the split, and it stays first for that
+        // reason. A hit here is a hit under the gate too, because a path already registered
+        // cannot stop being registered; a miss is only a guess, which is why it is asked
+        // again below.
+        lock (Gate)
+        {
+            OpenFile? existing = FindOpenFile(path);
+            if (existing != null)
+                return ReuseOpenFile(existing, request);
+        }
+
+        // The 7.6 seconds. Off the gate, because nothing here touches the session: the
+        // mapping, the synthetic tree and the weak-table entries are all new objects that
+        // no other request can reach until they are registered.
+        NxConversionResult conversion = ConvertNx(path);
+
+        lock (Gate)
+        {
+            return RegisterNx(conversion, path, request);
+        }
+    }
+
+    /// <summary>
+    /// Maps an NX archive and materialises it as a MapleLib tree. Runs off the gate.
+    /// </summary>
+    /// <remarks>
+    /// The only shared state this touches is what it creates: a private mapping, a private
+    /// synthetic <see cref="WzFile"/>, and entries in the <c>NxNodeOrigin</c> and
+    /// <c>NxAudioBytes</c> weak tables, which are keyed by the objects being built and
+    /// therefore collectible once the loser of a race is disposed.
+    /// </remarks>
+    private static NxConversionResult ConvertNx(string path)
     {
         NxArchive? archive = null;
         try
         {
             archive = NxArchive.Open(path);
-            NxConversionResult conversion = NxToWzFile.Convert(archive);
-            string id = NextId();
-            return new OpenFile(id, Path.GetFileName(path), path, "nx")
-            {
-                WzFile = conversion.File,
-                NxSource = archive,
-                NxConversion = conversion,
-            };
+            return NxToWzFile.Convert(archive);
         }
         catch
         {
@@ -341,6 +372,55 @@ public sealed class WzSessionService : IDisposable
             archive?.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Registers a converted NX tree in the session. Caller holds <see cref="Gate"/>.
+    /// </summary>
+    /// <remarks>
+    /// The already-open test is repeated here rather than relied on from before the
+    /// conversion, because <see cref="ConvertNx"/> deliberately runs off-gate: between that
+    /// test and this one, a second request can open the same path and register it. This
+    /// open loses that race, and the tree it just built — a mapped archive plus a fully
+    /// materialised 5.6 GB of objects for <c>Character.nx</c> — must be disposed rather than
+    /// leaked, because nothing else holds it.
+    /// </remarks>
+    private OpenFile RegisterNx(NxConversionResult conversion, string path, OpenRequest request)
+    {
+        OpenFile? existing = FindOpenFile(path);
+        if (existing != null)
+        {
+            // This open lost the race described above. The tree it just built has to go, and
+            // going through the two owners in OpenFile.Dispose's order is what makes it safe:
+            // the synthetic tree is released first, the mapping second, because every canvas
+            // in that tree decodes by reading through it.
+            _log.LogInformation(
+                "Discarded a duplicate conversion of {Name}: another request opened it while " +
+                "this one was converting it.",
+                Path.GetFileName(path));
+            conversion.File.Dispose();
+            conversion.Archive.Dispose();
+            return ReuseOpenFile(existing, request);
+        }
+
+        // Unlike a classic WZ import, an NX entry takes its editability from the
+        // request like any other archive. It used to be forced to read-only here
+        // because the save path ended in WzFile.SaveToDisk, which would have
+        // replaced the archive with classic WZ bytes; the NX writer in Services/Nx
+        // now handles it, so nothing here overrides the caller.
+        OpenFile file = new(NextId(), Path.GetFileName(path), path, "nx")
+        {
+            WzFile = conversion.File,
+            NxSource = conversion.Archive,
+            NxConversion = conversion,
+        };
+
+        _files[file.Id] = file;
+        InvalidateResolution();
+        _log.LogInformation(
+            "Opened {Name} (nx) as {Id}: {Images} images, {Nodes:N0} nodes, {Canvases:N0} canvases",
+            file.Name, file.Id, conversion.Images, conversion.Nodes, conversion.Canvases);
+        return file;
     }
 
     /// <summary>
