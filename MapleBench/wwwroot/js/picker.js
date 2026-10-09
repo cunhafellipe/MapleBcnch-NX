@@ -1,5 +1,5 @@
 /**
- * File and folder picker for .wz, .ms and standalone .img files.
+ * File and folder picker for .wz, .ms, .nx and standalone .img files.
  *
  * The important behaviour: point it at a MapleStory folder and it opens every
  * archive in one go. Numbered siblings (Map.wz, Map001.wz, Map002.wz) are
@@ -140,7 +140,7 @@ export function openPicker(app, startPath) {
       if (!scan.groups.length && !scan.subdirectories.length) {
         list.append(el('div', {
           style: 'padding:28px;text-align:center;color:var(--text-3);font-size:var(--fs-13)',
-          text: 'No .wz, .ms or .img files or folders here.',
+          text: 'No .wz, .ms, .nx or .img files or folders here.',
         }));
       }
     } catch (error) {
@@ -158,7 +158,7 @@ export function openPicker(app, startPath) {
       el('span', { class: 'name', text: name }),
       meta ? el('span', { class: 'size', text: meta }) : null);
 
-  /** One archive family, or one standalone .img file. */
+  /** One archive family, or one standalone .img / .nx file. */
   const archiveRow = (group) => {
     const box = el('input', {
       type: 'checkbox',
@@ -187,6 +187,10 @@ export function openPicker(app, startPath) {
       box,
       icon(group.kind === 'img' ? 'image' : 'archive', { size: 16 }),
       el('span', { class: 'name', text: label }),
+      // NX rows say so. It opens read-only and is a different format from the classic
+      // archives either side of it, so a row that gave no hint would be asking the user to
+      // find out.
+      group.kind === 'nx' ? el('span', { class: 'size', text: 'NX · read-only' }) : null,
       el('span', { class: 'size', text: bytes(group.totalSize) }));
 
     return node;
@@ -377,14 +381,16 @@ export function openPicker(app, startPath) {
   manual.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || !manual.value.trim()) return;
     const value = manual.value.trim();
-    // A folder browses; a file opens.
-    if (/\.(wz|ms|img)$/i.test(value)) { dialog.close(); app.openPath(value); }
+    // A folder browses; a file opens. .nx is in here because the session opens it — the
+    // picker has to be able to reach every format Open can handle, or a working backend
+    // feature is still a feature nobody can use.
+    if (/\.(wz|ms|img|nx)$/i.test(value)) { dialog.close(); app.openPath(value); }
     else render(value);
   });
 
   const { dialog } = modal({
     title: 'Open client or archive',
-    subtitle: 'Choose a client folder, an archive family, a standalone .img, or mount an IMG folder.',
+    subtitle: 'Choose a client folder, an archive family, an .nx archive, a standalone .img, or mount an IMG folder.',
     width: 'min(94vw, 680px)',
     body: el('div', {}, pathBar, banner, list, summary, openImgFolder, headroom, native, manual),
     actions: [

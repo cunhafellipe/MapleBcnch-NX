@@ -1,6 +1,7 @@
-﻿using MapleLib.WzLib;
+using MapleLib.WzLib;
 using MapleBench.Models;
 using MapleLib.Img;
+using MapleBench.Services.Nx;
 
 namespace MapleBench.Services;
 
@@ -18,8 +19,38 @@ public sealed class OpenFile : IDisposable
     /// <summary>Absolute path the file was loaded from.</summary>
     public string FilePath { get; set; }
 
-    /// <summary>"wz", "ms", "img", "img-folder", or "split".</summary>
+    /// <summary>"wz", "ms", "img", "img-folder", "nx", or "split".</summary>
     public string Kind { get; }
+
+    /// <summary>
+    /// Set only for <c>Kind == "nx"</c>: the mapped NX archive the tree was built from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An NX entry's <see cref="WzFile"/> is synthetic — MapleLib objects built from the NX
+    /// node tree, not a parsed .wz — and every canvas in it is only a <em>reference</em> back
+    /// into this object. Its pixels are decoded on demand straight out of the memory-mapped
+    /// file, so disposing the tree without disposing this first would leave every canvas in
+    /// the session pointing at an unmapped address. The order in <see cref="Dispose"/> is the
+    /// whole reason this field exists.
+    /// </para>
+    /// <para>
+    /// Holding the mapping is also what makes an NX open cheap. <c>Map.nx</c> is 679 MB and
+    /// <c>Character.nx</c> 195 MB; neither is read into the heap, only mapped.
+    /// </para>
+    /// </remarks>
+    public NxArchive? NxSource { get; set; }
+
+    /// <summary>
+    /// What the NX conversion produced. Null for every other kind.
+    /// </summary>
+    /// <remarks>
+    /// Kept because one of its numbers is not recoverable any other way.
+    /// <see cref="NxConversionResult.TypeCollapsed"/> counts the numeric nodes NX could not
+    /// declare a width for, and that is the honest answer to "will this archive round-trip back
+    /// to .wz without losing types" — it cannot, and this is by how much.
+    /// </remarks>
+    public NxConversionResult? NxConversion { get; set; }
 
     /// <summary>
     /// Set only for <c>Kind == "split"</c>: the merged tree's backing files.
@@ -249,6 +280,15 @@ public sealed class OpenFile : IDisposable
         {
             WzFile?.Dispose();
         }
+
+        // The mapping goes last, and always. An NX canvas decodes its pixels by reading
+        // through NxSource, so tearing the mapping down while the tree is still reachable
+        // would turn every later decode into an access violation rather than a message. The
+        // tree is already disposed above; this releases the last thing anything in it can
+        // still reach.
+        NxSource?.Dispose();
+        NxSource = null;
+
         FolderRoot?.Dispose();
         ImgFolderManager?.Dispose();
         LooseImage?.Dispose();

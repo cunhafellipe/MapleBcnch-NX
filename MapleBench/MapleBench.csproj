@@ -39,6 +39,8 @@
          runtime it needs ships with Windows 10/11; DesktopShell falls back to
          the browser when it is missing. -->
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3124.44" />
+    <PackageReference Include="SkiaSharp" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.0" />
   </ItemGroup>
 
   <!-- The WebView2 package hands every .NET 5+ project three assemblies: Core,

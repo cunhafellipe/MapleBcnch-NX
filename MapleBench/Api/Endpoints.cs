@@ -1,4 +1,4 @@
-﻿using MapleBench.Models;
+using MapleBench.Models;
 using MapleBench.Services;
 
 namespace MapleBench.Api;
@@ -124,6 +124,17 @@ public static class Endpoints
             lock (session.Gate)
             {
                 OpenFile file = session.GetFile(id);
+
+                // An NX entry is read-only because the format has no in-place write path,
+                // not because a setting happens to be on. Letting it be unlocked would
+                // promise an editing mode that the save path cannot honour, so the refusal
+                // lives here rather than only in the menu that used to offer the toggle.
+                if (file.Kind == "nx" && !request.ReadOnly)
+                {
+                    throw new InvalidOperationException(
+                        $"'{file.Name}' is an NX archive and stays reference-only. It can be saved to a new " +
+                        "path as an NX copy, but there is no in-place write for the format yet.");
+                }
 
                 if (file.Kind == "img-folder" && !request.ReadOnly)
                 {
@@ -555,24 +566,42 @@ public static class Endpoints
         foreach (string file in SafeEnumerate(() => Directory.EnumerateFiles(full)))
         {
             string extension = Path.GetExtension(file).ToLowerInvariant();
-            if (extension is not (".wz" or ".ms" or ".img"))
+
+            // .nx is here because the session opens it. The picker's whole job is to list
+            // what Open can open, and leaving NX out of it made a working feature
+            // unreachable from the only interface a user has.
+            if (extension is not (".wz" or ".ms" or ".img" or ".nx"))
                 continue;
             long size = 0;
             try { size = new FileInfo(file).Length; } catch { /* unreadable; still list it */ }
-            openable.Add((file, Path.GetFileName(file), size, extension == ".img"));
+
+            // Standalone rows: a loose .img, and an .nx. An NX archive is one whole file
+            // with no numbered siblings, so it is never a family — and folding Base.nx into
+            // the same row as Base.wz would offer the user a checkbox that silently means
+            // two different formats depending on which one happened to be scanned.
+            bool standalone = extension is ".img" or ".nx";
+            openable.Add((file, Path.GetFileName(file), size, standalone));
         }
 
         // "Map001.wz" and "Map.wz" belong to the same family. A loose image is
         // not an archive part, even when its stem resembles an archive name.
         var groups = openable
+            // A standalone file gets its own row keyed by its full name. The prefix is
+            // neutral because the standalone kinds are not only .img any more, and an .nx
+            // row labelled "img:" would be wrong the moment anyone read the attribute.
             .GroupBy(a => a.LooseImage
-                         ? "img:" + a.Name
+                         ? "file:" + a.Name
                          : WzSessionService.StripArchiveSuffix(Path.GetFileNameWithoutExtension(a.Name)),
                      StringComparer.OrdinalIgnoreCase)
             .Select(g => new
             {
                 family = g.Key,
-                kind = g.All(a => a.LooseImage) ? "img" : "archive",
+                // "nx" is its own kind so the picker can say what a row is. It is not an
+                // archive family and not a loose image, and labelling it either would put a
+                // claim on the row the file does not support.
+                kind = g.All(a => a.LooseImage)
+                       ? (g.Any(a => a.Name.EndsWith(".nx", StringComparison.OrdinalIgnoreCase)) ? "nx" : "img")
+                       : "archive",
                 totalSize = g.Sum(a => a.Size),
                 files = g.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
                          .Select(a => new { a.Path, a.Name, a.Size })

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using MapleLib.WzLib;
 using MapleLib.WzLib.MSFile;
@@ -7,6 +7,7 @@ using MapleLib.WzLib.Util;
 using MapleLib.WzLib.WzProperties;
 using MapleBench.Models;
 using MapleLib.Img;
+using MapleBench.Services.Nx;
 
 namespace MapleBench.Services;
 
@@ -248,9 +249,42 @@ public sealed class WzSessionService : IDisposable
 
             string extension = Path.GetExtension(path).ToLowerInvariant();
 
-            // After the "already open" check above, so re-opening something the
-            // session already holds costs nothing and can never be refused, and
-            // before anything is allocated.
+            // Format is decided by the file's own first four bytes, not by its name.
+            //
+            // The extension is a claim the user or a downloader makes; the magic is a fact
+            // about the content. A .wz that is actually a PKG4 would otherwise be handed to
+            // the encryption sniffer and produce a baffling "could not parse" for a file that
+            // parses fine, and a .nx named .wz would be refused as a List file. The check reads
+            // four bytes, so running it on every open costs nothing.
+            //
+            // It runs after the already-open test, so reopening something the session already
+            // holds is still free and still cannot be refused, and before anything is allocated.
+            bool isNx = Services.Nx.NxArchive.IsNxFile(path);
+
+            if (isNx)
+            {
+                RefuseIfMemoryIsShortForNx(path);
+                OpenFile nxFile = OpenNxFile(path);
+
+                // NX opens read-only, always, and this is not a politeness setting.
+                //
+                // There is no NX writer yet. Every save path in this application ends in
+                // WzFile.SaveToDisk, which writes classic .wz bytes — so saving an NX entry
+                // would replace a valid 679 MB archive with a truncated WZ file of whatever
+                // the in-memory tree happened to hold. Read-only is the only thing standing
+                // between "browse the client's NX data" and "destroy it", so it is forced here
+                // rather than left to the request.
+                nxFile.ReadOnly = true;
+
+                _files[nxFile.Id] = nxFile;
+                InvalidateResolution();
+                _log.LogInformation(
+                    "Opened {Name} (nx) as {Id}: {Images} images, {Nodes:N0} nodes, {Canvases:N0} canvases",
+                    nxFile.Name, nxFile.Id, nxFile.NxConversion?.Images ?? 0,
+                    nxFile.NxConversion?.Nodes ?? 0, nxFile.NxConversion?.Canvases ?? 0);
+                return nxFile;
+            }
+
             RefuseIfMemoryIsShort(path, extension);
 
             OpenFile file = extension switch
@@ -270,6 +304,94 @@ public sealed class WzSessionService : IDisposable
             _log.LogInformation("Opened {Name} ({Kind}) as {Id}", file.Name, file.Kind, file.Id);
             return file;
         }
+    }
+
+    /// <summary>
+    /// Opens an NX (PKG4) archive and materialises it as a MapleLib tree.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The synthetic <see cref="WzFile"/> is what makes NX usable by the rest of the
+    /// application rather than only by the NX layer: the session, the tree endpoints, the
+    /// search grammar, the export and dump services and the map editor all walk
+    /// <c>WzFile</c>/<c>WzImage</c>/<c>WzImageProperty</c>, so giving them the shape they
+    /// already expect is what keeps them from needing to know NX exists at all.
+    /// </para>
+    /// <para>
+    /// No encryption is involved and none is guessed at. A .wz open spends most of its time
+    /// deciding which of GMS/EMS/BMS the key is and re-detecting on failure; an NX open has
+    /// nothing to decide, so that entire failure surface simply does not exist here.
+    /// </para>
+    /// </remarks>
+    private OpenFile OpenNxFile(string path)
+    {
+        NxArchive? archive = null;
+        try
+        {
+            archive = NxArchive.Open(path);
+            NxConversionResult conversion = NxToWzFile.Convert(archive);
+            string id = NextId();
+            return new OpenFile(id, Path.GetFileName(path), path, "nx")
+            {
+                WzFile = conversion.File,
+                NxSource = archive,
+                NxConversion = conversion,
+            };
+        }
+        catch
+        {
+            // The archive owns a mapping and a set of allocated objects. Letting either leak
+            // because a later step threw is exactly how a session ends up holding a gigabyte
+            // of a file nobody can open any more.
+            archive?.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Refuses an NX open the machine has no room to materialise.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// NX is the one open in this application that is neither lazy nor bounded by the file's
+    /// own size in any comfortable way. Mapping is cheap, but converting is not: the tree is
+    /// built as real MapleLib objects, and because an NX archive is a directed acyclic graph
+    /// rather than a tree, a node reachable by several paths becomes several objects.
+    /// <c>Character.nx</c> holds 3.6 million nodes and materialises 10.9 million of them.
+    /// </para>
+    /// <para>
+    /// So the floor is derived from the file rather than guessed at: twice the archive's size,
+    /// on top of a small fixed margin. A .wz's own parse is more frugal than this, which is
+    /// why the shared floor is not reused — reusing it would let an NX open start a
+    /// conversion that cannot finish.
+    /// </para>
+    /// </remarks>
+    private void RefuseIfMemoryIsShortForNx(string path)
+    {
+        long free = FreeMemoryBytes();
+        if (free < 0)
+        {
+            return;
+        }
+
+        long size;
+        try { size = new FileInfo(path).Length; }
+        catch (IOException) { return; }
+
+        long needed = size * 2 + MinimumFreeBytesToOpen;
+        if (free >= needed)
+        {
+            return;
+        }
+
+        long freeMB = free / (1024 * 1024);
+        long neededMB = needed / (1024 * 1024);
+        long sizeMB = size / (1024 * 1024);
+        throw new InvalidOperationException(
+            $"Not enough memory to open '{Path.GetFileName(path)}' ({sizeMB} MB): converting it needs " +
+            $"about {neededMB} MB and this machine has {freeMB} MB free. An NX archive is turned into " +
+            $"a full in-memory tree on open, so it needs several times its own size. Close archives you " +
+            $"are not using and try again. Nothing was opened and nothing was changed.");
     }
 
     /// <summary>

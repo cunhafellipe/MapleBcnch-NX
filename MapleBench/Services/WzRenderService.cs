@@ -1,7 +1,8 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Drawing.Imaging;
 using MapleLib.WzLib;
 using MapleLib.WzLib.WzProperties;
+using MapleBench.Services.Nx;
 
 namespace MapleBench.Services;
 
@@ -201,11 +202,11 @@ public sealed class WzRenderService
             switch (node)
             {
                 case WzCanvasProperty canvas:
-                    return canvas.GetLinkedWzCanvasBitmap();
+                    return CanvasBitmap(canvas);
                 case WzPngProperty png:
-                    return png.GetImage(false);
+                    return PngBitmap(png);
                 case WzUOLProperty uol when uol.LinkValue is WzCanvasProperty linked:
-                    return linked.GetLinkedWzCanvasBitmap();
+                    return CanvasBitmap(linked);
                 default:
                     return null;
             }
@@ -215,6 +216,33 @@ public sealed class WzRenderService
             _log.LogWarning(ex, "Could not decode canvas '{Name}'", node.Name);
             return null;
         }
+    }
+
+    /// <summary>
+    /// The bitmap behind a canvas, from whichever source that canvas came from.
+    /// </summary>
+    /// <remarks>
+    /// Both halves have to be covered. An NX canvas carries its pixels in
+    /// <c>NxPngProperty.GetBitmap()</c>, which MapleLib's own accessor never reaches — the
+    /// virtual it goes through is <c>GetBitmap()</c>, and the direct
+    /// <c>GetImage(bool)</c> below would try to inflate WZ bytes that do not exist. And a WZ
+    /// canvas must keep going through MapleLib, which knows how to follow an <c>_inlink</c>.
+    /// One branch here covers every canvas this service renders.
+    /// </remarks>
+    private static Bitmap CanvasBitmap(WzCanvasProperty canvas)
+    {
+        WzCanvasProperty? target = canvas.GetLinkedWzImageProperty() as WzCanvasProperty ?? canvas;
+        return target.PngProperty is { } png ? PngBitmap(png) : canvas.GetLinkedWzCanvasBitmap();
+    }
+
+    private static Bitmap PngBitmap(WzPngProperty png)
+    {
+        if (png is NxPngProperty nx)
+        {
+            return nx.GetBitmap();
+        }
+
+        return png.GetImage(false);
     }
 
     /// <summary>Raw audio bytes plus the extension MapleLib reports for them.</summary>

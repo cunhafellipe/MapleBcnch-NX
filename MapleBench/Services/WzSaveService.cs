@@ -1,10 +1,11 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using MapleLib.MapleCryptoLib;
 using MapleLib.WzLib;
 using MapleLib.WzLib.Serializer;
 using MapleLib.WzLib.Util;
 using MapleLib.WzLib.WzProperties;
 using MapleBench.Models;
+using MapleBench.Services.Nx;
 
 namespace MapleBench.Services;
 
@@ -33,6 +34,118 @@ public sealed class SaveResult
 /// </summary>
 public sealed class WzSaveService
 {
+    /// <summary>
+    /// Writes an NX entry out to a new path.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deliberately narrow. It requires a target path, so it can only ever produce a new
+    /// archive; it refuses to write over the source; and it leaves the entry read-only. A user
+    /// who wants to replace their client data does it outside the app, with their own backup.
+    /// </para>
+    /// <para>
+    /// The write is staged: bytes go to a sibling <c>.partial</c>, that file is read back with
+    /// the NX reader, and only a file that opens and reports the expected node count is moved
+    /// into place. The writer has been verified across a sixteen-archive corpus, but
+    /// "verified" is not "cannot fail", and this is the last moment a bad file is still free
+    /// to discard.
+    /// </para>
+    /// </remarks>
+    private SaveResult SaveNxAsCopy(OpenFile file, SaveRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.TargetPath))
+        {
+            throw new InvalidOperationException(
+                $"'{file.Name}' is an NX archive and is only ever written to a new path. Choose a " +
+                "target path; the file it was opened from is never overwritten from here.");
+        }
+
+        if (file.WzFile is null)
+        {
+            throw new InvalidOperationException(
+                $"'{file.Name}' has no loaded tree, so there is nothing to write. Close it and open it again.");
+        }
+
+        string target = Path.GetFullPath(request.TargetPath);
+        if (!target.EndsWith(".nx", StringComparison.OrdinalIgnoreCase))
+        {
+            target += ".nx";
+        }
+
+        string source = Path.GetFullPath(file.FilePath);
+        if (string.Equals(target, source, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The target path is the file '{file.Name}' was opened from. Writing an NX archive back " +
+                "over itself is not offered; choose a different path. Nothing was written.");
+        }
+
+        string? directory = Path.GetDirectoryName(target);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        byte[] bytes = NxWriter.Write(file.WzFile, out NxWriteReport report);
+
+        string scratch = target + ".partial";
+        try
+        {
+            File.WriteAllBytes(scratch, bytes);
+
+            using (var check = NxArchive.Open(scratch))
+            {
+                if (check.NodeCount != report.Nodes)
+                {
+                    throw new InvalidOperationException(
+                        $"The NX file written for '{Path.GetFileName(target)}' did not read back with the " +
+                        $"expected node count ({check.NodeCount} of {report.Nodes}). It was discarded and " +
+                        "the destination was not touched.");
+                }
+            }
+
+            File.Move(scratch, target, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(scratch); }
+            catch (IOException) { /* the scratch file is not the user's data */ }
+            throw;
+        }
+
+        _log.LogInformation(
+            "Wrote NX copy of {Name} to {Target}: {Nodes:N0} nodes, {Strings:N0} strings, " +
+            "{Canvases:N0} canvases, {Audio:N0} audio, {Widened:N0} values widened, {EncodingErrors} encode errors",
+            file.Name, target, report.Nodes, report.Strings, report.Canvases, report.Audio,
+            report.TypeWidened, report.EncodingErrors);
+
+        List<string> notes = [];
+        if (report.TypeWidened > 0)
+        {
+            notes.Add(
+                $"NX stores one 64-bit integer and one 64-bit float, so {report.TypeWidened:N0} values " +
+                "were widened from a narrower WZ type.");
+        }
+
+        // No note about the copy being larger, because there is nothing to add. When the tree
+        // came from NX, any expansion from shared subtrees already happened while it was being
+        // converted into MapleLib objects, and this write is faithful to what it was handed —
+        // measured on both an archive that shares nothing and one that shares 21,263 nodes, the
+        // copy is always exactly what the conversion produced. The byte count below is the
+        // honest statement of size, and the conversion log already records the node counts.
+        notes.Add(
+            $"Wrote an NX copy ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes). " +
+            "The file it was opened from was not modified.");
+
+        return new SaveResult
+        {
+            FileId = file.Id,
+            SavedTo = target,
+            Bytes = bytes.Length,
+            Warnings = notes,
+        };
+    }
+
     /// <summary>
     /// The one prefix every scratch file this service writes carries.
     ///
@@ -155,6 +268,29 @@ public sealed class WzSaveService
                     $"'{file.Name}' is a mounted IMG folder, not one destination file. It stays reference-only " +
                     "because the current save transaction cannot verify and replace every changed .img as one " +
                     "all-or-nothing operation.");
+            }
+
+            // An NX entry takes a different route entirely, and only ever to a NEW path.
+            //
+            // Everything below in this service ends in WzFile.SaveToDisk, which writes classic
+            // .wz bytes. An NX entry's tree is synthetic and its source is a PKG4 file, so
+            // letting any of that reach a write would replace a valid archive with WZ bytes,
+            // and nothing would notice until the next open failed. That is why this branch
+            // comes before every other check.
+            //
+            // Refusing outright would waste a capability that is finished and verified: the
+            // tree round-trips through the NX writer with every one of sixteen archives
+            // comparing equal. So an NX entry is written through NxWriter instead, and only
+            // when a target path is given.
+            //
+            // That condition is the whole safety argument. Save-as cannot destroy an existing
+            // archive, and the writer still has costs a user should opt into knowingly: a
+            // shared-subtree archive expands several-fold because MapleLib gives every
+            // property one parent, and a canvas the user edited is re-encoded rather than
+            // copied. Writing over the original would make both silent and un-undoable.
+            if (file.Kind == "nx")
+            {
+                return SaveNxAsCopy(file, request);
             }
 
             // Read-only was enforced on every edit but not on the save itself, so

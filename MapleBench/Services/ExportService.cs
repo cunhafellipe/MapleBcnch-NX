@@ -1,9 +1,10 @@
-﻿using System.IO.Compression;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using MapleLib.WzLib;
 using MapleLib.WzLib.Serializer;
 using MapleLib.WzLib.WzProperties;
+using MapleBench.Services.Nx;
 
 namespace MapleBench.Services;
 
@@ -71,7 +72,12 @@ public sealed class ExportService
             }
 
             WzSessionService.EnsureParsed(image);
-            byte[] data = new WzImgSerializer().SerializeImage(image);
+
+            // An NX-backed tree needs arranging before it can be written: its canvases have to be
+            // given WZ-compressed payloads, and its images have to be marked changed so
+            // MapleLib re-serialises them instead of copying bytes out of a reader they do
+            // not have. Neither is a no-op for a real .wz, so this stays on the common path.
+            byte[] data = NxWzExport.SerializeImageAsWz(image);
             if (data.Length == 0)
                 throw new InvalidOperationException("The image serialised to zero bytes, so no download was made.");
 
