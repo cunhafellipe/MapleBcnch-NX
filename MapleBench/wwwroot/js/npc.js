@@ -24,6 +24,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, debounce, runOnce,
          statChip, statRow } from './ui.js';
 import { emptyState } from './inspector.js';
@@ -73,6 +74,10 @@ const ROUNDING = [
  * this Npc.wz actually carries. Chosen from a sweep of a v232 client rather than
  * guessed: these are the numeric keys that appear on enough NPCs for a bulk edit
  * to mean anything.
+ *
+ * The label is translated where the row is built, not here: a t() at module
+ * scope would run once at import and freeze the label in whatever language was
+ * active then, so switching language later would leave this list in English.
  */
 const FALLBACK_BULK_FIELDS = [
   { key: 'hideName', label: 'Hide name tag', kind: 'Flag' },
@@ -339,10 +344,10 @@ export class NpcSection {
     return el('div', { class: 'npc-panel npc-loading' },
       el('div', { class: 'busy-bar' }),
       el('div', { class: 'npc-loading-text' },
-        el('b', { text: 'Reading the NPCs…' }),
+        el('b', { text: t('Reading the NPCs…') }),
         el('span', {
-          text: ' A full Npc.wz is 10,742 images and takes about four seconds the first time. ' +
-                'After that it is instant until something changes.',
+          text: t(' A full Npc.wz is 10,742 images and takes about four seconds the first time. ' +
+                'After that it is instant until something changes.'),
         })),
       rows);
   }
@@ -368,9 +373,9 @@ export class NpcSection {
 
     const head = el('div', { class: 'npc-panel npc-head' },
       el('div', { class: 'npc-head-text' },
-        el('div', { class: 'npc-head-title', text: 'NPCs' }),
+        el('div', { class: 'npc-head-title', text: t('NPCs') }),
         el('div', { class: 'npc-head-sub' },
-          el('span', { text: 'Editing ' }),
+          el('span', { text: t('Editing ') }),
           el('b', { text: subject }),
           el('span', {
             text: this.stats
@@ -431,7 +436,7 @@ export class NpcSection {
   buildToolbar() {
     const search = el('input', {
       type: 'search', value: this.query,
-      placeholder: 'Search by NPC ID, name, job line or script…',
+      placeholder: t('Search by NPC ID, name, job line or script…'),
       'aria-label': 'Search NPCs',
     });
     // Only the results are re-rendered, never the toolbar holding this input:
@@ -469,12 +474,12 @@ export class NpcSection {
         sort),
       this.buildSelectionBar(),
       this.capabilities.names ? null : el('div', { class: 'npc-note' }, icon('info', { size: 14 }),
-        el('span', { text: 'String.wz is not open, so NPCs have no names, no job lines and no chat text here. ' +
-                           'Open it and every card fills in.' })),
+        el('span', { text: t('String.wz is not open, so NPCs have no names, no job lines and no chat text here. ' +
+                           'Open it and every card fills in.') })),
       this.truncated
         ? el('div', { class: 'npc-note' }, icon('alert', { size: 14 }),
-            el('span', { text: 'The archive holds more NPCs than one listing returns, so this is a partial list. ' +
-                               'Scope to a single archive, or search, to be sure you are seeing everything.' }))
+            el('span', { text: t('The archive holds more NPCs than one listing returns, so this is a partial list. ' +
+                               'Scope to a single archive, or search, to be sure you are seeing everything.') }))
         : null);
   }
 
@@ -558,8 +563,8 @@ export class NpcSection {
               : 'String.wz is not open, so NPCs have no names here — search by ID or script instead.')
           : 'Every NPC in this archive is filtered out. Switch back to All.',
         this.query
-          ? el('button', { class: 'btn', text: 'Clear search', onclick: () => { this.query = ''; this.render(); } })
-          : el('button', { class: 'btn', text: 'Show all NPCs', onclick: () => { this.filter = 'all'; this.render(); } })));
+          ? el('button', { class: 'btn', text: t('Clear search'), onclick: () => { this.query = ''; this.render(); } })
+          : el('button', { class: 'btn', text: t('Show all NPCs'), onclick: () => { this.filter = 'all'; this.render(); } })));
     } else {
       const grid = el('div', { class: 'npc-grid' });
       for (const npc of slice) grid.append(this.buildCard(npc));
@@ -590,18 +595,18 @@ export class NpcSection {
     });
 
     const badges = el('div', { class: 'npc-badges' },
-      npc.isShop ? el('span', { class: 'npc-badge', 'data-kind': 'shop', text: 'Shop' }) : null,
-      npc.isStorage ? el('span', { class: 'npc-badge', 'data-kind': 'storage', text: 'Storage' }) : null,
-      npc.isTrunk ? el('span', { class: 'npc-badge', 'data-kind': 'storage', text: 'Trunk' }) : null,
-      npc.hasScript ? el('span', { class: 'npc-badge', 'data-kind': 'script', text: 'Scripted' }) : null,
-      npc.hideName ? el('span', { class: 'npc-badge', 'data-kind': 'hidden', text: 'Name hidden' }) : null,
-      npc.linkTarget ? el('span', { class: 'npc-badge', 'data-kind': 'link', text: 'Linked' }) : null,
+      npc.isShop ? el('span', { class: 'npc-badge', 'data-kind': 'shop', text: t('Shop') }) : null,
+      npc.isStorage ? el('span', { class: 'npc-badge', 'data-kind': 'storage', text: t('Storage') }) : null,
+      npc.isTrunk ? el('span', { class: 'npc-badge', 'data-kind': 'storage', text: t('Trunk') }) : null,
+      npc.hasScript ? el('span', { class: 'npc-badge', 'data-kind': 'script', text: t('Scripted') }) : null,
+      npc.hideName ? el('span', { class: 'npc-badge', 'data-kind': 'hidden', text: t('Name hidden') }) : null,
+      npc.linkTarget ? el('span', { class: 'npc-badge', 'data-kind': 'link', text: t('Linked') }) : null,
       // Only claimable when String.wz is open; otherwise nothing has a name and
       // the badge would be on all 10,742 cards.
       this.capabilities.names && !npc.name
-        ? el('span', { class: 'npc-badge', 'data-kind': 'nameless', text: 'No name' })
+        ? el('span', { class: 'npc-badge', 'data-kind': 'nameless', text: t('No name') })
         : null,
-      npc.dirty ? el('span', { class: 'npc-badge', 'data-kind': 'dirty', text: 'Unsaved' }) : null);
+      npc.dirty ? el('span', { class: 'npc-badge', 'data-kind': 'dirty', text: t('Unsaved') }) : null);
 
     const stat = (key, value, tone) => el('div', { class: 'npc-row' },
       el('span', { class: 'k', text: key }),
@@ -685,7 +690,7 @@ export class NpcSection {
   /** Shared by the card overflow and the app-wide right-click menu. */
   menuItemsFor(npc) {
     return [
-      { icon: 'edit', label: 'Edit fields…', run: () => this.openNpcCard(npc) },
+      { icon: 'edit', label: t('Edit fields…'), run: () => this.openNpcCard(npc) },
       { icon: 'copy', label: `Copy NPC ID ${npc.npcId}`, run: () => this.app.copyText(String(npc.npcId)) },
       npc.script
         ? { icon: 'copy', label: `Copy script name ${npc.script}`, run: () => this.app.copyText(npc.script) }
@@ -693,7 +698,7 @@ export class NpcSection {
       npc.linkTarget
         ? { icon: 'externalLink', label: `Open the linked NPC ${npc.linkTarget}`, run: () => this.openLinked(npc.linkTarget) }
         : null,
-      { icon: 'externalLink', label: 'Show in Explorer', run: () => this.showInExplorer(npc.path) },
+      { icon: 'externalLink', label: t('Show in Explorer'), run: () => this.showInExplorer(npc.path) },
     ].filter(Boolean);
   }
 
@@ -714,7 +719,7 @@ export class NpcSection {
     // left alone.
     const go = (page) => { this.page = page; this.renderResults(); this.host.scrollTo({ top: 0 }); };
 
-    pager.append(el('button', { text: '‹ Previous', disabled: this.page === 1, onclick: () => go(this.page - 1) }));
+    pager.append(el('button', { text: t('‹ Previous'), disabled: this.page === 1, onclick: () => go(this.page - 1) }));
 
     const numbers = new Set([1, pages, this.page, this.page - 1, this.page + 1]);
     let previous = 0;
@@ -726,7 +731,7 @@ export class NpcSection {
       previous = page;
     }
 
-    pager.append(el('button', { text: 'Next ›', disabled: this.page === pages, onclick: () => go(this.page + 1) }));
+    pager.append(el('button', { text: t('Next ›'), disabled: this.page === pages, onclick: () => go(this.page + 1) }));
     return pager;
   }
 
@@ -792,7 +797,7 @@ export class NpcSection {
 
     /* --- the parts that must survive a repaint --- */
     const search = el('input', {
-      type: 'search', placeholder: 'Find a field by name…', 'aria-label': 'Find a field',
+      type: 'search', placeholder: t('Find a field by name…'), 'aria-label': 'Find a field',
     });
     search.addEventListener('input', debounce(() => {
       ctx.search = search.value;
@@ -885,7 +890,7 @@ export class NpcSection {
       subtitle: ctx.npc.path.split('/').slice(1).join('/'),
       width: 'min(96vw, 880px)',
       body,
-      actions: [{ label: 'Done' }],
+      actions: [{ label: t('Done') }],
     });
     // Handed to the head and the warning strips, both of which are painted
     // before the dialog that owns them exists.
@@ -909,7 +914,7 @@ export class NpcSection {
         el('div', { class: 'npc-detail-name', text: name || `NPC ${detail.npcId}` }),
         el('div', { class: 'npc-sub', text: `ID ${detail.npcId}` }),
         detail.func ? el('div', { class: 'npc-func', text: detail.func }) : null),
-      detail.dirty ? el('span', { class: 'npc-badge', 'data-kind': 'dirty', text: 'Unsaved' }) : null,
+      detail.dirty ? el('span', { class: 'npc-badge', 'data-kind': 'dirty', text: t('Unsaved') }) : null,
       el('span', { style: 'margin-left:auto' }),
       // The String.wz entry is a second archive and a second place to edit, so
       // it gets its own way in rather than being buried in a warning.
@@ -1037,7 +1042,7 @@ export class NpcSection {
       // "(was X)" inline, so a changed value carries its own history and does
       // not need a diff view to be readable.
       changed ? el('span', { class: 'npc-was', text: `was ${was === '' ? 'empty' : was}` }) : null,
-      !field.present ? el('span', { class: 'npc-absent-tag', text: 'not set' }) : null,
+      !field.present ? el('span', { class: 'npc-absent-tag', text: t('not set') }) : null,
       // The raw type, because this archive stores hideName as an Int on some
       // NPCs and a String on others, and which one you are looking at decides
       // what you can safely type into it.
@@ -1113,7 +1118,7 @@ export class NpcSection {
     }
     if (!field.present) {
       row.append(el('div', { class: 'npc-field-hint',
-        text: 'This NPC does not have this field. Setting a value creates it.' }));
+        text: t('This NPC does not have this field. Setting a value creates it.') }));
     }
     return row;
   }
@@ -1175,7 +1180,7 @@ export class NpcSection {
 
     return el('details', { class: 'npc-section', open: true },
       el('summary', {},
-        el('span', { class: 'npc-section-name', text: 'Script bindings' }),
+        el('span', { class: 'npc-section-name', text: t('Script bindings') }),
         el('span', { class: 'npc-section-meta',
           text: `${scripts.length} entr${scripts.length === 1 ? 'y' : 'ies'} · the handler the server runs` })),
       list);
@@ -1209,7 +1214,7 @@ export class NpcSection {
                 : 'String.wz is not open, so this line cannot be resolved.' }),
           el('div', { class: 'npc-binding-extra' },
             el('span', { class: 'npc-key-chip', text: line.key ?? 'no key' }),
-            el('span', { text: ' in String.wz' }))),
+            el('span', { text: t(' in String.wz') }))),
         // Two ways in, because they are two different edits: the WZ node
         // decides *which* line is shown, the String.wz entry holds the words.
         el('button', {
@@ -1226,7 +1231,7 @@ export class NpcSection {
 
     return el('details', { class: 'npc-section', open: true },
       el('summary', {},
-        el('span', { class: 'npc-section-name', text: 'Chat lines' }),
+        el('span', { class: 'npc-section-name', text: t('Chat lines') }),
         el('span', { class: 'npc-section-meta',
           text: `${lines.length} line${lines.length === 1 ? '' : 's'} · the text lives in String.wz` })),
       list,
@@ -1349,7 +1354,7 @@ export class NpcSection {
     } catch {
       /* fall through to the safe list rather than blocking the dialog */
     }
-    return FALLBACK_BULK_FIELDS.map((f) => ({ ...f, label: f.label }));
+    return FALLBACK_BULK_FIELDS.map((f) => ({ ...f, label: t(f.label) }));
   }
 
   async buildBulkDialog() {
@@ -1411,8 +1416,8 @@ export class NpcSection {
       clear(previewHost);
       previewHost.append(el('div', { class: 'npc-preview-empty' },
         icon('info', { size: 15 }),
-        el('span', { text: 'Preview a change to see the exact before and after for every NPC. ' +
-                           'Nothing is written until then.' })));
+        el('span', { text: t('Preview a change to see the exact before and after for every NPC. ' +
+                           'Nothing is written until then.') })));
     };
     fieldSelect.addEventListener('change', () => { paintOps(); invalidate(); });
     for (const control of [opSelect, roundSelect]) {
@@ -1439,7 +1444,7 @@ export class NpcSection {
         return;
       }
       clear(previewHost);
-      previewHost.append(el('div', { class: 'npc-preview-empty' }, el('span', { text: 'Working…' })));
+      previewHost.append(el('div', { class: 'npc-preview-empty' }, el('span', { text: t('Working…') })));
       try {
         const result = await api.npcBulk({ ...body, dryRun: true });
         preview = result;
@@ -1461,7 +1466,7 @@ export class NpcSection {
     }));
 
     const { close } = modal({
-      title: 'Bulk edit NPCs',
+      title: t('Bulk edit NPCs'),
       subtitle: `${fmt.format(paths.length)} NPC${paths.length === 1 ? '' : 's'} selected`,
       width: 'min(96vw, 900px)',
       body: el('div', { class: 'npc-bulk' },
@@ -1473,14 +1478,14 @@ export class NpcSection {
         el('div', { class: 'npc-bulk-actions' }, previewButton, applyButton),
         previewHost,
         el('div', { class: 'tips' },
-          el('b', { text: 'How this behaves' }),
+          el('b', { text: t('How this behaves') }),
           el('ul', {},
-            el('li', { text: 'Preview runs against the server, so what you see is exactly what would be written.' }),
-            el('li', { text: 'An NPC without the field is skipped, with the reason shown — it is never created here. ' +
-                             'Add it from the NPC card first.' }),
-            el('li', { text: 'A field that holds a group of values — script, speak — is skipped and says so.' }),
-            el('li', { text: 'Nothing reaches disk until you save, and the whole batch can be undone.' })))),
-      actions: [{ label: 'Close' }],
+            el('li', { text: t('Preview runs against the server, so what you see is exactly what would be written.') }),
+            el('li', { text: t('An NPC without the field is skipped, with the reason shown — it is never created here. ' +
+                             'Add it from the NPC card first.') }),
+            el('li', { text: t('A field that holds a group of values — script, speak — is skipped and says so.') }),
+            el('li', { text: t('Nothing reaches disk until you save, and the whole batch can be undone.') })))),
+      actions: [{ label: t('Close') }],
     });
 
     applyButton.addEventListener('click', () => this.guard('bulk-apply', async () => {
@@ -1490,7 +1495,7 @@ export class NpcSection {
         title: `Change ${fieldSelect.value} on ${fmt.format(changing.length)} NPC${changing.length === 1 ? '' : 's'}?`,
         message: `${OPS.find(([v]) => v === opSelect.value)?.[1]} ${valueInput.value} — this is the preview you ` +
                  'are looking at. Nothing is written to disk until you save, and you can undo it.',
-        confirmLabel: 'Apply the changes',
+        confirmLabel: t('Apply the changes'),
         danger: false,
       });
       if (!ok) return;
@@ -1503,7 +1508,7 @@ export class NpcSection {
           `Updated ${fmt.format(result.applied ?? 0)} NPC${result.applied === 1 ? '' : 's'}` +
           (skipped ? `, skipped ${fmt.format(skipped)}.` : '.'),
           'success', {
-            action: { label: 'Undo', run: async () => { await this.app.undo(); await this.load(); } },
+            action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.load(); } },
           });
         this.app.markDirty();
         await this.load();

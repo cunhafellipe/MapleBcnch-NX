@@ -6,6 +6,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, debounce, runOnce,
          busyPanel, busyWhile, statChip, statRow, scalePixelArt, motionIn, motionOut } from './ui.js';
 import { emptyState } from './inspector.js';
@@ -96,7 +97,7 @@ export class CashShop {
           `${this.duplicateSerials.length} serial number${this.duplicateSerials.length === 1 ? ' is' : 's are'} used by more than one item: ` +
           `${this.duplicateSerials.slice(0, 6).join(', ')}${this.duplicateSerials.length > 6 ? '…' : ''}. ` +
           'Duplicate SNs make items unbuyable in-game.',
-          'warning', { title: 'Duplicate serial numbers' });
+          'warning', { title: t('Duplicate serial numbers') });
       }
     } catch (error) {
       this.loading = false;
@@ -137,7 +138,7 @@ export class CashShop {
     // here would be a claim about data that has not arrived.
     if (this.loading && !this.items.length) {
       this.host.append(busyPanel({
-        title: 'Reading the cash shop…',
+        title: t('Reading the cash shop…'),
         note: 'Commodity.img plus the item names out of String.wz — a second or two, '
             + 'and instant afterwards.',
       }));
@@ -189,7 +190,7 @@ export class CashShop {
         this.query ? `No items match "${this.query}"` : 'Nothing in this category',
         this.query ? 'Try an item ID, a serial number, or part of a name.' : 'Add an item to get started.',
         this.query
-          ? el('button', { class: 'btn', text: 'Clear search', onclick: () => { this.query = ''; this.render(); } })
+          ? el('button', { class: 'btn', text: t('Clear search'), onclick: () => { this.query = ''; this.render(); } })
           : el('button', { class: 'btn btn-primary', onclick: () => this.openItemDialog() }, icon('plus', { size: 15 }), 'Add item')));
     } else {
       panel.append(this.view === 'grid' ? this.buildGrid(slice) : this.buildTable(slice));
@@ -215,7 +216,7 @@ export class CashShop {
   buildCategories() {
     const panel = el('div', { class: 'shop-panel' });
     panel.append(el('div', { class: 'shop-panel-title' },
-      el('span', { text: 'Categories' }),
+      el('span', { text: t('Categories') }),
       this.subCategory
         ? el('span', {
             style: 'margin-left:auto;color:var(--blue-ink);font-weight:600;text-transform:none;letter-spacing:0',
@@ -262,7 +263,7 @@ export class CashShop {
   buildToolbar() {
     const search = el('input', {
       type: 'search', value: this.query,
-      placeholder: 'Search by item ID, serial, or name…',
+      placeholder: t('Search by item ID, serial, or name…'),
       'aria-label': 'Search items',
     });
     // Only the results are re-rendered, never the toolbar holding this input.
@@ -286,7 +287,7 @@ export class CashShop {
         el('div', { class: 'shop-search' }, el('span', { class: 'icon' }, icon('search', { size: 15 })), search),
         el('button', {
           class: 'btn',
-          text: 'On sale only',
+          text: t('On sale only'),
           'aria-pressed': this.onSaleOnly ? 'true' : 'false',
           onclick: () => { this.onSaleOnly = !this.onSaleOnly; this.page = 1; this.render(); },
         }),
@@ -327,12 +328,12 @@ export class CashShop {
         el('span', { class: `pill ${item.onSale ? 'pill-sale' : 'pill-off'}`, text: item.onSale ? 'On sale' : 'Off' })),
       el('div', { class: 'item-row' }, el('span', { class: 'k', text: '$' }),
         el('span', { class: 'v', text: `${fmt.format(item.price)} NX` })),
-      el('div', { class: 'item-row' }, el('span', { class: 'k', text: 'Count' }),
+      el('div', { class: 'item-row' }, el('span', { class: 'k', text: t('Count') }),
         el('span', { class: 'v', text: fmt.format(item.count) })),
       item.period > 0
         ? el('div', { class: 'item-row', 'data-tone': 'warn' }, `${item.period} days only`)
-        : el('div', { class: 'item-row' }, el('span', { class: 'k', text: 'Duration' }),
-            el('span', { class: 'v', text: 'Permanent' })),
+        : el('div', { class: 'item-row' }, el('span', { class: 'k', text: t('Duration') }),
+            el('span', { class: 'v', text: t('Permanent') })),
       el('div', { class: 'item-actions' },
         el('button', { class: 'btn btn-sm', style: 'flex:1', onclick: () => this.openItemDialog(item) },
           icon('edit', { size: 14 }), 'Edit'),
@@ -342,8 +343,8 @@ export class CashShop {
             event.stopPropagation();
             const rect = event.currentTarget.getBoundingClientRect();
             this.app.showMenu([
-              { icon: 'copy', label: 'Duplicate with a new serial', run: () => this.clone(item) },
-              { icon: 'trash', label: 'Delete item', danger: true, run: () => this.remove(item) },
+              { icon: 'copy', label: t('Duplicate with a new serial'), run: () => this.clone(item) },
+              { icon: 'trash', label: t('Delete item'), danger: true, run: () => this.remove(item) },
             ], rect.left, rect.bottom + 4);
           },
         }, icon('more', { size: 15 }))));
@@ -369,7 +370,7 @@ export class CashShop {
     if (!anchor.isConnected) return;
     const rect = anchor.getBoundingClientRect();
     const node = el('div', { class: 'item-popover' },
-      el('div', { class: 'cap', text: 'Preview' }),
+      el('div', { class: 'cap', text: t('Preview') }),
       el('div', { class: 'stage checker' }, (() => {
         const big = el('img', { alt: '' });
         big.addEventListener('load', () => scalePixelArt(big, 168, 112));
@@ -430,7 +431,7 @@ export class CashShop {
     // are left alone.
     const go = (page) => { this.page = page; this.renderResults(); this.host.scrollTo({ top: 0 }); };
 
-    pager.append(el('button', { text: '‹ Previous', disabled: this.page === 1, onclick: () => go(this.page - 1) }));
+    pager.append(el('button', { text: t('‹ Previous'), disabled: this.page === 1, onclick: () => go(this.page - 1) }));
 
     const numbers = new Set([1, pages, this.page, this.page - 1, this.page + 1]);
     let previous = 0;
@@ -442,7 +443,7 @@ export class CashShop {
       previous = page;
     }
 
-    pager.append(el('button', { text: 'Next ›', disabled: this.page === pages, onclick: () => go(this.page + 1) }));
+    pager.append(el('button', { text: t('Next ›'), disabled: this.page === pages, onclick: () => go(this.page + 1) }));
     return pager;
   }
 
@@ -466,10 +467,10 @@ export class CashShop {
   remove(item) {
     return this.guard(`remove:${item.key}`, async () => {
       const ok = await confirmDialog({
-        title: 'Delete this cash shop item?',
+        title: t('Delete this cash shop item?'),
         message: `Item ${item.itemId} (SN ${item.sn}) will be removed from Commodity.img. ` +
                  'Nothing is written to disk until you save, and you can undo this.',
-        confirmLabel: 'Delete item',
+        confirmLabel: t('Delete item'),
       });
       if (!ok) return;
 
@@ -478,7 +479,7 @@ export class CashShop {
         toast('Item deleted.', 'success', {
           // The undo restores the entry server-side; without the reload the grid
           // kept showing it as gone.
-          action: { label: 'Undo', run: async () => { await this.app.undo(); await this.load(); } },
+          action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.load(); } },
         });
         this.app.markDirty();
         await this.load();
@@ -523,14 +524,14 @@ export class CashShop {
 
     const form = el('form', { id: 'shop-item-form' },
       el('div', { class: 'form-grid' },
-        field('itemId', 'Item ID *', existing?.itemId, { type: 'number', placeholder: 'e.g. 5000000' }),
-        field('sn', 'Serial (SN) *', defaultSn, { type: 'number', placeholder: 'e.g. 10000001' }),
+        field('itemId', 'Item ID *', existing?.itemId, { type: 'number', placeholder: t('e.g. 5000000') }),
+        field('sn', 'Serial (SN) *', defaultSn, { type: 'number', placeholder: t('e.g. 10000001') }),
         field('price', 'Price (NX)', existing?.price ?? 0, { type: 'number' }),
         field('count', 'Count', existing?.count ?? 1, { type: 'number' }),
         field('period', 'Period (days)', existing?.period ?? 0, { type: 'number', hint: '0 = permanent' }),
         field('bonus', 'Bonus', existing?.bonus ?? 0, { type: 'number' }),
         field('priority', 'Priority', existing?.priority ?? 0, { type: 'number' }),
-        el('div', { class: 'field' }, el('label', { text: 'Gender' }), genderSelect)),
+        el('div', { class: 'field' }, el('label', { text: t('Gender') }), genderSelect)),
 
       el('div', { style: 'display:flex;gap:20px;margin:14px 0' },
         el('label', { class: 'check-row' },
@@ -541,7 +542,7 @@ export class CashShop {
       el('details', {},
         el('summary', {
           style: 'cursor:pointer;color:var(--coral-ink);font-weight:600;font-size:var(--fs-13);margin-bottom:10px',
-          text: 'Advanced settings',
+          text: t('Advanced settings'),
         }),
         el('div', { class: 'form-grid' },
           field('reqPop', 'Required fame', existing?.reqPop ?? 0, { type: 'number' }),
@@ -556,7 +557,7 @@ export class CashShop {
       width: '520px',
       body: form,
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
           label: editing ? 'Save item' : 'Add item',
           class: 'btn-primary',
@@ -590,10 +591,10 @@ export class CashShop {
     const clash = this.items.find((i) => i.sn === sn && i.key !== existing?.key);
     if (clash) {
       const ok = await confirmDialog({
-        title: 'That serial number is already used',
+        title: t('That serial number is already used'),
         message: `SN ${sn} already belongs to item ${clash.itemId}. Two entries sharing a serial ` +
                  'usually makes both unbuyable in-game. Use it anyway?',
-        confirmLabel: 'Use it anyway',
+        confirmLabel: t('Use it anyway'),
       });
       if (!ok) return;
     }
@@ -705,25 +706,25 @@ export class CashShop {
     const content = el('div', {}, table,
       el('div', { style: 'margin-top:12px' },
         el('button', {
-          class: 'btn', type: 'button', text: 'Add 5 more rows',
+          class: 'btn', type: 'button', text: t('Add 5 more rows'),
           onclick: () => { for (let i = 0; i < 5; i++) addRow(); },
         })),
       el('div', { class: 'tips' },
-        el('b', { text: 'Tips' }),
+        el('b', { text: t('Tips') }),
         el('ul', {},
-          el('li', { text: 'Only rows with both an Item ID and a Serial are added; blank rows are ignored.' }),
-          el('li', { text: 'Serials are pre-filled with the next free numbers — change them if you need to.' }),
-          el('li', { text: 'Use the duplicate button to copy a row you have already filled in.' }),
-          el('li', { text: 'Paste a column straight from a spreadsheet into the first Item ID cell.' }))));
+          el('li', { text: t('Only rows with both an Item ID and a Serial are added; blank rows are ignored.') }),
+          el('li', { text: t('Serials are pre-filled with the next free numbers — change them if you need to.') }),
+          el('li', { text: t('Use the duplicate button to copy a row you have already filled in.') }),
+          el('li', { text: t('Paste a column straight from a spreadsheet into the first Item ID cell.') }))));
 
     modal({
-      title: 'Bulk add items',
+      title: t('Bulk add items'),
       width: 'min(96vw, 1180px)',
       body: content,
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
-          label: 'Add all items',
+          label: t('Add all items'),
           class: 'btn-primary',
           run: (close) => { this.submitBulk(body, close); return false; },
         },
@@ -763,7 +764,7 @@ export class CashShop {
         title: `${taken.length} serial${taken.length === 1 ? ' is' : 's are'} already in use`,
         message: `${taken.map((r) => r.sn).slice(0, 8).join(', ')} already belong to items in this shop. ` +
                  'Two entries sharing a serial usually makes both unbuyable in-game. Add them anyway?',
-        confirmLabel: 'Add them anyway',
+        confirmLabel: t('Add them anyway'),
       });
       if (!ok) return;
     }

@@ -21,6 +21,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, promptForText, debounce, runOnce,
          scalePixelArt, statChip, statRow } from './ui.js';
 import { emptyState } from './inspector.js';
@@ -362,9 +363,9 @@ export class SkillSection {
 
     const head = el('div', { class: 'sk-panel sk-head' },
       el('div', { class: 'sk-head-text' },
-        el('div', { class: 'sk-head-title', text: 'Skills' }),
+        el('div', { class: 'sk-head-title', text: t('Skills') }),
         el('div', { class: 'sk-head-sub' },
-          el('span', { text: 'Editing ' }),
+          el('span', { text: t('Editing ') }),
           el('b', { text: subject }),
           el('span', {
             text: this.stats
@@ -374,7 +375,7 @@ export class SkillSection {
           }),
           this.capabilities.names
             ? null
-            : el('span', { class: 'sk-head-warn', text: ' · String.wz is not open, so skills have no names' }))));
+            : el('span', { class: 'sk-head-warn', text: t(' · String.wz is not open, so skills have no names') }))));
 
     // The picker only earns its place when there is a real choice to make.
     if (candidates.length > 1) {
@@ -485,8 +486,8 @@ export class SkillSection {
       this.buildSelectionBar(),
       this.truncated
         ? el('div', { class: 'sk-note' }, icon('alert', { size: 14 }),
-            el('span', { text: 'The archive holds more skills than one listing returns, so this is a partial ' +
-                               'list. Pick a single book, or search, to be sure you are seeing everything.' }))
+            el('span', { text: t('The archive holds more skills than one listing returns, so this is a partial ' +
+                               'list. Pick a single book, or search, to be sure you are seeing everything.') }))
         : null);
   }
 
@@ -532,8 +533,8 @@ export class SkillSection {
 
     if (this.loading) {
       panel.append(el('div', { class: 'sk-result-head' },
-        el('span', { text: 'Reading every skill book…' }),
-        el('span', { text: 'about 8 seconds the first time, instant after that' })));
+        el('span', { text: t('Reading every skill book…') }),
+        el('span', { text: t('about 8 seconds the first time, instant after that') })));
       for (let i = 0; i < 6; i++) {
         panel.append(el('div', { class: 'skeleton skeleton-row', style: `width:${45 + ((i * 37) % 40)}%` }));
       }
@@ -578,8 +579,8 @@ export class SkillSection {
             ? 'Every formula in this archive parsed cleanly. That is the good outcome.'
             : 'Every skill here is filtered out. Switch back to All.',
         this.query
-          ? el('button', { class: 'btn', text: 'Clear search', onclick: () => { this.query = ''; this.render(); } })
-          : el('button', { class: 'btn', text: 'Show all skills',
+          ? el('button', { class: 'btn', text: t('Clear search'), onclick: () => { this.query = ''; this.render(); } })
+          : el('button', { class: 'btn', text: t('Show all skills'),
               onclick: () => { this.filter = 'all'; localStorage.setItem('mb.skillFilter', 'all'); this.render(); } })));
     } else {
       const grid = el('div', { class: 'sk-grid' });
@@ -619,9 +620,9 @@ export class SkillSection {
             text: `${fmt.format(skill.badFormulas)} broken`,
           })
         : null,
-      skill.passive ? el('span', { class: 'sk-badge', 'data-kind': 'passive', text: 'Passive' }) : null,
-      skill.invisible ? el('span', { class: 'sk-badge', 'data-kind': 'hidden', text: 'Hidden' }) : null,
-      skill.dirty ? el('span', { class: 'sk-badge', 'data-kind': 'dirty', text: 'Unsaved' }) : null);
+      skill.passive ? el('span', { class: 'sk-badge', 'data-kind': 'passive', text: t('Passive') }) : null,
+      skill.invisible ? el('span', { class: 'sk-badge', 'data-kind': 'hidden', text: t('Hidden') }) : null,
+      skill.dirty ? el('span', { class: 'sk-badge', 'data-kind': 'dirty', text: t('Unsaved') }) : null);
 
     // A formula is shown as the expression it is, in mono. Rounding it into a
     // number would be inventing a level to show it at.
@@ -654,7 +655,7 @@ export class SkillSection {
       expression(`MP cost${stored}`, skill.mpCon),
       expression(`Cooldown${stored}`, skill.cooltime),
       el('div', { class: 'sk-row' },
-        el('span', { class: 'k', text: 'Stored levels' }),
+        el('span', { class: 'k', text: t('Stored levels') }),
         el('span', { class: 'v', text: skill.levelCount
           ? `${fmt.format(skill.levelCount)} node${skill.levelCount === 1 ? '' : 's'}`
           : 'none — computed' })),
@@ -677,12 +678,12 @@ export class SkillSection {
   /** Shared by the card overflow and the app-wide right-click menu. */
   menuItemsFor(skill) {
     return [
-      { icon: 'grid4', label: 'Open the level table…', run: () => this.openSkillCard(skill) },
+      { icon: 'grid4', label: t('Open the level table…'), run: () => this.openSkillCard(skill) },
       skill.storage === 'formula' || skill.storage === 'mixed'
-        ? { icon: 'sliders', label: 'Bake the formulas into levels…', run: () => this.openSkillCard(skill, { bake: true }) }
+        ? { icon: 'sliders', label: t('Bake the formulas into levels…'), run: () => this.openSkillCard(skill, { bake: true }) }
         : null,
       { icon: 'copy', label: `Copy skill ID ${skill.skillId}`, run: () => this.app.copyText(String(skill.skillId)) },
-      { icon: 'externalLink', label: 'Show in Explorer', run: () => {
+      { icon: 'externalLink', label: t('Show in Explorer'), run: () => {
         this.app.setMode('explorer');
         this.app.navigate(skill.path);
       } },
@@ -701,7 +702,7 @@ export class SkillSection {
     // left alone.
     const go = (page) => { this.page = page; this.renderResults(); this.host.scrollTo({ top: 0 }); };
 
-    pager.append(el('button', { text: '‹ Previous', disabled: this.page === 1, onclick: () => go(this.page - 1) }));
+    pager.append(el('button', { text: t('‹ Previous'), disabled: this.page === 1, onclick: () => go(this.page - 1) }));
 
     const numbers = new Set([1, pages, this.page, this.page - 1, this.page + 1]);
     let previous = 0;
@@ -713,7 +714,7 @@ export class SkillSection {
       previous = page;
     }
 
-    pager.append(el('button', { text: 'Next ›', disabled: this.page === pages, onclick: () => go(this.page + 1) }));
+    pager.append(el('button', { text: t('Next ›'), disabled: this.page === pages, onclick: () => go(this.page + 1) }));
     return pager;
   }
 
@@ -797,7 +798,7 @@ export class SkillSection {
       subtitle: `${ctx.detail.bookName || `Book ${ctx.detail.bookId}`} · ${ctx.detail.path.split('/').slice(1).join('/')}`,
       width: 'min(97vw, 1180px)',
       body,
-      actions: [{ label: 'Done' }],
+      actions: [{ label: t('Done') }],
     });
     // Handed to the head and the strips, all of which are painted before the
     // dialog that owns them exists.
@@ -862,7 +863,7 @@ export class SkillSection {
     return el('div', { class: 'sk-trap' },
       icon('alert', { size: 16 }),
       el('div', { class: 'sk-trap-text' },
-        el('b', { text: 'The client reads the formulas, not the level nodes. ' }),
+        el('b', { text: t('The client reads the formulas, not the level nodes. ') }),
         el('span', { text: ctx.detail.warning })),
       el('button', {
         class: 'btn btn-sm',
@@ -974,7 +975,7 @@ export class SkillSection {
     // the panel.
     details.append(...[
       el('summary', {},
-        el('span', { class: 'sk-section-name', text: 'Formulas' }),
+        el('span', { class: 'sk-section-name', text: t('Formulas') }),
         el('span', { class: 'sk-section-meta',
           text: `${columns.length} entr${columns.length === 1 ? 'y' : 'ies'} in common · x is the level` }),
         bad
@@ -988,8 +989,8 @@ export class SkillSection {
               '(u rounds up, d rounds down). Editing one here changes every level at once.' }),
       ctx.detail.hasPvpCommon
         ? el('div', { class: 'sk-hint',
-            text: 'This skill also has a PVPcommon block with its own formulas. It is not shown or ' +
-                  'touched here — open it in the Explorer.' })
+            text: t('This skill also has a PVPcommon block with its own formulas. It is not shown or ' +
+                  'touched here — open it in the Explorer.') })
         : null,
     ].filter(Boolean));
     return details;
@@ -1004,17 +1005,17 @@ export class SkillSection {
       el('code', { class: 'sk-key', text: column.key }),
       column.unit ? el('span', { class: 'sk-unit', text: column.unit }) : null,
       column.source === 'constant'
-        ? el('span', { class: 'sk-tag', 'data-tone': 'flat', text: 'same at every level' })
+        ? el('span', { class: 'sk-tag', 'data-tone': 'flat', text: t('same at every level') })
         : null,
       column.source === 'container'
-        ? el('span', { class: 'sk-tag', 'data-tone': 'flat', text: 'a group of values' })
+        ? el('span', { class: 'sk-tag', 'data-tone': 'flat', text: t('a group of values') })
         : null));
 
     if (!editable) {
       row.append(el('code', { class: 'sk-formula-static', text: column.formula ?? '' }));
       row.append(el('div', { class: 'sk-hint',
-        text: 'This holds a group of values rather than one expression. Open it in the Explorer to edit ' +
-              'what is inside it.' }));
+        text: t('This holds a group of values rather than one expression. Open it in the Explorer to edit ' +
+              'what is inside it.') }));
       return row;
     }
 
@@ -1063,7 +1064,7 @@ export class SkillSection {
         // table below, and maxLevel decides how many rows there are.
         await ctx.reload();
         toast(`${column.label || column.key} is now ${value || 'empty'} for every level.`, 'success', {
-          action: { label: 'Undo', run: async () => { await this.app.undo(); await this.refresh(); } },
+          action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.refresh(); } },
         });
       } catch (error) {
         revert?.();
@@ -1085,7 +1086,7 @@ export class SkillSection {
 
     if (!d.columns.length || !d.levels.length) {
       section.append(el('div', { class: 'sk-section-bar' },
-        el('span', { class: 'sk-section-name', text: 'Levels' })));
+        el('span', { class: 'sk-section-name', text: t('Levels') })));
       section.append(emptyState(
         'grid4', 'This skill has no levels',
         'Nothing declares a maxLevel and there are no level nodes, so there is no table to draw. ' +
@@ -1102,7 +1103,7 @@ export class SkillSection {
     const slice = d.levels.slice((ctx.levelPage - 1) * LEVEL_PAGE, ctx.levelPage * LEVEL_PAGE);
 
     const jump = el('input', {
-      class: 'sk-input sk-jump', type: 'number', min: '1', placeholder: 'Level…',
+      class: 'sk-input sk-jump', type: 'number', min: '1', placeholder: t('Level…'),
       'aria-label': 'Jump to a level',
     });
     jump.addEventListener('keydown', (event) => {
@@ -1116,7 +1117,7 @@ export class SkillSection {
     });
 
     section.append(el('div', { class: 'sk-section-bar' },
-      el('span', { class: 'sk-section-name', text: 'Levels' }),
+      el('span', { class: 'sk-section-name', text: t('Levels') }),
       el('span', { class: 'sk-section-meta',
         text: `${fmt.format(d.levels.length)} row${d.levels.length === 1 ? '' : 's'} · ` +
               `${fmt.format(d.columns.length)} field${d.columns.length === 1 ? '' : 's'}` +
@@ -1140,7 +1141,7 @@ export class SkillSection {
     if (pages > 1) {
       const pager = el('div', { class: 'pager' });
       const go = (page) => { ctx.levelPage = page; this.repaintTable(ctx); };
-      pager.append(el('button', { text: '‹ Previous', disabled: ctx.levelPage === 1, onclick: () => go(ctx.levelPage - 1) }));
+      pager.append(el('button', { text: t('‹ Previous'), disabled: ctx.levelPage === 1, onclick: () => go(ctx.levelPage - 1) }));
       const numbers = new Set([1, pages, ctx.levelPage, ctx.levelPage - 1, ctx.levelPage + 1]);
       let previous = 0;
       for (const page of [...numbers].filter((p) => p >= 1 && p <= pages).sort((a, b) => a - b)) {
@@ -1153,7 +1154,7 @@ export class SkillSection {
         }));
         previous = page;
       }
-      pager.append(el('button', { text: 'Next ›', disabled: ctx.levelPage === pages, onclick: () => go(ctx.levelPage + 1) }));
+      pager.append(el('button', { text: t('Next ›'), disabled: ctx.levelPage === pages, onclick: () => go(ctx.levelPage + 1) }));
       section.append(pager);
     }
 
@@ -1185,7 +1186,7 @@ export class SkillSection {
     const columns = ctx.detail.columns;
 
     const head = el('tr', {},
-      el('th', { class: 'sk-th-level', text: 'Level' }),
+      el('th', { class: 'sk-th-level', text: t('Level') }),
       columns.map((column) => el('th', { 'data-source': column.source },
         el('span', { class: 'sk-th-label', text: column.label || column.key }),
         // The raw key under the label: a write has to match that spelling, and
@@ -1350,7 +1351,7 @@ export class SkillSection {
           toast(
             `Written to level/${row.level}/${column.key} — but this skill still has a common block, so the ` +
             'client will keep computing this value from the formula and ignore what you just wrote.',
-            'warning', { title: 'Saved, but the client will not read it' });
+            'warning', { title: t('Saved, but the client will not read it') });
         }
       } catch (error) {
         revert?.();
@@ -1379,7 +1380,7 @@ export class SkillSection {
       row.present
         ? { icon: 'trash', label: `Remove level ${level}`, run: () => this.removeLevel(ctx, level) }
         : null,
-      { icon: 'externalLink', label: 'Show this level in Explorer', run: () => {
+      { icon: 'externalLink', label: t('Show this level in Explorer'), run: () => {
         ctx.close?.();
         this.app.setMode('explorer');
         this.app.navigate(row.path);
@@ -1399,9 +1400,9 @@ export class SkillSection {
   async cloneLevel(ctx, from) {
     const answer = await promptForText({
       title: `Copy level ${from}`,
-      message: 'Which level number should the copy become? It has to be a level that does not exist yet.',
+      message: t('Which level number should the copy become? It has to be a level that does not exist yet.'),
       value: String(from + 1),
-      confirmLabel: 'Copy the level',
+      confirmLabel: t('Copy the level'),
     });
     if (!answer) return;
     const level = Number(answer);
@@ -1412,9 +1413,9 @@ export class SkillSection {
   async renameLevel(ctx, level) {
     const answer = await promptForText({
       title: `Renumber level ${level}`,
-      message: 'What should this level become? The target has to be free.',
+      message: t('What should this level become? The target has to be free.'),
       value: String(level + 1),
-      confirmLabel: 'Renumber',
+      confirmLabel: t('Renumber'),
     });
     if (!answer) return;
     const to = Number(answer);
@@ -1427,7 +1428,7 @@ export class SkillSection {
       title: `Remove level ${level}?`,
       message: `Everything stored under level/${level} goes with it. Nothing reaches disk until you save, ` +
                'and this is one Ctrl+Z.',
-      confirmLabel: 'Remove the level',
+      confirmLabel: t('Remove the level'),
     });
     if (!ok) return;
     return this.levelOp(ctx, { op: 'remove', level }, `Removed level ${level}`);
@@ -1441,7 +1442,7 @@ export class SkillSection {
         this.app.markDirty();
         await ctx.reload(next);
         toast(success, 'success', {
-          action: { label: 'Undo', run: async () => { await this.app.undo(); await this.refresh(); } },
+          action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.refresh(); } },
         });
       } catch (error) {
         toastError(error, 'Could not change that level');
@@ -1460,7 +1461,7 @@ export class SkillSection {
 
     const details = el('details', { class: 'sk-section' });
     details.append(el('summary', {},
-      el('span', { class: 'sk-section-name', text: 'Skill-wide fields' }),
+      el('span', { class: 'sk-section-name', text: t('Skill-wide fields') }),
       el('span', { class: 'sk-section-meta',
         text: groups.reduce((total, group) => total + group.fields.length, 0) + ' fields outside the level table' })));
 
@@ -1485,7 +1486,7 @@ export class SkillSection {
       // the edge to be visible with a reason beside it.
       row.append(el('div', { class: 'sk-field-static', text: field.value ?? '—' }));
       row.append(el('div', { class: 'sk-hint' },
-        el('span', { text: 'A group of values — ' }),
+        el('span', { text: t('A group of values — ') }),
         el('button', {
           class: 'sk-link',
           onclick: () => { ctx.close?.(); this.app.setMode('explorer'); this.app.navigate(field.path); },
@@ -1614,8 +1615,8 @@ export class SkillSection {
       clear(previewHost);
       previewHost.append(el('div', { class: 'sk-preview-empty' },
         icon('info', { size: 15 }),
-        el('span', { text: 'Preview to see every node this would create and everything it would delete. ' +
-                           'Nothing is written until then.' })));
+        el('span', { text: t('Preview to see every node this would create and everything it would delete. ' +
+                           'Nothing is written until then.') })));
     };
     levelsInput.addEventListener('input', invalidate);
     for (const box of [overwrite, removeCommon]) {
@@ -1632,7 +1633,7 @@ export class SkillSection {
 
     previewButton.addEventListener('click', () => this.guard('bake-preview', async () => {
       clear(previewHost);
-      previewHost.append(el('div', { class: 'sk-preview-empty' }, el('span', { text: 'Working…' })));
+      previewHost.append(el('div', { class: 'sk-preview-empty' }, el('span', { text: t('Working…') })));
       try {
         const result = await api.skillExpandCommon({ ...recipe(), dryRun: true });
         preview = result;
@@ -1658,35 +1659,35 @@ export class SkillSection {
     }));
 
     const { close } = modal({
-      title: 'Bake the formulas into explicit levels',
+      title: t('Bake the formulas into explicit levels'),
       subtitle: d.name || `Skill ${d.skillId}`,
       width: 'min(96vw, 940px)',
       body: el('div', { class: 'sk-bake' },
         el('p', { class: 'sk-bake-lede',
-          text: 'Every formula in this skill\'s common block is evaluated at every level and written as a ' +
+          text: t('Every formula in this skill\'s common block is evaluated at every level and written as a ' +
                 'real level/N node. After this the values are stored, editable one level at a time, and ' +
-                'independent of each other — which is what you want if levels should stop following one curve.' }),
+                'independent of each other — which is what you want if levels should stop following one curve.') }),
         el('div', { class: 'sk-bake-grid' },
           bakeField('Levels to write', levelsInput,
             `The skill declares ${d.maxLevel ?? 'no'} level${d.maxLevel === 1 ? '' : 's'}. Fewer writes fewer rows; the rest are lost when the block goes.`),
           bakeField('Replace values that already exist',
-            el('label', { class: 'sk-check' }, overwrite, el('span', { text: 'Overwrite' })),
+            el('label', { class: 'sk-check' }, overwrite, el('span', { text: t('Overwrite') })),
             'Off, a level that already holds a literal value is left alone and listed as skipped.'),
           bakeField('Delete the common block afterwards',
-            el('label', { class: 'sk-check' }, removeCommon, el('span', { text: 'Delete it' })),
+            el('label', { class: 'sk-check' }, removeCommon, el('span', { text: t('Delete it') })),
             null)),
         removeWarn,
         el('div', { class: 'sk-bake-actions' }, previewButton, applyButton),
         previewHost,
         el('div', { class: 'tips' },
-          el('b', { text: 'How this behaves' }),
+          el('b', { text: t('How this behaves') }),
           el('ul', {},
-            el('li', { text: 'The preview runs against the server, so what you see is exactly what would be written.' }),
-            el('li', { text: 'A formula that cannot be parsed is skipped with its error — never written as 0.' }),
-            el('li', { text: 'The whole bake is one undo step, however many nodes it creates.' }),
-            el('li', { text: 'A PVPcommon block, if there is one, is left alone.' }),
-            el('li', { text: 'Nothing reaches disk until you save.' })))),
-      actions: [{ label: 'Close' }],
+            el('li', { text: t('The preview runs against the server, so what you see is exactly what would be written.') }),
+            el('li', { text: t('A formula that cannot be parsed is skipped with its error — never written as 0.') }),
+            el('li', { text: t('The whole bake is one undo step, however many nodes it creates.') }),
+            el('li', { text: t('A PVPcommon block, if there is one, is left alone.') }),
+            el('li', { text: t('Nothing reaches disk until you save.') })))),
+      actions: [{ label: t('Close') }],
     });
 
     applyButton.addEventListener('click', () => this.guard('bake-apply', async () => {
@@ -1717,12 +1718,12 @@ export class SkillSection {
           (result.removedCommon ? ', and removed the common block' : '') +
           (skipped ? `. Skipped ${fmt.format(skipped)} — see the preview for why.` : '.'),
           'success', {
-            action: { label: 'Undo', run: async () => { await this.app.undo(); await this.refresh(); } },
+            action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.refresh(); } },
           });
         // Notes are the things that are not per row -- a dropped maxLevel, an
         // untouched PVPcommon. They are not decoration and they do not belong in
         // a toast that disappears.
-        for (const note of result.notes || []) toast(note, 'info', { title: 'About that bake' });
+        for (const note of result.notes || []) toast(note, 'info', { title: t('About that bake') });
         ctx.touched = true;
         this.app.markDirty();
         await ctx.reload(result.detail ?? undefined);
@@ -1757,16 +1758,16 @@ export class SkillSection {
     return el('div', {},
       el('div', { class: 'sk-preview-summary' },
         el('div', { class: 'sk-preview-stat' },
-          el('span', { class: 'k', text: 'Values created' }),
+          el('span', { class: 'k', text: t('Values created') }),
           el('span', { class: 'v', text: fmt.format(writing.length) })),
         el('div', { class: 'sk-preview-stat' },
-          el('span', { class: 'k', text: 'Levels touched' }),
+          el('span', { class: 'k', text: t('Levels touched') }),
           el('span', { class: 'v', text: fmt.format(levels.size) })),
         el('div', { class: 'sk-preview-stat', 'data-tone': skipped.length ? 'warn' : null },
-          el('span', { class: 'k', text: 'Skipped' }),
+          el('span', { class: 'k', text: t('Skipped') }),
           el('span', { class: 'v', text: fmt.format(skipped.length) })),
         el('div', { class: 'sk-preview-stat' },
-          el('span', { class: 'k', text: 'Undo steps' }),
+          el('span', { class: 'k', text: t('Undo steps') }),
           el('span', { class: 'v', text: '1' }))),
 
       removingCommon
@@ -1784,8 +1785,8 @@ export class SkillSection {
                     el('span', { class: 'sk-delete-value', text: ` = ${ctx.detail.maxLevel}` }))
                 : null),
             el('div', { class: 'sk-hint',
-              text: 'The formulas are the only copy of the curve. After this the level values above are all ' +
-                    'that is left of it — which is the point, but it is not reversible except by undo.' }))
+              text: t('The formulas are the only copy of the curve. After this the level values above are all ' +
+                    'that is left of it — which is the point, but it is not reversible except by undo.') }))
         : null,
 
       (result.notes || []).length
@@ -1864,8 +1865,8 @@ export class SkillSection {
       clear(previewHost);
       previewHost.append(el('div', { class: 'sk-preview-empty' },
         icon('info', { size: 15 }),
-        el('span', { text: 'Preview a change to see the exact before and after for every skill, and the ' +
-                           'reason each skipped one was skipped. Nothing is written until then.' })));
+        el('span', { text: t('Preview a change to see the exact before and after for every skill, and the ' +
+                           'reason each skipped one was skipped. Nothing is written until then.') })));
     };
     for (const control of [fieldSelect, opSelect, roundSelect]) control.addEventListener('change', invalidate);
     for (const control of [valueInput, levelInput]) control.addEventListener('input', invalidate);
@@ -1887,7 +1888,7 @@ export class SkillSection {
         return;
       }
       clear(previewHost);
-      previewHost.append(el('div', { class: 'sk-preview-empty' }, el('span', { text: 'Working…' })));
+      previewHost.append(el('div', { class: 'sk-preview-empty' }, el('span', { text: t('Working…') })));
       try {
         const result = await api.skillBulk({ ...body, dryRun: true });
         preview = result;
@@ -1909,7 +1910,7 @@ export class SkillSection {
     }));
 
     const { close } = modal({
-      title: 'Bulk edit skills',
+      title: t('Bulk edit skills'),
       subtitle: `${fmt.format(paths.length)} skill${paths.length === 1 ? '' : 's'} selected`,
       width: 'min(96vw, 940px)',
       body: el('div', { class: 'sk-bulk' },
@@ -1924,15 +1925,15 @@ export class SkillSection {
         el('div', { class: 'sk-bulk-actions' }, previewButton, applyButton),
         previewHost,
         el('div', { class: 'tips' },
-          el('b', { text: 'How this behaves' }),
+          el('b', { text: t('How this behaves') }),
           el('ul', {},
-            el('li', { text: 'Preview runs against the server, so what you see is exactly what would be written.' }),
-            el('li', { text: 'A value that is a formula over the level — "235+3*x" — is refused, not mangled. ' +
-                             'Bake that skill first, or edit its formula directly.' }),
-            el('li', { text: 'A skill without the field is skipped with the reason; it is never created here.' }),
-            el('li', { text: 'A point (x, y) is skipped: it is two numbers, not one.' }),
-            el('li', { text: 'The whole batch is one undo step, and nothing reaches disk until you save.' })))),
-      actions: [{ label: 'Close' }],
+            el('li', { text: t('Preview runs against the server, so what you see is exactly what would be written.') }),
+            el('li', { text: t('A value that is a formula over the level — "235+3*x" — is refused, not mangled. ' +
+                             'Bake that skill first, or edit its formula directly.') }),
+            el('li', { text: t('A skill without the field is skipped with the reason; it is never created here.') }),
+            el('li', { text: t('A point (x, y) is skipped: it is two numbers, not one.') }),
+            el('li', { text: t('The whole batch is one undo step, and nothing reaches disk until you save.') })))),
+      actions: [{ label: t('Close') }],
     });
 
     applyButton.addEventListener('click', () => this.guard('bulk-apply', async () => {
@@ -1943,7 +1944,7 @@ export class SkillSection {
         title: `Change ${fieldSelect.value} on ${fmt.format(changing.length)} skill${changing.length === 1 ? '' : 's'}?`,
         message: `${OPS.find(([v]) => v === opSelect.value)?.[1]} ${valueInput.value}, in ${where} — this is ` +
                  'the preview you are looking at. Nothing is written to disk until you save, and you can undo it.',
-        confirmLabel: 'Apply the changes',
+        confirmLabel: t('Apply the changes'),
         danger: false,
       });
       if (!ok) return;
@@ -1956,7 +1957,7 @@ export class SkillSection {
           `Updated ${fmt.format(result.applied ?? 0)} skill${result.applied === 1 ? '' : 's'}` +
           (skipped ? `, skipped ${fmt.format(skipped)} — the preview says why.` : '.'),
           'success', {
-            action: { label: 'Undo', run: async () => { await this.app.undo(); await this.refresh(); } },
+            action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.refresh(); } },
           });
         this.app.markDirty();
         await this.load();
@@ -1988,7 +1989,7 @@ export class SkillSection {
                            (skipped ? `, ${fmt.format(skipped)} skipped` : '') }),
         result.truncated
           ? el('span', { class: 'sk-preview-trunc',
-              text: 'The server stopped listing early — more skills are affected than are shown.' })
+              text: t('The server stopped listing early — more skills are affected than are shown.') })
           : null),
       el('div', { class: 'sk-preview-scroll' },
         el('table', { class: 'sk-preview' },
@@ -1999,18 +2000,18 @@ export class SkillSection {
   /** Right-click actions for the section itself; shared with the app-wide menu. */
   menuItems() {
     return [
-      { icon: 'search', label: 'Focus the search box', run: () => this.focusSearch() },
+      { icon: 'search', label: t('Focus the search box'), run: () => this.focusSearch() },
       this.selection.size
         ? { icon: 'sliders', label: `Bulk edit the ${this.selection.size} selected skills…`,
             run: () => this.openBulkDialog() }
         : null,
       this.selection.size
-        ? { icon: 'close', label: 'Clear the selection', run: () => { this.selection.clear(); this.render(); } }
+        ? { icon: 'close', label: t('Clear the selection'), run: () => { this.selection.clear(); this.render(); } }
         : null,
       this.bookId
-        ? { icon: 'layers', label: 'Browse every book', run: () => this.setBook(null) }
+        ? { icon: 'layers', label: t('Browse every book'), run: () => this.setBook(null) }
         : null,
-      { icon: 'refresh', label: 'Reload the skill list', run: () => this.load() },
+      { icon: 'refresh', label: t('Reload the skill list'), run: () => this.load() },
     ].filter(Boolean);
   }
 }

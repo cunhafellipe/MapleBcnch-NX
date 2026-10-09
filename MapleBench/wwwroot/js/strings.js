@@ -20,6 +20,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, debounce, runOnce, scalePixelArt } from './ui.js';
 import { emptyState } from './inspector.js';
 import { iconUrl } from './media.js';
@@ -382,9 +383,9 @@ export class StringsSection {
 
     return el('div', { class: 'str-panel str-head' },
       el('div', { class: 'str-head-text' },
-        el('div', { class: 'str-head-title', text: 'Strings' }),
+        el('div', { class: 'str-head-title', text: t('Strings') }),
         el('div', { class: 'str-head-sub' },
-          el('span', { text: 'Editing ' }),
+          el('span', { text: t('Editing ') }),
           el('b', { text: subject }),
           el('span', { text: this.capabilities.available ? '' : ' · not open' }))),
       el('button', {
@@ -506,7 +507,7 @@ export class StringsSection {
     }
 
     if (this.searching) {
-      panel.append(el('div', { class: 'str-result-head' }, el('span', { text: 'Searching…' })));
+      panel.append(el('div', { class: 'str-result-head' }, el('span', { text: t('Searching…') })));
       for (let i = 0; i < 6; i++) {
         panel.append(el('div', { class: 'skeleton skeleton-row', style: `width:${45 + ((i * 37) % 40)}%` }));
       }
@@ -556,7 +557,7 @@ export class StringsSection {
           : 'Names are read from your own client, so anything it does not name cannot be found by name. ' +
             'Try an id — leading zeros are fine — or part of a name.',
         el('div', { class: 'str-empty-actions' },
-          el('button', { class: 'btn', text: 'Clear search',
+          el('button', { class: 'btn', text: t('Clear search'),
             onclick: () => { this.query = ''; this.render(); this.runSearch(); } }),
           el('button', { class: 'btn btn-primary', onclick: () => this.openWriteDialog(/^\d+$/.test(needle) ? needle : '') },
             icon('plus', { size: 15 }), 'Name an id'))));
@@ -613,12 +614,12 @@ export class StringsSection {
       el('table', { class: 'str-table' },
         el('thead', {}, el('tr', {},
           el('th', { class: 'str-col-icon' }),
-          el('th', { class: 'str-col-id', text: 'ID' }),
+          el('th', { class: 'str-col-id', text: t('ID') }),
           fields.map((field) => el('th', {
             text: FIELD_LABELS[field] ?? field,
             'data-tip': FIELD_HINTS[field] ?? null,
           })),
-          el('th', { class: 'str-col-where', text: 'Lives in' }),
+          el('th', { class: 'str-col-where', text: t('Lives in') }),
           el('th', { class: 'str-col-act' }))),
         body));
   }
@@ -734,7 +735,7 @@ export class StringsSection {
       'aria-label': `${FIELD_LABELS[field] ?? field} of ${entry.id}`,
       // An unset field reads as "Not set", never as an empty box: the entry
       // exists, this one field of it does not, and typing here creates it.
-      placeholder: 'Not set — type to add it',
+      placeholder: t('Not set — type to add it'),
       'data-unset': current === null ? 'true' : null,
     });
 
@@ -833,7 +834,7 @@ export class StringsSection {
     // left alone.
     const go = (page) => { this.page = page; this.renderResults(); this.host.scrollTo({ top: 0 }); };
 
-    pager.append(el('button', { text: '‹ Previous', disabled: this.page === 1, onclick: () => go(this.page - 1) }));
+    pager.append(el('button', { text: t('‹ Previous'), disabled: this.page === 1, onclick: () => go(this.page - 1) }));
 
     const numbers = new Set([1, pages, this.page, this.page - 1, this.page + 1]);
     let previous = 0;
@@ -845,7 +846,7 @@ export class StringsSection {
       previous = page;
     }
 
-    pager.append(el('button', { text: 'Next ›', disabled: this.page === pages, onclick: () => go(this.page + 1) }));
+    pager.append(el('button', { text: t('Next ›'), disabled: this.page === pages, onclick: () => go(this.page + 1) }));
     return pager;
   }
 
@@ -855,10 +856,10 @@ export class StringsSection {
     return [
       { icon: 'copy', label: `Copy id ${entry.id}`, run: () => this.app.copyText(String(entry.id)) },
       entry.fields?.[this.fields[0]]
-        ? { icon: 'copy', label: 'Copy name', run: () => this.app.copyText(entry.fields[this.fields[0]]) }
+        ? { icon: 'copy', label: t('Copy name'), run: () => this.app.copyText(entry.fields[this.fields[0]]) }
         : null,
       entry.path
-        ? { icon: 'externalLink', label: 'Show in Explorer', run: () => {
+        ? { icon: 'externalLink', label: t('Show in Explorer'), run: () => {
             this.app.setMode('explorer');
             this.app.navigate(entry.path);
           } }
@@ -870,13 +871,13 @@ export class StringsSection {
   /** Right-click actions for the section; shared with the app-wide context menu. */
   menuItems() {
     return [
-      { icon: 'search', label: 'Focus the search box', run: () => this.focusSearch() },
-      { icon: 'plus', label: 'Name an id…', run: () => this.openWriteDialog() },
-      { icon: 'list', label: 'Bulk names…', run: () => this.openBulkDialog() },
+      { icon: 'search', label: t('Focus the search box'), run: () => this.focusSearch() },
+      { icon: 'plus', label: t('Name an id…'), run: () => this.openWriteDialog() },
+      { icon: 'list', label: t('Bulk names…'), run: () => this.openBulkDialog() },
       this.query
-        ? { icon: 'close', label: 'Clear the search', run: () => { this.query = ''; this.render(); this.runSearch(); } }
+        ? { icon: 'close', label: t('Clear the search'), run: () => { this.query = ''; this.render(); this.runSearch(); } }
         : null,
-      { icon: 'refresh', label: 'Check the open archives again', run: () => this.load() },
+      { icon: 'refresh', label: t('Check the open archives again'), run: () => this.load() },
     ].filter(Boolean);
   }
 
@@ -924,7 +925,7 @@ export class StringsSection {
 
     const fillGroups = (options) => {
       clear(groupSelect);
-      groupSelect.append(el('option', { value: '', text: 'Work it out from the archive' }));
+      groupSelect.append(el('option', { value: '', text: t('Work it out from the archive') }));
       for (const option of options) groupSelect.append(el('option', { value: option, text: option }));
     };
 
@@ -954,8 +955,8 @@ export class StringsSection {
       previewHost.append(el('div', { class: 'str-preview-empty' },
         icon('info', { size: 15 }),
         el('span', {
-          text: 'Preview to see exactly what would be created or changed, field by field. ' +
-                'Nothing is written until then.',
+          text: t('Preview to see exactly what would be created or changed, field by field. ' +
+                'Nothing is written until then.'),
         })));
     };
 
@@ -974,7 +975,7 @@ export class StringsSection {
       }
 
       statusHost.append(el('div', { class: 'str-status-line', 'data-tone': 'idle' },
-        el('span', { text: 'Looking it up…' })));
+        el('span', { text: t('Looking it up…') })));
 
       let entry;
       try {
@@ -1071,7 +1072,7 @@ export class StringsSection {
       }
 
       clear(previewHost);
-      previewHost.append(el('div', { class: 'str-preview-empty' }, el('span', { text: 'Working…' })));
+      previewHost.append(el('div', { class: 'str-preview-empty' }, el('span', { text: t('Working…') })));
       try {
         // The single write has no dry run of its own, so the bulk endpoint's is
         // used with one row. Both call the same Apply() on the backend, so a
@@ -1116,7 +1117,7 @@ export class StringsSection {
         groupWrap,
         el('div', { class: 'str-write-actions' }, previewButton, writeButton),
         previewHost),
-      actions: [{ label: 'Close' }],
+      actions: [{ label: t('Close') }],
       // With an id already known -- arrived at from the "nothing names this"
       // banner -- the id box is answered and the caret belongs in the name.
       onOpen: () => { (seedId ? inputs.get(fields[0]) : idInput)?.focus(); },
@@ -1145,7 +1146,7 @@ export class StringsSection {
           (skipped.length ? ` ${skipped.length} field left alone: ${skipped.map((c) => c.reason).join(' ')}` : ''),
           skipped.length ? 'warning' : 'success', {
             title: result.createdEntry ? 'Entry created' : 'Entry updated',
-            action: { label: 'Undo', run: async () => { await this.app.undo(); await this.refresh(); } },
+            action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.refresh(); } },
           });
 
         // Land on the entry that was just written, so the result is on screen
@@ -1182,7 +1183,7 @@ export class StringsSection {
     const groupSelect = el('select', { class: 'str-select', 'aria-label': 'Where to file new entries' });
     const needsGroup = this.kind === 'item' || this.kind === 'map';
     const groupOptions = this.kind === 'map' ? this.capabilities.mapRegions : this.capabilities.eqpCategories;
-    groupSelect.append(el('option', { value: '', text: 'Work it out per id from the archive' }));
+    groupSelect.append(el('option', { value: '', text: t('Work it out per id from the archive') }));
     for (const option of groupOptions) groupSelect.append(el('option', { value: option, text: option }));
 
     const parsedHost = el('div', { class: 'str-parsed' });
@@ -1205,8 +1206,8 @@ export class StringsSection {
       previewHost.append(el('div', { class: 'str-preview-empty' },
         icon('info', { size: 15 }),
         el('span', {
-          text: 'Preview runs the whole batch against the server without writing anything, and shows ' +
-                'the before and after for every field of every row.',
+          text: t('Preview runs the whole batch against the server without writing anything, and shows ' +
+                'the before and after for every field of every row.'),
         })));
     };
 
@@ -1216,7 +1217,7 @@ export class StringsSection {
       clear(parsedHost);
 
       if (!paste.value.trim()) {
-        parsedHost.append(el('span', { class: 'str-parsed-idle', text: 'Nothing pasted yet.' }));
+        parsedHost.append(el('span', { class: 'str-parsed-idle', text: t('Nothing pasted yet.') }));
       } else {
         parsedHost.append(el('span', {
           text: `${fmt.format(rows.length)} row${rows.length === 1 ? '' : 's'} understood`,
@@ -1263,7 +1264,7 @@ export class StringsSection {
         return;
       }
       clear(previewHost);
-      previewHost.append(el('div', { class: 'str-preview-empty' }, el('span', { text: 'Working…' })));
+      previewHost.append(el('div', { class: 'str-preview-empty' }, el('span', { text: t('Working…') })));
       try {
         const result = await api.stringBulk({ kind: this.kind, entries: entries(), dryRun: true });
         preview = result;
@@ -1309,15 +1310,15 @@ export class StringsSection {
         el('div', { class: 'str-write-actions' }, previewButton, applyButton),
         previewHost,
         el('div', { class: 'tips' },
-          el('b', { text: 'How this behaves' }),
+          el('b', { text: t('How this behaves') }),
           el('ul', {},
-            el('li', { text: 'Preview runs against the server with nothing written, so what you see is exactly what would happen.' }),
-            el('li', { text: 'An id with no entry gets one created; an id that already has one is updated in place, even if its key is zero-padded.' }),
-            el('li', { text: 'A field already holding that exact text is skipped, and says so — that is not a failure.' }),
-            el('li', { text: 'A blank cell leaves that field alone. To empty a field that has text, clear it in the table instead.' }),
+            el('li', { text: t('Preview runs against the server with nothing written, so what you see is exactly what would happen.') }),
+            el('li', { text: t('An id with no entry gets one created; an id that already has one is updated in place, even if its key is zero-padded.') }),
+            el('li', { text: t('A field already holding that exact text is skipped, and says so — that is not a failure.') }),
+            el('li', { text: t('A blank cell leaves that field alone. To empty a field that has text, clear it in the table instead.') }),
             el('li', { text: `This names ids. It does not create the ${noun}s themselves — those live in ${KIND_HOME[this.kind] ?? 'their own archive'}.` }),
-            el('li', { text: 'Nothing reaches disk until you save, and the whole batch is one undo.' })))),
-      actions: [{ label: 'Close' }],
+            el('li', { text: t('Nothing reaches disk until you save, and the whole batch is one undo.') })))),
+      actions: [{ label: t('Close') }],
     });
 
     applyButton.addEventListener('click', () => this.guard('bulk-apply', async () => {
@@ -1330,7 +1331,7 @@ export class StringsSection {
         message: (creates ? `${fmt.format(creates)} of them have no entry yet and one will be created. ` : '') +
                  'This is the preview you are looking at. Nothing is written to disk until you save, and the ' +
                  'whole batch is a single undo.',
-        confirmLabel: 'Apply the names',
+        confirmLabel: t('Apply the names'),
         danger: false,
       });
       if (!ok) return;
@@ -1348,8 +1349,8 @@ export class StringsSection {
           (result.created ? `, creating ${fmt.format(result.created)} entr${result.created === 1 ? 'y' : 'ies'}` : '') +
           (skipped ? `. ${fmt.format(skipped)} row${skipped === 1 ? ' was' : 's were'} skipped — reopen the preview to see why.` : '.'),
           skipped ? 'warning' : 'success', {
-            title: 'Names written',
-            action: { label: 'Undo', run: async () => { await this.app.undo(); await this.refresh(); } },
+            title: t('Names written'),
+            action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.refresh(); } },
           });
         await this.load();
       } catch (error) {
@@ -1391,7 +1392,7 @@ export class StringsSection {
           el('td', { text: '—' }),
           el('td', { class: 'str-preview-arrow', text: '' }),
           el('td', { text: '—' }),
-          el('td', { class: 'str-preview-note', text: 'Nothing was given to write for this row.' })));
+          el('td', { class: 'str-preview-note', text: t('Nothing was given to write for this row.') })));
         continue;
       }
 

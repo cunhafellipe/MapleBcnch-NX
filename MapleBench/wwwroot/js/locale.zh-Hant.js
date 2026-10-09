@@ -417,4 +417,217 @@ export const zhHant = {
   '{name} closed.': '已關閉 {name}。',
   'A dropped file does not carry the folder it came from, so it cannot be opened directly. Pick "{name}" here instead — the folder you last browsed is already open.':
     '拖放進來的檔案不會帶有來源資料夾，因此無法直接開啟。請在這裡選擇「{name}」— 你上次瀏覽的資料夾已經開啟了。',
+
+// ---- skills: head, cards, level table ---------------------------------
+  'Skills': '技能',
+  'Editing ': '編輯中 ',
+  ' · String.wz is not open, so skills have no names': ' · String.wz 未開啟，因此技能沒有名稱',
+  'The archive holds more skills than one listing returns, so this is a partial list. Pick a single book, or search, to be sure you are seeing everything.':
+    '此封存的技能數量超過單次清單能回傳的範圍，因此這只是部分清單。請選擇單一本書，或使用搜尋，以確認你看到的是全部內容。',
+  'Reading every skill book…': '正在讀取每一本技能書…',
+  'about 8 seconds the first time, instant after that': '第一次約需 8 秒，之後都是瞬間完成',
+  'Clear search': '清除搜尋',
+  'Show all skills': '顯示所有技能',
+  'Passive': '被動',
+  'Hidden': '隱藏',
+  'Unsaved': '未儲存',
+  'Stored levels': '已儲存的等級',
+  'Open the level table…': '開啟等級表…',
+  'Bake the formulas into levels…': '將公式轉寫成等級…',
+  '‹ Previous': '‹ 上一頁',
+  'Next ›': '下一頁 ›',
+  'Done': '完成',
+  'The client reads the formulas, not the level nodes. ': '客戶端讀取的是公式，而不是等級節點。',
+  'Formulas': '公式',
+  'This skill also has a PVPcommon block with its own formulas. It is not shown or touched here — open it in the Explorer.':
+    '這個技能還有一個 PVPcommon 區塊，內含自己的公式。這裡不會顯示也不會更動它 — 請在檔案總覽中開啟。',
+  'same at every level': '每個等級都相同',
+  'a group of values': '一組數值',
+  'This holds a group of values rather than one expression. Open it in the Explorer to edit what is inside it.':
+    '這裡放的是一組數值，而不是單一運算式。請在檔案總覽中開啟，編輯其中的內容。',
+  'Levels': '等級',
+  'Level…': '等級…',
+  'Level': '等級',
+  'Saved, but the client will not read it': '已儲存，但客戶端不會讀取',
+  'Show this level in Explorer': '在檔案總覽中顯示此等級',
+  'Which level number should the copy become? It has to be a level that does not exist yet.':
+    '副本要變成第幾個等級？必須是目前還不存在的等級。',
+  'Copy the level': '複製等級',
+  'What should this level become? The target has to be free.': '這個等級要變成第幾個？目標必須是空的。',
+  'Renumber': '重新編號',
+  'Remove the level': '移除等級',
+  'Skill-wide fields': '全技能通用的欄位',
+  'A group of values — ': '一組數值 — ',
+  'Preview to see every node this would create and everything it would delete. Nothing is written until then.':
+    '先預覽，即可看見這會建立哪些節點，以及會刪除哪些內容。在那之前不會寫入任何內容。',
+  'Working…': '處理中…',
+  'Bake the formulas into explicit levels': '將公式轉寫成明確的等級',
+  'Every formula in this skill\'s common block is evaluated at every level and written as a real level/N node. After this the values are stored, editable one level at a time, and independent of each other — which is what you want if levels should stop following one curve.':
+    '這個技能 common 區塊中的每個公式，都會在每個等級求值，並寫成真正的 level/N 節點。轉寫之後，這些數值會被儲存，可逐一編輯，且彼此獨立 — 當你希望等級不再沿著同一條曲線變化時，這正是你要的。',
+  'Overwrite': '覆寫',
+  'Delete it': '刪除它',
+  'How this behaves': '這樣運作的原因',
+  'The preview runs against the server, so what you see is exactly what would be written.':
+    '預覽是在伺服器上實際執行的，所以你看到的就正是將寫入的內容。',
+  'A formula that cannot be parsed is skipped with its error — never written as 0.':
+    '無法解析的公式會連同錯誤原因跳過 — 絕不會寫成 0。',
+  'The whole bake is one undo step, however many nodes it creates.':
+    '整個轉寫不論建立多少節點，都只算一步復原。',
+  'A PVPcommon block, if there is one, is left alone.': '若存在 PVPcommon 區塊，則不會更動它。',
+  'Nothing reaches disk until you save.': '在你儲存之前，不會有任何內容寫入磁碟。',
+  'Close': '關閉',
+  'About that bake': '關於這次轉寫',
+  'Values created': '建立的數值',
+  'Levels touched': '影響的等級',
+  'Skipped': '已跳過',
+  'Undo steps': '復原步驟',
+  'The formulas are the only copy of the curve. After this the level values above are all that is left of it — which is the point, but it is not reversible except by undo.':
+    '這些公式是這條曲線僅存的副本。轉寫之後，上方的等級數值就只剩下它們 — 這正是目的所在，但除了復原之外無法回退。',
+  'Preview a change to see the exact before and after for every skill, and the reason each skipped one was skipped. Nothing is written until then.':
+    '先預覽變更，即可看見每個技能確切的前後差異，以及每個被跳過項目的原因。在那之前不會寫入任何內容。',
+  'Bulk edit skills': '批次編輯技能',
+  'Preview runs against the server, so what you see is exactly what would be written.':
+    '預覽會在伺服器上執行，因此你看到的就正是會寫入的內容。',
+  'A value that is a formula over the level — "235+3*x" — is refused, not mangled. Bake that skill first, or edit its formula directly.':
+    '以等級為變數的公式值（例如「235+3*x」）會被拒絕，而不會被改寫成別的東西。請先將該技能轉寫，或直接編輯它的公式。',
+  'A skill without the field is skipped with the reason; it is never created here.':
+    '沒有該欄位的技能會連同原因跳過；這裡不會建立它。',
+  'A point (x, y) is skipped: it is two numbers, not one.': '點座標 (x, y) 會被跳過：那是兩個數字，不是一個。',
+  'The whole batch is one undo step, and nothing reaches disk until you save.':
+    '整批變更只算一步復原，且在你儲存之前不會有任何內容寫入磁碟。',
+  'Apply the changes': '套用變更',
+  'The server stopped listing early — more skills are affected than are shown.':
+    '伺服器提前停止列出 — 受影響的技能比顯示的更多。',
+  'Focus the search box': '將焦點移至搜尋框',
+  'Browse every book': '瀏覽每一本書',
+  'Reload the skill list': '重新載入技能清單',
+
+  // ---- npcs --------------------------------------------------------------
+  'NPCs': 'NPC',
+  'Reading the NPCs…': '正在讀取 NPC…',
+  ' A full Npc.wz is 10,742 images and takes about four seconds the first time. After that it is instant until something changes.':
+    ' 完整的 Npc.wz 有 10,742 張圖片，第一次約需四秒。之後都是瞬間完成，直到內容有變動。',
+  'Search by NPC ID, name, job line or script…': '以 NPC ID、名稱、職業系列或腳本搜尋…',
+  'String.wz is not open, so NPCs have no names, no job lines and no chat text here. Open it and every card fills in.':
+    'String.wz 未開啟，因此這裡的 NPC 沒有名稱、沒有職業系列，也沒有對話文字。開啟之後，每張卡片都會完整顯示。',
+  'The archive holds more NPCs than one listing returns, so this is a partial list. Scope to a single archive, or search, to be sure you are seeing everything.':
+    '此封存的 NPC 數量超過單次清單能回傳的範圍，因此這只是部分清單。請限定單一封存，或使用搜尋，以確認你看到的是全部內容。',
+  'Show all NPCs': '顯示所有 NPC',
+  'Shop': '商店',
+  'Storage': '倉庫',
+  'Trunk': '帳號倉庫',
+  'Scripted': '有腳本',
+  'Linked': '有連結',
+  'Name hidden': '隱藏名稱',
+  'No name': '沒有名稱',
+  'Edit fields…': '編輯欄位…',
+  'Find a field by name…': '以名稱尋找欄位…',
+  'not set': '未設定',
+  'This NPC does not have this field. Setting a value creates it.': '這個 NPC 沒有這個欄位。設定值就會建立它。',
+  'Preview a change to see the exact before and after for every NPC. Nothing is written until then.':
+    '先預覽變更，即可看見每個 NPC 確切的前後差異。在那之前不會寫入任何內容。',
+  'Script bindings': '腳本綁定',
+  'Chat lines': '對話行',
+  ' in String.wz': '（於 String.wz）',
+  'Bulk edit NPCs': '批次編輯 NPC',
+  'An NPC without the field is skipped, with the reason shown — it is never created here. Add it from the NPC card first.':
+    '沒有該欄位的 NPC 會連同顯示的原因跳過 — 這裡不會建立它。請先從 NPC 卡片新增。',
+  'A field that holds a group of values — script, speak — is skipped and says so.':
+    '放著一組數值的欄位 — script、speak — 會被跳過，並明確告知。',
+  'Nothing reaches disk until you save, and the whole batch can be undone.':
+    '在你儲存之前，不會有任何內容寫入磁碟，而且整批變更都能復原。',
+  'Hide name tag': '隱藏名牌',
+  'Storage deposit fee': '倉庫存入費',
+  'Storage withdrawal fee': '倉庫取出費',
+  'Move speed': '移動速度',
+  'Click distance': '點擊距離',
+  'Dialogue box top': '對話框頂端',
+
+  // ---- strings -----------------------------------------------------------
+  'Strings': '文字',
+  'Searching…': '搜尋中…',
+  'ID': 'ID',
+  'Lives in': '位於',
+  'Not set — type to add it': '尚未設定 — 輸入即可新增',
+  'Copy name': '複製名稱',
+  'Name an id…': '為 ID 命名…',
+  'Bulk names…': '批次命名…',
+  'Clear the search': '清除搜尋條件',
+  'Check the open archives again': '重新檢查已開啟的封存',
+  'Work it out from the archive': '從封存推算',
+  'Preview to see exactly what would be created or changed, field by field. Nothing is written until then.':
+    '先預覽，就能逐欄看見確切會建立或變更什麼。在那之前不會寫入任何內容。',
+  'Looking it up…': '正在查詢…',
+  'Nothing pasted yet.': '尚未貼上任何內容。',
+  'Work it out per id from the archive': '依 ID 從封存分別推算',
+  'Preview runs the whole batch against the server without writing anything, and shows the before and after for every field of every row.':
+    '預覽會在伺服器上執行整批內容，不寫入任何資料，並顯示每一列每個欄位的前後差異。',
+  'Preview runs against the server with nothing written, so what you see is exactly what would happen.':
+    '預覽會在伺服器上執行且不寫入任何資料，因此你看到的就正是實際會發生的結果。',
+  'An id with no entry gets one created; an id that already has one is updated in place, even if its key is zero-padded.':
+    '沒有條目的 ID 會建立一個；已有條目的 ID 則就地更新，即使它的鍵有補零也一樣。',
+  'A field already holding that exact text is skipped, and says so — that is not a failure.':
+    '已經是相同文字的欄位會被跳過，並明確告知 — 這不是錯誤。',
+  'A blank cell leaves that field alone. To empty a field that has text, clear it in the table instead.':
+    '空白儲存格不會變動該欄位。若要清空已有文字的欄位，請改在表格中把它清空。',
+  'Nothing reaches disk until you save, and the whole batch is one undo.':
+    '在你儲存之前，不會有任何內容寫入磁碟，而且整批變更只算一步復原。',
+  'Apply the names': '套用名稱',
+  'Names written': '已寫入名稱',
+  'Nothing was given to write for this row.': '這一列沒有任何要寫入的內容。',
+
+  // ---- mobs --------------------------------------------------------------
+  'Mobs': 'Mob',
+  'Reading the mobs…': '正在讀取 Mob…',
+  'Search by mob ID or name…': '以 Mob ID 或名稱搜尋…',
+  'The archive holds more mobs than one listing returns, so this is a partial list. Scope to a single archive, or search, to be sure you are seeing everything.':
+    '此封存的 Mob 數量超過單次清單能回傳的範圍，因此這只是部分清單。請限定單一封存，或使用搜尋，以確認你看到的是全部內容。',
+  'Show all mobs': '顯示所有 Mob',
+  'Boss': 'BOSS',
+  'Undead': '不死',
+  'Edit stats…': '編輯數值…',
+  ' Its real stats live in that image, so edits made here are written but will not change anything in-game. Edit the target instead.':
+    ' 它真正的數值在那張圖片裡，因此這裡的編輯雖然會寫入，卻不會改變遊戲中的任何內容。請改為編輯目標節點。',
+  'This mob does not have this field. Setting a value creates it.': '這個 Mob 沒有這個欄位。設定值就會建立它。',
+  'Other keys': '其他鍵',
+  'Preview a change to see the exact before and after for every mob. Nothing is written until then.':
+    '先預覽變更，即可看見每個 Mob 確切的前後差異。在那之前不會寫入任何內容。',
+  'Bulk edit mobs': '批次編輯 Mob',
+  'A mob without the field is skipped, with the reason shown — it is never created here.':
+    '沒有該欄位的 Mob 會連同顯示的原因跳過 — 這裡不會建立它。',
+  'Percent is applied by the server; read the preview rather than assuming a sign.':
+    '百分比由伺服器套用；請閱讀預覽，而不是自行假設正負號。',
+  'The server stopped listing early — more mobs are affected than are shown.':
+    '伺服器提前停止列出 — 受影響的 Mob 比顯示的更多。',
+
+  // ---- cash shop ---------------------------------------------------------
+  'Duplicate serial numbers': '重複的序號',
+  'Reading the cash shop…': '正在讀取商城…',
+  'Categories': '分類',
+  'Search by item ID, serial, or name…': '以道具 ID、序號或名稱搜尋…',
+  'On sale only': '只看販售中',
+  'Count': '數量',
+  'Duration': '期限',
+  'Permanent': '永久',
+  'Preview': '預覽',
+  'Delete this cash shop item?': '要刪除這個商城道具嗎？',
+  'Gender': '性別',
+  'Advanced settings': '進階設定',
+  'That serial number is already used': '這個序號已被使用',
+  'Use it anyway': '仍然使用',
+  'Add 5 more rows': '再新增 5 列',
+  'Tips': '小提醒',
+  'Only rows with both an Item ID and a Serial are added; blank rows are ignored.':
+    '只有同時填有道具 ID 與序號的列才會新增；空白列會被忽略。',
+  'Serials are pre-filled with the next free numbers — change them if you need to.':
+    '序號已預先填入接下來可用的編號 — 有需要就自行修改。',
+  'Use the duplicate button to copy a row you have already filled in.':
+    '使用複製按鈕即可複製你已經填好的某一列。',
+  'Paste a column straight from a spreadsheet into the first Item ID cell.':
+    '可以直接從試算表貼上一整欄到第一個道具 ID 儲存格。',
+  'Bulk add items': '批次新增道具',
+  'Add all items': '新增所有道具',
+  'Add them anyway': '仍然新增',
+  'e.g. 5000000': '例如 5000000',
+  'e.g. 10000001': '例如 10000001',
 };

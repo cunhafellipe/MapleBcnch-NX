@@ -13,6 +13,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, debounce, runOnce,
          busyPanel, busyBar, busyWhile } from './ui.js';
 import { emptyState } from './inspector.js';
@@ -250,7 +251,7 @@ export class Mobs {
     // a wrong one. The panel is the honest thing to show until the list lands.
     if (this.loading && !this.mobs.length) {
       this.host.append(busyPanel({
-        title: 'Reading the mobs…',
+        title: t('Reading the mobs…'),
         note: 'A full Mob.wz is 2,742 images and takes about ten seconds the first time. '
             + 'After that it is instant until something changes.',
         className: 'mob-panel',
@@ -298,9 +299,9 @@ export class Mobs {
 
     const head = el('div', { class: 'mob-panel mob-head' },
       el('div', { class: 'mob-head-text' },
-        el('div', { class: 'mob-head-title', text: 'Mobs' }),
+        el('div', { class: 'mob-head-title', text: t('Mobs') }),
         el('div', { class: 'mob-head-sub' },
-          el('span', { text: 'Editing ' }),
+          el('span', { text: t('Editing ') }),
           el('b', { text: subject }),
           // The level range used to be a fourth stat tile. It is the only one
           // of the four the filter pills below do not already carry, and it is
@@ -344,7 +345,7 @@ export class Mobs {
   buildToolbar() {
     const search = el('input', {
       type: 'search', value: this.query,
-      placeholder: 'Search by mob ID or name…',
+      placeholder: t('Search by mob ID or name…'),
       'aria-label': 'Search mobs',
     });
     // Only the results are re-rendered, never the toolbar holding this input:
@@ -378,8 +379,8 @@ export class Mobs {
       this.buildSelectionBar(),
       this.truncated
         ? el('div', { class: 'notice', 'data-tone': 'warn' }, icon('alert', { size: 14 }),
-            el('span', { text: 'The archive holds more mobs than one listing returns, so this is a partial list. ' +
-                               'Scope to a single archive, or search, to be sure you are seeing everything.' }))
+            el('span', { text: t('The archive holds more mobs than one listing returns, so this is a partial list. ' +
+                               'Scope to a single archive, or search, to be sure you are seeing everything.') }))
         : null);
   }
 
@@ -460,8 +461,8 @@ export class Mobs {
               : 'String.wz is not open, so mobs have no names here — search by ID instead.')
           : 'Every mob in this archive is filtered out. Switch back to All.',
         this.query
-          ? el('button', { class: 'btn', text: 'Clear search', onclick: () => { this.query = ''; this.render(); } })
-          : el('button', { class: 'btn', text: 'Show all mobs', onclick: () => { this.filter = 'all'; this.render(); } })));
+          ? el('button', { class: 'btn', text: t('Clear search'), onclick: () => { this.query = ''; this.render(); } })
+          : el('button', { class: 'btn', text: t('Show all mobs'), onclick: () => { this.filter = 'all'; this.render(); } })));
     } else {
       const grid = el('div', { class: 'mob-grid' });
       for (const mob of slice) grid.append(this.buildCard(mob));
@@ -537,10 +538,10 @@ export class Mobs {
     });
 
     const badges = el('div', { class: 'mob-badges' },
-      mob.isBoss ? el('span', { class: 'mob-badge', 'data-kind': 'boss', text: 'Boss' }) : null,
-      mob.undead ? el('span', { class: 'mob-badge', 'data-kind': 'undead', text: 'Undead' }) : null,
-      mob.linkTarget ? el('span', { class: 'mob-badge', 'data-kind': 'link', text: 'Linked' }) : null,
-      mob.dirty ? el('span', { class: 'mob-badge', 'data-kind': 'dirty', text: 'Unsaved' }) : null);
+      mob.isBoss ? el('span', { class: 'mob-badge', 'data-kind': 'boss', text: t('Boss') }) : null,
+      mob.undead ? el('span', { class: 'mob-badge', 'data-kind': 'undead', text: t('Undead') }) : null,
+      mob.linkTarget ? el('span', { class: 'mob-badge', 'data-kind': 'link', text: t('Linked') }) : null,
+      mob.dirty ? el('span', { class: 'mob-badge', 'data-kind': 'dirty', text: t('Unsaved') }) : null);
 
     const stat = (key, value) => el('div', { class: 'mob-row' },
       el('span', { class: 'k', text: key }),
@@ -591,12 +592,12 @@ export class Mobs {
   /** Shared by the card overflow and the app-wide right-click menu. */
   menuItemsFor(mob) {
     return [
-      { icon: 'edit', label: 'Edit stats…', run: () => this.openMobCard(mob) },
+      { icon: 'edit', label: t('Edit stats…'), run: () => this.openMobCard(mob) },
       { icon: 'copy', label: `Copy mob ID ${mob.mobId}`, run: () => this.app.copyText(String(mob.mobId)) },
       mob.linkTarget
         ? { icon: 'externalLink', label: `Open the linked mob ${mob.linkTarget}`, run: () => this.openLinked(mob.linkTarget) }
         : null,
-      { icon: 'externalLink', label: 'Show in Explorer', run: () => {
+      { icon: 'externalLink', label: t('Show in Explorer'), run: () => {
         this.app.setMode('explorer');
         this.app.navigate(mob.path);
       } },
@@ -615,7 +616,7 @@ export class Mobs {
     // left alone.
     const go = (page) => { this.page = page; this.renderResults(); this.host.scrollTo({ top: 0 }); };
 
-    pager.append(el('button', { text: '‹ Previous', disabled: this.page === 1, onclick: () => go(this.page - 1) }));
+    pager.append(el('button', { text: t('‹ Previous'), disabled: this.page === 1, onclick: () => go(this.page - 1) }));
 
     const numbers = new Set([1, pages, this.page, this.page - 1, this.page + 1]);
     let previous = 0;
@@ -627,7 +628,7 @@ export class Mobs {
       previous = page;
     }
 
-    pager.append(el('button', { text: 'Next ›', disabled: this.page === pages, onclick: () => go(this.page + 1) }));
+    pager.append(el('button', { text: t('Next ›'), disabled: this.page === pages, onclick: () => go(this.page + 1) }));
     return pager;
   }
 
@@ -700,7 +701,7 @@ export class Mobs {
 
     /* --- the parts that must survive a repaint --- */
     const search = el('input', {
-      type: 'search', placeholder: 'Find a field by name…', 'aria-label': 'Find a field',
+      type: 'search', placeholder: t('Find a field by name…'), 'aria-label': 'Find a field',
     });
     search.addEventListener('input', debounce(() => {
       ctx.search = search.value;
@@ -787,7 +788,7 @@ export class Mobs {
       subtitle: ctx.mob.path.split('/').slice(1).join('/'),
       width: 'min(96vw, 880px)',
       body,
-      actions: [{ label: 'Done' }],
+      actions: [{ label: t('Done') }],
     });
     // Handed to the head and the link strip, both of which are painted before
     // the dialog that owns them exists.
@@ -806,8 +807,8 @@ export class Mobs {
         el('div', { class: 'mob-detail-name', text: mob.name || `Mob ${mob.mobId}` }),
         el('div', { class: 'mob-sub', text: `ID ${mob.mobId}` })),
       el('span', { class: 'mob-level', text: `Lv ${fmt.format(mob.level ?? 0)}` }),
-      mob.isBoss ? el('span', { class: 'mob-badge', 'data-kind': 'boss', text: 'Boss' }) : null,
-      mob.undead ? el('span', { class: 'mob-badge', 'data-kind': 'undead', text: 'Undead' }) : null,
+      mob.isBoss ? el('span', { class: 'mob-badge', 'data-kind': 'boss', text: t('Boss') }) : null,
+      mob.undead ? el('span', { class: 'mob-badge', 'data-kind': 'undead', text: t('Undead') }) : null,
       el('span', { style: 'margin-left:auto' }),
       el('button', {
         class: 'btn btn-sm', 'data-tip': 'Open this .img in the Explorer',
@@ -835,8 +836,8 @@ export class Mobs {
       el('div', { class: 'mob-link-text' },
         el('b', { text: `This mob links to ${target}.` }),
         el('span', {
-          text: ' Its real stats live in that image, so edits made here are written but will not ' +
-                'change anything in-game. Edit the target instead.',
+          text: t(' Its real stats live in that image, so edits made here are written but will not ' +
+                'change anything in-game. Edit the target instead.'),
         })),
       el('button', {
         class: 'btn btn-sm',
@@ -916,7 +917,7 @@ export class Mobs {
       // "(was X)" inline, so a changed value carries its own history and does
       // not need a diff view to be readable.
       changed ? el('span', { class: 'mob-was', text: `was ${was === '' ? 'empty' : was}` }) : null,
-      !field.present ? el('span', { class: 'mob-absent-tag', text: 'not set' }) : null));
+      !field.present ? el('span', { class: 'mob-absent-tag', text: t('not set') }) : null));
 
     if (field.kind === 'Flag') {
       const box = el('input', { type: 'checkbox', checked: current === '1' });
@@ -963,7 +964,7 @@ export class Mobs {
     if (field.hint) row.append(el('div', { class: 'mob-field-hint', text: field.hint }));
     if (!field.present) {
       row.append(el('div', { class: 'mob-field-hint',
-        text: 'This mob does not have this field. Setting a value creates it.' }));
+        text: t('This mob does not have this field. Setting a value creates it.') }));
     }
     return row;
   }
@@ -985,7 +986,7 @@ export class Mobs {
 
     return el('details', { class: 'mob-section' },
       el('summary', {},
-        el('span', { class: 'mob-section-name', text: 'Other keys' }),
+        el('span', { class: 'mob-section-name', text: t('Other keys') }),
         el('span', { class: 'mob-section-meta', text: `${entries.length} not editable here` })),
       list);
   }
@@ -1136,8 +1137,8 @@ export class Mobs {
       clear(previewHost);
       previewHost.append(el('div', { class: 'mob-preview-empty' },
         icon('info', { size: 15 }),
-        el('span', { text: 'Preview a change to see the exact before and after for every mob. ' +
-                           'Nothing is written until then.' })));
+        el('span', { text: t('Preview a change to see the exact before and after for every mob. ' +
+                           'Nothing is written until then.') })));
     };
     for (const control of [fieldSelect, opSelect, roundSelect]) control.addEventListener('change', invalidate);
     valueInput.addEventListener('input', invalidate);
@@ -1158,7 +1159,7 @@ export class Mobs {
         return;
       }
       clear(previewHost);
-      previewHost.append(el('div', { class: 'mob-preview-empty' }, el('span', { text: 'Working…' })));
+      previewHost.append(el('div', { class: 'mob-preview-empty' }, el('span', { text: t('Working…') })));
       try {
         const result = await api.mobBulk({ ...body, dryRun: true });
         preview = result;
@@ -1180,7 +1181,7 @@ export class Mobs {
     }));
 
     const { close } = modal({
-      title: 'Bulk edit mobs',
+      title: t('Bulk edit mobs'),
       subtitle: `${fmt.format(paths.length)} mob${paths.length === 1 ? '' : 's'} selected`,
       width: 'min(96vw, 900px)',
       body: el('div', { class: 'mob-bulk' },
@@ -1192,13 +1193,13 @@ export class Mobs {
         el('div', { class: 'mob-bulk-actions' }, previewButton, applyButton),
         previewHost,
         el('div', { class: 'tips' },
-          el('b', { text: 'How this behaves' }),
+          el('b', { text: t('How this behaves') }),
           el('ul', {},
-            el('li', { text: 'Preview runs against the server, so what you see is exactly what would be written.' }),
-            el('li', { text: 'A mob without the field is skipped, with the reason shown — it is never created here.' }),
-            el('li', { text: 'Percent is applied by the server; read the preview rather than assuming a sign.' }),
-            el('li', { text: 'Nothing reaches disk until you save, and the whole batch can be undone.' })))),
-      actions: [{ label: 'Close' }],
+            el('li', { text: t('Preview runs against the server, so what you see is exactly what would be written.') }),
+            el('li', { text: t('A mob without the field is skipped, with the reason shown — it is never created here.') }),
+            el('li', { text: t('Percent is applied by the server; read the preview rather than assuming a sign.') }),
+            el('li', { text: t('Nothing reaches disk until you save, and the whole batch can be undone.') })))),
+      actions: [{ label: t('Close') }],
     });
 
     applyButton.addEventListener('click', () => this.guard('bulk-apply', async () => {
@@ -1208,7 +1209,7 @@ export class Mobs {
         title: `Change ${fieldSelect.value} on ${fmt.format(changing.length)} mob${changing.length === 1 ? '' : 's'}?`,
         message: `${OPS.find(([v]) => v === opSelect.value)?.[1]} ${valueInput.value} — this is the preview you ` +
                  'are looking at. Nothing is written to disk until you save, and you can undo it.',
-        confirmLabel: 'Apply the changes',
+        confirmLabel: t('Apply the changes'),
         danger: false,
       });
       if (!ok) return;
@@ -1221,7 +1222,7 @@ export class Mobs {
           `Updated ${fmt.format(result.applied ?? 0)} mob${result.applied === 1 ? '' : 's'}` +
           (skipped ? `, skipped ${fmt.format(skipped)}.` : '.'),
           'success', {
-            action: { label: 'Undo', run: async () => { await this.app.undo(); await this.load(); } },
+            action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.load(); } },
           });
         this.app.markDirty();
         await this.load();
@@ -1254,7 +1255,7 @@ export class Mobs {
                            (skipped ? `, ${fmt.format(skipped)} skipped` : '') }),
         result.truncated
           ? el('span', { class: 'mob-preview-trunc',
-              text: 'The server stopped listing early — more mobs are affected than are shown.' })
+              text: t('The server stopped listing early — more mobs are affected than are shown.') })
           : null),
       el('div', { class: 'mob-preview-scroll' },
         el('table', { class: 'mob-preview' },
