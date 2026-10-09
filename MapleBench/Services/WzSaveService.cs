@@ -97,7 +97,20 @@ public sealed class WzSaveService
         // save could do. Everything below only moves and validates files.
         byte[] bytes = NxWriter.Write(file.WzFile, out NxWriteReport report);
 
-        string scratch = target + ".partial";
+        // Beside the target, and named the way NewTempName names the classic
+        // scratch files. This used to be target + ".partial", which no sweep could
+        // ever recognise, so an NX save killed mid-write -- a crash, a power loss,
+        // a user closing the window -- left a full-size copy of the user's archive
+        // under a name nothing ever cleans up. Under this name the existing sweep
+        // recognises it and attributes it to the process that wrote it: a leftover
+        // becomes a candidate the moment its writer is gone, and never while that
+        // writer is still running.
+        //
+        // Path.Combine against an empty first part yields a bare file name, and the
+        // working directory is a scratch folder rather than the archive's own. GetDirectoryName
+        // returns null only for a volume root, so that is the one shape where the root is the
+        // correct thing to put the scratch beside.
+        string scratch = Path.Combine(directory ?? Path.GetPathRoot(target)!, NewTempName(".nx"));
         string? backup = null;
         try
         {
@@ -1907,8 +1920,8 @@ public sealed class WzSaveService
     /// deliberately narrow:
     ///   * only names matching exactly what <see cref="NewTempName"/> or
     ///     <see cref="DisplacedOriginalName"/> produces — the literal prefix, an
-    ///     optional process id, a 32-character GUID, and a <c>.wz</c> or
-    ///     <c>.img</c> extension.  A <c>.wz</c>, a <c>.bak</c>, a
+    ///     optional process id, a 32-character GUID, and a <c>.wz</c>,
+    ///     <c>.img</c> or <c>.nx</c> extension.  A <c>.wz</c>, a <c>.bak</c>, a
     ///     <c>.recovered</c> or anything a user named themselves cannot match;
     ///   * only the top level of each folder, never a subtree;
     ///   * only files whose owner is demonstrably gone — either the process named
@@ -2066,10 +2079,15 @@ public sealed class WzSaveService
     }
 
     /// <summary>
-    /// True only for a name this service could itself have written — either
-    /// "mbsave-&lt;pid&gt;-&lt;guid&gt;.wz" from <see cref="NewTempName"/> or
-    /// "mbsave-replaced-&lt;pid&gt;-&lt;guid&gt;-Etc.wz" from
+    /// True only for a name this service could itself have written — one of the
+    /// "mbsave-&lt;pid&gt;-&lt;guid&gt;.{wz,img,nx}" forms <see cref="NewTempName"/>
+    /// produces, or "mbsave-replaced-&lt;pid&gt;-&lt;guid&gt;-Etc.wz" from
     /// <see cref="DisplacedOriginalName"/>.
+    ///
+    /// The extension is an allow-list and not a wildcard, and <c>.nx</c> is on it
+    /// for the same reason <c>.wz</c> and <c>.img</c> are: those three are every
+    /// extension a scratch file is ever written with, so a name ending in anything
+    /// else is somebody else's file however it is spelled.
     ///
     /// The pid is optional because a build before it existed wrote the same two
     /// shapes without one, and its leftovers are still the user's to clean up.
@@ -2094,7 +2112,8 @@ public sealed class WzSaveService
 
         string extension = Path.GetExtension(fileName);
         if (!extension.Equals(".wz", StringComparison.OrdinalIgnoreCase) &&
-            !extension.Equals(".img", StringComparison.OrdinalIgnoreCase))
+            !extension.Equals(".img", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".nx", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
