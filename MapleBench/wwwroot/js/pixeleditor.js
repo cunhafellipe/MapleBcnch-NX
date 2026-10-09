@@ -43,7 +43,7 @@ const FORMAT_LIMITS = {
   Format517:  'This canvas is block-compressed RGB565. It cannot store transparency — erased pixels will come back as black — and colour is averaged over 16×16 blocks.',
   Format1026: 'This canvas is DXT3. Colour is compressed in 4×4 blocks and alpha keeps only 4 bits, so fine detail and soft edges will shift.',
   Format2050: 'This canvas is DXT5. Colour is compressed in 4×4 blocks, so fine detail will shift.',
-  Format4098: 'This canvas is BC7, which MapleBench can read but not write. Applying stores it as uncompressed BGRA8888 instead, so the file grows.',
+  Format4098: 'This canvas is BC7, which MapleBenchX can read but not write. Applying stores it as uncompressed BGRA8888 instead, so the file grows.',
 };
 
 export function openPixelEditor(node, app) {

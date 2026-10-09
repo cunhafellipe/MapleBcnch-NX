@@ -1110,7 +1110,7 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
     const { dialog: conflictDialog } = modal({
       title: count === 1 ? 'An entry already exists' : `${fmt.format(count)} entries already exist`,
-      subtitle: `Choose how MapleBench should handle conflicts in ${targetArchive}.`,
+      subtitle: `Choose how MapleBenchX should handle conflicts in ${targetArchive}.`,
       width: 'min(92vw, 560px)',
       body: el('div', { class: 'tp-conflict' },
         el('div', { class: 'tp-conflict-icon', 'aria-hidden': 'true' }, icon('replace', { size: 22 })),

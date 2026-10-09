@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -32,7 +32,11 @@ public static class Program
         // path, so it lands in whatever the process working directory happens to
         // be.  Point that at a private temp folder rather than the install dir,
         // which may be read-only or shared.
-        string scratchRoot = Path.Combine(Path.GetTempPath(), "MapleBench");
+        //
+        // The name comes from LaunchPlan rather than being spelled here: this is
+        // only the sweep root, and a sweep root that disagreed with the folder
+        // the app actually runs in is a sweep of somebody else's scratch.
+        string scratchRoot = Path.Combine(Path.GetTempPath(), LaunchPlan.ScratchRoot);
         string scratch = LaunchPlan.ScratchFolder(Environment.ProcessId);
         Directory.CreateDirectory(scratch);
         Environment.CurrentDirectory = scratch;

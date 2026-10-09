@@ -234,7 +234,10 @@ public sealed class XmlExportService
     /// </summary>
     private static string NewTempDirectory()
     {
-        string path = Path.Combine(Path.GetTempPath(), "MapleBench", "xml-" + Guid.NewGuid().ToString("N"));
+        // Under this product's own temp root, so an export running in MapleBenchX
+        // cannot land in the tree MapleBench sweeps on launch.
+        string path = Path.Combine(Path.GetTempPath(), LaunchPlan.ScratchRoot,
+            "xml-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(path);
         return path;
     }

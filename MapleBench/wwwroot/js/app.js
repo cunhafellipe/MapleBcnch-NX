@@ -1,5 +1,5 @@
 /**
- * MapleBench shell: session state, navigation, keyboard, and wiring between
+ * MapleBenchX shell: session state, navigation, keyboard, and wiring between
  * the tree, the inspector and Cash Shop mode.
  */
 
@@ -482,7 +482,7 @@ class App {
 
     const inner = el('div', { class: 'welcome-inner' },
       mark,
-      el('h1', { text: 'MapleBench' }),
+      el('h1', { text: 'MapleBenchX' }),
       el('p', {
         text: 'Open a MapleStory client to browse and edit its WZ archives, or import content from ' +
               'another client with dependency review. Changes stay in the session until you save.',
@@ -550,7 +550,7 @@ class App {
     if (!this.files.some((file) => !file.readOnly)) {
       const open = await confirmDialog({
         title: 'Open the client you want to edit first',
-        message: 'MapleBench imports into an open writable client. Open that client before choosing '
+        message: 'MapleBenchX imports into an open writable client. Open that client before choosing '
           + 'content from a read-only source.',
         confirmLabel: 'Open client',
         cancelLabel: 'Not now',
@@ -907,7 +907,12 @@ class App {
     // The Save button saves ARCHIVES; map-editor documents save from their own
     // section, so they light the chip but never this button.
     $('#btn-save').disabled = !anyDirty;
-    document.title = anyDirty || mapEdits ? '● MapleBench' : 'MapleBench';
+    // Written on every repaint, so the product name has to live here and not
+    // only in index.html's <title>: this line overwrites it on the first
+    // repaint, so the tab said "MapleBench" whatever the markup said -- which is
+    // how the rename looked like it had not taken. The dirty dot is the point of
+    // the line and had to stay.
+    document.title = anyDirty || mapEdits ? '● MapleBenchX' : 'MapleBenchX';
   }
 
   async refreshHistoryButtons() {
@@ -1727,7 +1732,7 @@ class App {
           : [],
         [
           { icon: 'help', label: 'Keyboard shortcuts', shortcut: '?', run: () => this.showShortcuts() },
-          { icon: 'info', label: 'About MapleBench', run: () => this.showAbout() },
+          { icon: 'info', label: 'About MapleBenchX', run: () => this.showAbout() },
         ],
       ], rect.right - 200, rect.bottom + 6);
     };
@@ -2474,11 +2479,11 @@ class App {
     try { about = { ...about, ...(await api.about()) }; } catch { /* static details remain useful */ }
 
     modal({
-      title: 'About MapleBench',
+      title: 'About MapleBenchX',
       width: '520px',
       body: el('div', { class: 'about-sheet' },
         el('div', { class: 'about-brand' }, brandMark(24),
-          el('div', {}, el('h2', { text: 'MapleBench' }),
+          el('div', {}, el('h2', { text: 'MapleBenchX' }),
             el('p', { text: `Version ${about.version}` }))),
         el('p', { text: 'A Windows WZ editor and dependency-aware client importer for MapleStory.' }),
         el('dl', {},

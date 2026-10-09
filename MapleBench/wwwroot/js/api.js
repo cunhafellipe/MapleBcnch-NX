@@ -1,5 +1,5 @@
-﻿/**
- * Thin wrapper over the MapleBench HTTP API.
+/**
+ * Thin wrapper over the MapleBenchX HTTP API.
  *
  * Every failure path funnels through ApiError so callers can show the
  * backend's message verbatim -- the services are written to produce text that

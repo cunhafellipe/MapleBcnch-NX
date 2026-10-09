@@ -525,7 +525,7 @@ export function openFindReplace(app, scopePath) {
  * is the wrong shape for the job it is reached for. Rebalancing is the most
  * repeated numeric task in WZ work and it is almost never "make these all the
  * same"; it is "make this range 15% stronger", which has to preserve the spread
- * the original data has. See MapleBench/Services/ValueMath.cs for the grammar.
+ * the original data has. See MapleBenchX/Services/ValueMath.cs for the grammar.
  *
  * A literal typed into this box still means exactly what it always meant, so
  * nobody's habit breaks — "150" is still "set them all to 150".

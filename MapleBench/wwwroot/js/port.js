@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Porting content between two open clients, in one action.
  *
  * The thing this exists to stop: someone needs a mob out of a newer client, so
@@ -603,7 +603,7 @@ async function offerMissingArchives({ app, spec, gap }) {
         el('div', { class: 'port-empty', 'data-tone': gap.blocking ? 'bad' : null },
           icon(gap.blocking ? 'alert' : 'info', { size: 15 }),
           el('span', { text: gap.sourceSide
-            ? 'MapleBench must inspect every source archive this kind can depend on before it can tell which '
+            ? 'MapleBenchX must inspect every source archive this kind can depend on before it can tell which '
               + 'parts the selection actually uses. Open these read-only; only dependencies that really exist '
               + 'for the selected entries will be copied.'
             : gap.blocking

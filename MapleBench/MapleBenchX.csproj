@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -12,11 +12,24 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
-    <AssemblyTitle>MapleBench</AssemblyTitle>
-    <Description>Windows WZ editor and dependency-aware MapleStory client importer with visual previews and verified saves</Description>
-    <Product>MapleBench</Product>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <!-- MapleBenchX: a separate build of MapleBench that lives beside the
+         original rather than replacing it. The exe, taskbar entry and Alt-Tab
+         are renamed so both can be open at once and be told apart at a glance.
+
+         AssemblyName is what the project file name would have produced anyway
+         (MapleBenchX), but it is stated rather than inherited so that the file
+         can be renamed without silently renaming the artefact.
+
+         RootNamespace stays `MapleBench`: renaming it would touch a `using` in
+         every C# file for a difference nobody can see. The namespace is an
+         implementation detail; the exe name, the window and the About box are
+         not. -->
+    <AssemblyName>MapleBenchX</AssemblyName>
+    <AssemblyTitle>MapleBenchX</AssemblyTitle>
+    <Description>Windows WZ and NX editor: opens NX archives directly, with visual previews, verified saves and batch close</Description>
+    <Product>MapleBenchX</Product>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
 
     <RootNamespace>MapleBench</RootNamespace>
 

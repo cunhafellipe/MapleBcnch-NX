@@ -93,9 +93,22 @@ public static class LaunchPlan
         return otherPort is null || otherPort == PreferredPort;
     }
 
+    /// <summary>
+    /// The per-product folder under %TEMP% that owns every scratch path.
+    ///
+    /// MapleBenchX, not MapleBench. This folder is swept on launch and holds
+    /// each running process's scratch plus its port and protected markers, so
+    /// sharing it with the other product means MapleBenchX sweeping away the
+    /// markers of a MapleBench that is still running -- and, worse, being seen
+    /// by it as a rival instance. The exe names differ, so the "is another copy
+    /// already up?" check will not match them; the scratch tree is what would
+    /// otherwise have been the thing that separated them.
+    /// </summary>
+    public const string ScratchRoot = "MapleBenchX";
+
     /// <summary>The scratch folder a given process id owns.</summary>
     public static string ScratchFolder(int pid) =>
-        Path.Combine(Path.GetTempPath(), "MapleBench", pid.ToString());
+        Path.Combine(Path.GetTempPath(), ScratchRoot, pid.ToString());
 
     /// <summary>True when that process asked not to be ended.</summary>
     public static bool IsProtected(int pid)

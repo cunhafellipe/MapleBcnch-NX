@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The sectioned workspace: one list of day-to-day editors down the left, one
  * stage on the right, and the Explorer left exactly as it was beside it.
  *

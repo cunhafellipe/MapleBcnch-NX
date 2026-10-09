@@ -76,7 +76,7 @@ const PATHS = {
   more: '<circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
 
   /* --- brand --- */
-  // The MapleBench mark: a bench edge with three tools standing on it. Same
+  // The MapleBenchX mark: a bench edge with three tools standing on it. Same
   // 24-unit grid as everything above, but seven FILLED axis-aligned rectangles
   // rather than a stroked outline -- render it with brandMark(), never icon().
   // Canonical source: branding/maplebench-mark.svg.

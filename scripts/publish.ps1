@@ -49,6 +49,18 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'version.ps1')
 
+# The app is named after its project, not after whatever this script last
+# remembered. Three places used to spell "MapleBench.exe" and "MapleBench.csproj"
+# out longhand; renaming the project left all three naming the old one, so the
+# publish would have looked for an artefact no build had produced, and the smoke
+# test would have copied a MapleBenchX exe to a path named MapleBench.exe and
+# verified the wrong file.
+$projectName = [System.IO.Path]::GetFileNameWithoutExtension(
+    (Get-ChildItem (Join-Path $root 'MapleBench') -Filter *.csproj | Select-Object -First 1).Name)
+if (-not $projectName) { throw "No project found under $root\MapleBench -- cannot work out what to publish." }
+$exeName = "$projectName.exe"
+$projectPath = Join-Path $root "MapleBench\$projectName.csproj"
+
 function Test-StandaloneExe {
     <#
       Starts the published exe, on its own, in an empty folder, and asks it for
@@ -86,7 +98,7 @@ function Test-StandaloneExe {
 
     $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('MapleBench-verify-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
     New-Item -ItemType Directory -Path $sandbox -Force | Out-Null
-    $copy = Join-Path $sandbox 'MapleBench.exe'
+    $copy = Join-Path $sandbox $exeName
     Copy-Item -LiteralPath $ExePath -Destination $copy
 
     # Let the OS pick a free port rather than guessing one and colliding with
@@ -274,7 +286,7 @@ if (-not [System.IO.Path]::IsPathRooted($Output)) {
 }
 $Output = [System.IO.Path]::GetFullPath($Output)
 
-$exe = Join-Path $Output 'MapleBench.exe'
+$exe = Join-Path $Output $exeName
 $stamp = Get-MapleBenchVersion -RepoRoot $root -Explicit $Version
 
 Write-Host ''
@@ -336,7 +348,7 @@ else {
 # cascade. See README.md for the csproj change that would make
 # -p:Version alone enough.
 $arguments = @(
-    (Join-Path $root 'MapleBench\MapleBench.csproj')
+    $projectPath
     '-c', $Configuration
     '-r', 'win-x64'
     '--self-contained', 'true'

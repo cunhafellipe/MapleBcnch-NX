@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Imports content from a classic or split client into the writable client.
  *
  * PortService resolves the selected entry and its associated names, sounds,
@@ -235,9 +235,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       list.append(el('div', { class: 'imp-empty' },
         icon('info', { size: 15 }),
         el('span', { text: dual
-          ? 'Choose the second client. MapleBench recognizes ordinary .wz archives and modern '
+          ? 'Choose the second client. MapleBenchX recognizes ordinary .wz archives and modern '
             + 'split Data\\ clients, and keeps this side read-only.'
-          : 'Choose a client folder. MapleBench recognizes ordinary .wz archives and modern split '
+          : 'Choose a client folder. MapleBenchX recognizes ordinary .wz archives and modern split '
             + 'Data\\ clients, then opens either layout through the same read-only import workflow.' })));
       return;
     }
@@ -485,7 +485,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
         el('b', { text: source.name }),
         el('span', { class: 'imp-head-sub', text: subtitle() })),
       el('span', { class: 'imp-lock', 'data-tip':
-        'Source opened read-only. MapleBench will not edit or save it.' },
+        'Source opened read-only. MapleBenchX will not edit or save it.' },
         icon('lock', { size: 12 }), 'read-only')));
 
     body.append(sourcesHost);
@@ -564,7 +564,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     sourcesHost.append(el('div', { class: 'notice', 'data-tone': 'warn' },
       icon('alert', { size: 15 }),
       el('div', {},
-        el('div', { text: `${families} ${missing.length === 1 ? 'is' : 'are'} not open. MapleBench must `
+        el('div', { text: `${families} ${missing.length === 1 ? 'is' : 'are'} not open. MapleBenchX must `
           + `inspect ${missing.length === 1 ? 'it' : 'them'} before importing the ${fmt.format(n)} selected `
           + `${n === 1 ? 'entry' : 'entries'}, or it cannot know which dependencies they have.` }),
         el('div', { class: 'imp-hint', text:
@@ -1077,7 +1077,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
             el('span', { class: 'imp-hint', text: ` — ${names.join(', ')}`
               + (picked.size > names.length ? ` and ${fmt.format(picked.size - names.length)} more` : '') }))
         : el('span', { class: 'imp-hint', text:
-            'Nothing selected yet. MapleBench checks names, effects, sounds, set data, and referenced art '
+            'Nothing selected yet. MapleBenchX checks names, effects, sounds, set data, and referenced art '
             + 'before the import can continue.' }),
       picked.size
         ? el('button', { class: 'btn btn-sm btn-ghost', onclick: () => clearPicked() },
@@ -1213,7 +1213,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       const names = sentenceList(archives.map((archive) => archive.name));
       const proceed = await confirmDialog({
         title: 'Open the selection\'s dependency archives?',
-        message: `${names} must be inspected before MapleBench can verify the selection's required `
+        message: `${names} must be inspected before MapleBenchX can verify the selection's required `
           + `dependencies. They open read-only and nothing on disk is changed.`
           + (total ? ` Their source size is ${bytes(total)}.` : ''),
         confirmLabel: `Open ${fmt.format(archives.length)} and continue`,
