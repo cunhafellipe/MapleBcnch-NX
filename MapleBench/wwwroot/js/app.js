@@ -84,7 +84,7 @@ function closeDiscardMessage(dirty, counted, total) {
   const held = total
     ? `${total} unsaved change${total === 1 ? ' has' : 's have'} not been written to disk. `
     : 'They hold unsaved work that has not been written to disk. ';
-  return `${names} hold unsaved work. ${held}Closing discards it. Nothing on disk is changed.`;
+  return `${names} hold unsaved work. ${held}Closing discards them. Nothing on disk is changed.`;
 }
 
 class App {

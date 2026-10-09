@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Virtualized WZ tree.
  *
  * Only the rows in view exist in the DOM, which is what keeps a directory of
@@ -393,6 +393,25 @@ export class TreeView {
     this.rebuild();
   }
 
+  /**
+   * A loadChildren() with nobody to report a failure to.
+   *
+   * loadChildren() rethrows on purpose: an interactive caller wants to tell the
+   * user the archive could not be read. A background load has no such caller --
+   * the row is already on screen and the failure is recorded in `failed`, which
+   * is what stops rebuild() from asking again forever -- so letting the
+   * rejection escape buys nothing and costs an unhandled rejection in the
+   * console.
+   *
+   * It is not a rare edge. Closing an archive releases it while its rows may
+   * still be loading, so the request comes back "No open file with id 'f7'" and
+   * the console fills with it. Closing a whole batch of archives does that on
+   * every row that was mid-load, which is most of them.
+   */
+  loadChildrenInBackground(path) {
+    this.loadChildren(path).catch(() => {});
+  }
+
   async expand(path) {
     if (this.expanded.has(path)) return;
     this.expanded.add(path);
@@ -405,9 +424,16 @@ export class TreeView {
     this.rebuild();
   }
 
-  async toggle(path) {
-    if (this.expanded.has(path)) this.collapse(path);
-    else await this.expand(path);
+  /**
+   * Expands or collapses, without making the caller handle a load failure.
+   *
+   * A click on a twisty is not an interactive caller: onClick() and the
+   * context menu both fire this and ignore the promise, so a rejection here
+   * would be unhandled rather than reported anywhere.
+   */
+  toggle(path) {
+    if (this.expanded.has(path)) { this.collapse(path); return; }
+    this.expand(path).catch(() => {});
   }
 
   /**
@@ -431,7 +457,13 @@ export class TreeView {
       if (!node?.hasChildren) continue;
 
       this.expanded.add(current);
-      const kids = await this.loadChildren(current);
+      // A row that will not load is recorded and stepped over, not thrown out
+      // of: this walks hundreds of rows and every caller of it is a menu item
+      // or a keystroke that fires and forgets. Aborting the whole expansion --
+      // and rejecting into nobody -- because one image was closed underneath it
+      // is the worst of both. The failure stays in `failed`, which is what
+      // rebuild() reads to know not to ask again.
+      const kids = await this.loadChildren(current).catch(() => []);
       opened += kids.length;
 
       for (const kid of kids) {
@@ -549,7 +581,7 @@ export class TreeView {
     this.sizer.style.height = `${flat.length * ROW_H}px`;
     this.scheduleRender();
 
-    for (const path of refetch) this.loadChildren(path);
+    for (const path of refetch) this.loadChildrenInBackground(path);
   }
 
   /** Sibling filter: name substring and/or property type chips. */
