@@ -56,6 +56,37 @@ const PROPERTY_TYPES = [
   'SubProperty', 'Vector', 'UOL', 'Canvas', 'Convex', 'Null',
 ];
 
+/**
+ * What closing a batch of archives is about to throw away.
+ *
+ * The names are in the dialog because "close 6 archives with unsaved changes?"
+ * is a question about six separate pieces of work, and answering it has to be
+ * answering it about those six. Capped at five, because sixteen open archives
+ * is an ordinary session here and a dialog sixteen names tall is one nobody
+ * reads before clicking.
+ *
+ * `counted` is file id -> changeCount from /api/changes. An archive missing
+ * from it still has unsaved work whose count could not be had -- announced as
+ * unsaved work rather than as zero, because a deletion is not an image and was
+ * never counted in the first place.
+ */
+function closeDiscardMessage(dirty, counted, total) {
+  if (dirty.length === 1) {
+    const count = counted.get(dirty[0].id);
+    const held = count
+      ? `${count} unsaved change${count === 1 ? ' has' : 's have'} not been written to disk. `
+      : 'This archive holds unsaved work that has not been written to disk. ';
+    return held + 'Closing discards it. The file on disk is not changed.';
+  }
+  const shown = dirty.slice(0, 5).map((file) => file.name);
+  const rest = dirty.length - shown.length;
+  const names = shown.join(', ') + (rest ? ` and ${rest} more` : '');
+  const held = total
+    ? `${total} unsaved change${total === 1 ? ' has' : 's have'} not been written to disk. `
+    : 'They hold unsaved work that has not been written to disk. ';
+  return `${names} hold unsaved work. ${held}Closing discards it. Nothing on disk is changed.`;
+}
+
 class App {
   constructor() {
     // Started before anything below it is built.
@@ -1679,13 +1710,25 @@ class App {
     $('#btn-more').onclick = (event) => {
       const rect = event.currentTarget.getBoundingClientRect();
       this.showMenu([
-        {
-          icon: document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon',
-          label: 'Switch theme',
-          run: () => this.toggleTheme(),
-        },
-        { icon: 'help', label: 'Keyboard shortcuts', shortcut: '?', run: () => this.showShortcuts() },
-        { icon: 'info', label: 'About MapleBench', run: () => this.showAbout() },
+        [
+          {
+            icon: document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon',
+            label: 'Switch theme',
+            run: () => this.toggleTheme(),
+          },
+        ],
+        // Its own group so it is never one keystroke away from "Switch theme":
+        // it is the one item in this menu that can discard work. Hidden with a
+        // single archive open, where right-clicking that archive is the same
+        // action under a shorter name.
+        this.files.length > 1
+          ? [{ icon: 'close', label: `Close all ${this.files.length} archives`, shortcut: 'Ctrl Shift W',
+              danger: true, run: () => this.closeAllFiles() }]
+          : [],
+        [
+          { icon: 'help', label: 'Keyboard shortcuts', shortcut: '?', run: () => this.showShortcuts() },
+          { icon: 'info', label: 'About MapleBench', run: () => this.showAbout() },
+        ],
       ], rect.right - 200, rect.bottom + 6);
     };
     $('#mode-explorer').onclick = () => this.setMode('explorer');
@@ -2039,10 +2082,6 @@ class App {
   }
 
   /**
-   * Closes an archive, warning first if it has unsaved edits. Closing only
-   * drops it from this session -- nothing on disk is touched.
-   */
-  /**
    * Marks an archive reference-only, or releases it.
    *
    * For the case that actually bites: two clients open at once to port a change
@@ -2067,53 +2106,136 @@ class App {
     }
   }
 
+  /**
+   * Closes one archive, warning first if it has unsaved edits. Closing only
+   * drops it from this session -- nothing on disk is touched.
+   *
+   * A thin wrapper over closeFiles on purpose: one archive and a batch of them
+   * must ask, refresh and report through exactly the same code, or the single
+   * case quietly drifts away from the batch one the moment either changes.
+   */
   async closeFile(fileId) {
-    const file = this.files.find((f) => f.id === fileId);
-    if (!file) return;
+    return this.closeFiles([fileId]);
+  }
 
-    if (file.dirty) {
-      // Asked for rather than read off the file list for the same reason as the
-      // save dialog: dirtyNodeCount is images only, so the one dialog that
-      // throws work away was announcing "0 images have edits" for a deletion.
-      const pending = await api.changes()
-        .then((data) => data.files.find((entry) => entry.file.id === fileId))
-        .catch(() => null);
-      const count = pending?.changeCount ?? file.dirtyNodeCount;
+  /** Closes everything open, from the toolbar menu and from Ctrl Shift W. */
+  closeAllFiles() {
+    return this.closeFiles(this.files.map((file) => file.id));
+  }
+
+  /**
+   * Closes a batch of archives, asking about unsaved work once for the batch.
+   *
+   * Closing them one at a time is what a merged family does and it works, but
+   * it asks the same question once per archive and then stops partway through
+   * when the answer changes -- "close the other four too?" is not a question
+   * anyone was asked, and a batch that halts at the first "no" leaves open the
+   * archive the user most wanted gone. So the confirmation is hoisted to the
+   * front, names every archive that would lose work, and is asked once. The
+   * pass after it reports whatever failed instead of abandoning the rest: one
+   * archive held open by a file lock must not cost the other five their close.
+   *
+   * The counts come from api.changes() and never from dirtyNodeCount, for the
+   * reason closeFile always gave: dirtyNodeCount is images only, so the one
+   * dialog that throws work away was announcing "0 images have edits" for a
+   * deletion. One request covers the batch -- /api/changes reports every open
+   * file with unsaved work, not one named file.
+   */
+  async closeFiles(fileIds) {
+    // De-duplicated because a range-select that starts on one archive root and
+    // ends on another can name the same root twice, and closing it twice is a
+    // request for a session the server has already released.
+    const targets = [...new Set(fileIds)]
+      .map((id) => this.files.find((file) => file.id === id))
+      .filter(Boolean);
+    if (!targets.length) return;
+
+    // The guard covers the batch rather than each archive: two clicks landing
+    // while four archives are closing is one action, not eight.
+    await runOnce(`close:${targets.map((file) => file.id).sort().join(',')}`,
+      () => this.runCloseFiles(targets));
+  }
+
+  async runCloseFiles(targets) {
+    const dirty = targets.filter((file) => file.dirty);
+    if (dirty.length) {
+      const wanted = new Set(dirty.map((file) => file.id));
+      const counted = new Map((await api.changes()
+        .then((data) => (Array.isArray(data?.files) ? data.files : []))
+        .catch(() => []))
+        .filter((entry) => wanted.has(entry.file?.id))
+        .map((entry) => [entry.file.id, entry.changeCount ?? 0]));
+      const total = dirty.reduce((sum, file) => sum + (counted.get(file.id) ?? 0), 0);
       const ok = await confirmDialog({
-        title: `Close ${file.name} with unsaved changes?`,
-        message: count
-          ? `${count} unsaved change${count === 1 ? '' : 's'} ${count === 1 ? 'has' : 'have'} not been `
-            + `written to disk. Closing discards ${count === 1 ? 'it' : 'them'}. The file on disk is `
-            + 'not changed.'
-          : 'This archive holds unsaved work that has not been written to disk. Closing discards it. '
-            + 'The file on disk is not changed.',
-        confirmLabel: 'Discard and close',
+        title: dirty.length === 1
+          ? `Close ${dirty[0].name} with unsaved changes?`
+          : `Close ${dirty.length} archives with unsaved changes?`,
+        message: closeDiscardMessage(dirty, counted, total),
+        confirmLabel: dirty.length === 1 ? 'Discard and close' : `Discard and close ${dirty.length}`,
       });
       if (!ok) return;
     }
 
-    try {
-      await api.close(fileId);
-      // Anything selected inside the closed archive no longer exists.
-      if (this.currentPath?.split('/')[0] === fileId) {
-        this.currentPath = null;
-        this.history = this.history.filter((p) => p.split('/')[0] !== fileId);
-        this.historyIndex = this.history.length - 1;
-        clear($('#breadcrumb'));
-        clear($('#child-list'));
-        clear($('#inspector-body'));
+    // A merged family is drawn as one row out of four archives. Closing a member
+    // leaves the family pointing at a session that is gone, so it is unmerged
+    // first -- the same order family.js uses, and for the same reason. Best
+    // effort: an archive nobody has merged is the common case, and a family
+    // that will not unmerge must not stop the close it was blocking.
+    const affected = (this.families ?? []).filter((family) =>
+      family.members.some((member) => targets.some((file) => file.id === member.fileId)));
+    for (const family of affected) {
+      await api.familyUnmerge(family.id).catch(() => {});
+    }
+
+    const closed = [];
+    const failed = [];
+    for (const file of targets) {
+      try {
+        await api.close(file.id);
+        closed.push(file);
+      } catch (error) {
+        failed.push({ file, error });
       }
+    }
+
+    for (const file of closed) this.forgetClosedFile(file.id);
+    if (closed.length) {
+      // The tree is virtualised, so its row pool holds recycled elements for
+      // rows that no longer exist. invalidateAll() is what makes the next
+      // render rebuild them instead of painting the dropped archives.
       this.tree.invalidateAll();
       // Session ids are handed out in open order, so "f1" and item id 5000000
       // will address a different archive after the next open. Every cached
       // thumbnail, sprite and shop icon keyed on them is now wrong.
       resetMediaCache();
-      await this.refreshFiles();
-      if (!this.files.length) this.showWelcome();
-      toast(`${file.name} closed.`, 'success');
-    } catch (error) {
-      toastError(error, 'Could not close that file');
     }
+    await this.refreshFiles();
+    if (!this.files.length) this.showWelcome();
+
+    if (closed.length === 1) toast(`${closed[0].name} closed.`, 'success');
+    else if (closed.length) toast(`${closed.length} archives closed.`, 'success');
+    // One toast per failure: which ones failed is the whole answer, and a
+    // single "some could not be closed" would leave the user guessing which.
+    for (const { file, error } of failed) toastError(error, `Could not close ${file.name}`);
+  }
+
+  /**
+   * Drops everything a closed archive was holding still.
+   *
+   * Anything that pointed inside it now points at nothing, and a breadcrumb or
+   * a selection still naming a released session is how the UI ends up
+   * describing a file the server has already let go of.
+   */
+  forgetClosedFile(fileId) {
+    this.tree.selection.delete(fileId);
+    if (this.tree.focusPath?.split('/')[0] === fileId) this.tree.focusPath = null;
+    if (this.currentPath?.split('/')[0] !== fileId) return;
+    this.currentPath = null;
+    this.history = this.history.filter((p) => p.split('/')[0] !== fileId);
+    this.historyIndex = this.history.length - 1;
+    clear($('#breadcrumb'));
+    clear($('#child-list'));
+    clear($('#inspector-body'));
   }
 
   showContextMenu(path, node, event) {
@@ -2139,6 +2261,16 @@ class App {
     // from, and the useful actions are save, close and reveal.
     if (node?.kind === 'File') {
       const file = this.files.find((f) => f.id === path);
+      // Ctrl-click or Shift-click two archive roots and the menu acts on both:
+      // the selection is the set, the clicked row is only where it was opened.
+      // A root's path is its file id and an id holds no slash, which is what
+      // keeps every descendant node out of this. A merged family root is not in
+      // here either -- it has no file of its own, and the branch above returned
+      // before reaching this line with its own menu that unmerges first.
+      const selected = [...this.tree.selection]
+        .filter((p) => !p.includes('/'))
+        .filter((id) => this.files.some((f) => f.id === id));
+      const batch = selected.length > 1 && selected.includes(path) ? selected : [path];
       event.preventDefault();
       this.showMenu([
         { icon: 'chevronDown', label: this.tree.expanded.has(path) ? 'Collapse' : 'Expand',
@@ -2172,7 +2304,18 @@ class App {
               label: file?.readOnly ? 'Allow editing' : 'Open for reference only',
               run: () => file && this.setReadOnly(file, !file.readOnly) }
           : null,
-        { icon: 'close', label: 'Close file', danger: true, run: () => this.closeFile(path) },
+        batch.length > 1
+          ? { icon: 'close', label: `Close ${batch.length} archives`, danger: true,
+              run: () => this.closeFiles(batch) }
+          : { icon: 'close', label: 'Close file', danger: true, run: () => this.closeFile(path) },
+        // Offered even when the selection is a subset, because "close all of
+        // them" is the thing people actually want once they have started
+        // closing archives one at a time -- and it is the only entry point that
+        // survives the selection being a single row.
+        this.files.length > batch.length
+          ? { icon: 'close', label: `Close all ${this.files.length} archives`, danger: true,
+              run: () => this.closeAllFiles() }
+          : null,
       ], event.clientX, event.clientY);
       return;
     }
@@ -2289,6 +2432,7 @@ class App {
     const rows = [
       ['Ctrl P', 'Jump to any node'], ['Ctrl Shift P', 'Command palette'],
       ['Ctrl Shift F', 'Search all open files'], ['Ctrl S', 'Save'],
+      ['Ctrl Shift W', 'Close every open archive'],
       ['Ctrl Z / Ctrl Shift Z', 'Undo / Redo'],
       ['Ctrl 1 / Ctrl 2', 'Explorer / Editors'],
       ['Ctrl 3 / Ctrl 4 / Ctrl 5', 'Cash Shop / Mobs / Game Data Search'],
@@ -2307,9 +2451,11 @@ class App {
       ['?', 'This list'],
     ];
     const groups = [
-      ['General', rows.slice(0, 7)],
-      ['Explorer', rows.slice(7, 18)],
-      ['Editing', rows.slice(18)],
+      // Sliced, not bucketed, so every row lands in exactly one group. The
+      // bounds are the row indices, and adding a row means moving them.
+      ['General', rows.slice(0, 8)],
+      ['Explorer', rows.slice(8, 19)],
+      ['Editing', rows.slice(19)],
     ];
     modal({
       title: 'Keyboard shortcuts',
@@ -2577,6 +2723,12 @@ class App {
         return;
       }
       if (mod && event.shiftKey && event.key.toLowerCase() === 'f') { event.preventDefault(); this.openSearch(); return; }
+      // Shift-ed off Ctrl W on purpose: browsers reserve Ctrl W as "close this
+      // tab" and it does not reliably honour preventDefault, so a shortcut that
+      // cannot fire from the keyboard is not a shortcut.
+      if (mod && event.shiftKey && event.key.toLowerCase() === 'w') {
+        event.preventDefault(); this.closeAllFiles(); return;
+      }
       // Import is reachable while editing, not only from the welcome screen.
       if (mod && !event.shiftKey && event.key.toLowerCase() === 'i' && !typing) {
         event.preventDefault(); this.openImporter(); return;

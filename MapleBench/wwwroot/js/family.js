@@ -499,15 +499,17 @@ export function familyMenuItems(app, family) {
       } },
     { icon: 'copy', label: 'Copy folder path', run: () => app.copyPath(family.folder) },
     { icon: 'close', label: `Close all ${family.members.length} archives`, danger: true,
-      // One at a time through the ordinary close, so a member with unsaved work
-      // still gets its own "discard?" prompt. A merged root must not become a
-      // way to close four archives with one confirmation -- or with none.
+      // The batch close, not one call per member. Closing them one at a time
+      // asked the same "discard?" question once per archive, so four archives
+      // with unsaved work meant four identical dialogs in a row -- and answering
+      // "no" to the third still closed the other three, because the loop had no
+      // idea the user had stopped. closeFiles asks once, names every member
+      // that would lose work, and unmerges first: a merged root must never be a
+      // way to close four archives without being asked, but it can be a way to
+      // be asked about all four at once.
       run: async () => {
         stopOffering(family.folder, family.name);
-        await api.familyUnmerge(family.id).catch(() => {});
-        for (const member of family.members) {
-          await app.closeFile(member.fileId);
-        }
+        await app.closeFiles(family.members.map((member) => member.fileId));
       } },
   ];
 }
