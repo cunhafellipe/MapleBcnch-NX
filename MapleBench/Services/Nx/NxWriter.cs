@@ -19,10 +19,10 @@ namespace MapleBench.Services.Nx;
 /// </para>
 ///
 /// <para><b>Children are sorted.</b> Readers that binary-search a node's children compare raw
-/// UTF-8 bytes, and the sortedness holds in every archive in the reference corpus ??so a
+/// UTF-8 bytes, and the sortedness holds in every archive in the reference corpus —so a
 /// writer that did not reproduce it would produce files those readers silently mis-resolve.
 /// WZ has no ordering requirement, so this is a real difference: <b>node order is not
-/// preserved</b>. Everything else ??names, values, types, canvas sizes and children ??is.
+/// preserved</b>. Everything else —names, values, types, canvas sizes and children —is.
 /// </para>
 ///
 /// <para><b>Numbers widen.</b> NX has one 64-bit integer and one 64-bit float where WZ had
@@ -32,7 +32,7 @@ namespace MapleBench.Services.Nx;
 /// </para>
 ///
 /// <para><b>Canvas encoding.</b> Pixels go out as WebP. Decoding is exact; encoding is
-/// pixel-exact but not byte-identical to the originals ??SkiaSharp emits a VP8X container
+/// pixel-exact but not byte-identical to the originals —SkiaSharp emits a VP8X container
 /// where the shipped archives use VP8L, at roughly 65% more bytes. Both are ordinary WebP and
 /// both are readable; the file is larger.
 /// </para>
@@ -47,7 +47,7 @@ public static unsafe class NxWriter
     /// This exists because <c>BinaryWriter</c> buffers, and <c>BaseStream.Position</c> does not
     /// advance until it flushes. Reading a position to record where a table started therefore
     /// returned a stale value, and every offset derived from it pointed into the middle of the
-    /// node block ??which the reader rejects as an overlap. Flushing before each read papers
+    /// node block —which the reader rejects as an overlap. Flushing before each read papers
     /// over it; not buffering at all removes the possibility. The header is also patched by
     /// seeking backwards, which a buffered writer and a raw position cannot both do safely.
     /// </remarks>
@@ -335,7 +335,23 @@ public static unsafe class NxWriter
 
     private static PlannedNode PlanProperty(WzImageProperty property, NxPlan plan)
     {
+        // A property standing for an NX node may already have been planned, because two parents
+        // in the source shared it. Reuse the node rather than writing a second copy: a child is
+        // stored as an index into the node block, so emitting one record and pointing both
+        // parents at it is not a compression trick, it is exactly what the source does. Every
+        // multi-parent node in the corpus shares an identical child range, so this reproduces
+        // the source structure rather than approximating it.
+        int origin = NxNodeOrigin.IndexOf(property);
+        if (origin >= 0 && plan.ByOrigin.TryGetValue(origin, out var existing))
+        {
+            return existing;
+        }
+
         var node = new PlannedNode(property, property.Name, TypeOf(property), plan.NextOrder++);
+        if (origin >= 0)
+        {
+            plan.ByOrigin[origin] = node;
+        }
         switch (property)
         {
             // WzSubProperty, WzConvexProperty and WzCanvasProperty all hold children; a canvas
@@ -385,7 +401,7 @@ public static unsafe class NxWriter
     // The payload is copied straight out of the source archive rather than decoded and re-encoded.
 //
 // This is not an optimisation, it is the difference between a usable writer and an unusable
-// one ??and it is only correct because the tree is being copied rather than edited. An NX
+// one —and it is only correct because the tree is being copied rather than edited. An NX
 // canvas is already a WebP stream that some NX reader can decode, and a writer that produces
 // a different encoding of the same pixels has strictly gained nothing: it costs a full decode
 // and a full encode per canvas, and it makes the output larger and in a different container
@@ -415,7 +431,21 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
 
         node.CanvasWidth = nx.Canvas.Width;
         node.CanvasHeight = nx.Canvas.Height;
+
+        // Dedupe on the NX canvas index, not on the payload bytes. The archive's bitmap table is
+        // already shared — many nodes point at one entry — and re-appending the same payload for
+        // each of them is what left a written UI.nx at 127% with every node count already
+        // matching. One entry per source index, pointed at by all of them, is the source's own
+        // arrangement.
+        int key = (int)nx.Canvas.Index;
+        if (plan.BitmapByOrigin.TryGetValue(key, out uint reused))
+        {
+            node.BitmapIndex = reused;
+            return;
+        }
+
         node.BitmapIndex = (uint)plan.Bitmaps.Count;
+        plan.BitmapByOrigin[key] = node.BitmapIndex;
 
         var (offset, length) = nx.Canvas.EncodedRange;
         byte[] encoded = new byte[length];
@@ -490,8 +520,8 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
     /// Orders children the way NX readers expect: by their raw UTF-8 bytes.
     /// </summary>
     /// <remarks>
-    /// Duplicates keep their relative order, because the archive format permits them ??the
-    /// reference corpus holds two nodes named "1029" under one image ??and an unstable sort
+    /// Duplicates keep their relative order, because the archive format permits them —the
+    /// reference corpus holds two nodes named "1029" under one image —and an unstable sort
     /// would reorder those between runs.
     /// </remarks>
     private static void SortChildren(PlannedNode parent)
@@ -508,7 +538,15 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
     private static void BreadthFirst(NxPlan plan, PlannedNode root)
     {
         // The root is already at index 0; every other node is appended as its level is reached.
+        //
+        // A node already in the list is NOT appended again. NX stores a child as an index into
+        // this block, so one record referenced from two parents is a shared subtree, not a
+        // duplicate one, and the corpus is kind about it: every one of Character.nx's 227,783
+        // shared nodes has both parents at the same depth, so first-visit-wins lays the shared
+        // block down once and both parents point at it. Appending it twice is exactly what made
+        // a written Character.nx three times the size of the source.
         var byIndex = new List<PlannedNode> { root };
+        var queued = new HashSet<PlannedNode>(ReferenceEqualityComparer.Instance) { root };
         var queue = new Queue<PlannedNode>();
         queue.Enqueue(root);
 
@@ -520,6 +558,11 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
                 PlannedNode node = queue.Dequeue();
                 foreach (PlannedNode child in node.Children)
                 {
+                    if (!queued.Add(child))
+                    {
+                        continue;
+                    }
+
                     byIndex.Add(child);
                     queue.Enqueue(child);
                 }
@@ -574,6 +617,8 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
         internal List<byte[]> Audio { get; } = [];
         internal int Images { get; set; }
         internal int NextOrder;
+        internal Dictionary<int, PlannedNode> ByOrigin { get; } = new();
+        internal Dictionary<int, uint> BitmapByOrigin { get; } = new();
         internal int CanvasesCopied;
         internal long TypeWidened { get; set; }
         internal int EncodingErrors { get; set; }
@@ -610,8 +655,8 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
         /// Writes the offset table and the data, returning the table's file offset.
         /// </summary>
         /// <remarks>
-        /// Every offset is known before a byte is written ??the strings sit at fixed distances
-        /// from the end of the table ??so this writes in one pass and patches nothing. The
+        /// Every offset is known before a byte is written —the strings sit at fixed distances
+        /// from the end of the table —so this writes in one pass and patches nothing. The
         /// shape that reserved slots and patched them afterwards needed the writer's position
         /// threaded into the pool, which made two pieces depend on each other for no gain.
         /// </remarks>

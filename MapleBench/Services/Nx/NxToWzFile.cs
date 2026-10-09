@@ -14,7 +14,7 @@ namespace MapleBench.Services.Nx;
 /// each payload back to its canvas, because the payload was an ordinary
 /// <see cref="WzPngProperty"/> and had nowhere to put the link. Once the payload became an
 /// <see cref="NxPngProperty"/> that carries its own canvas, the table was solving a problem the
-/// type had already solved ??and a side table is something a future edit can forget to consult.
+/// type had already solved —and a side table is something a future edit can forget to consult.
 /// </para>
 /// <para>
 /// What remains is the rule that a caller has to follow, so it is written down here: going
@@ -38,7 +38,7 @@ public static class NxCanvasPixels
     /// </summary>
     /// <remarks>
     /// Returns <see langword="null"/> for a canvas that did not come from NX. That is not an
-    /// error ??it means the caller should use MapleLib's own path, and treating "not ours" as
+    /// error —it means the caller should use MapleLib's own path, and treating "not ours" as
     /// a failure would make every caller special-case WZ anyway.
     /// </remarks>
     public static Bitmap? Resolve(WzPngProperty? png) => (png as NxPngProperty)?.GetBitmap();
@@ -119,7 +119,7 @@ public readonly record struct NxConversionResult(
 ///
 /// <para><b>The type collapse, stated rather than hidden.</b> NX has seven node types and no
 /// numeric width: one 64-bit integer and one 64-bit float. WZ had Short, Int, Long, Float and
-/// Double, and <c>WzNode</c> goes out of its way to preserve that distinction ??its own notes
+/// Double, and <c>WzNode</c> goes out of its way to preserve that distinction —its own notes
 /// record 26 shapes in a shipping client that are genuinely mixed-type. None of that survives
 /// the trip through NX, and no reader can recover it. Rather than let <c>Long</c> and
 /// <c>Double</c> quietly stand in for whatever was there, every conversion counts the values
@@ -166,7 +166,7 @@ public static class NxToWzFile
 
             // Clear the dirty flag that populating the collection just set.
             //
-            // Adding a property marks its image changed ??which is exactly right when a
+            // Adding a property marks its image changed —which is exactly right when a
             // person edits an archive, and exactly wrong here, where "changed" would mean
             // the user has unsaved work. Every node's DTO reads its dirty state from this
             // one flag, so leaving it set would make a freshly opened NX file claim to hold
@@ -187,8 +187,8 @@ public static class NxToWzFile
     /// </summary>
     /// <remarks>
     /// Only <see cref="NxNodeType.None"/> and <see cref="NxNodeType.Bitmap"/> carry children in
-    /// this format. Across 9.9 million value nodes in the reference corpus ??integer, real,
-    /// string, vector and audio together ??not one had a single child. A value that did would be
+    /// this format. Across 9.9 million value nodes in the reference corpus —integer, real,
+    /// string, vector and audio together —not one had a single child. A value that did would be
     /// a shape this reader does not model, and silently dropping its children would produce an
     /// archive that looks complete and is not. Saying so costs one branch on the common path.
     /// </remarks>
@@ -211,8 +211,8 @@ public static class NxToWzFile
         ref long collapsed,
         ref int canvases)
     {
-        // Duplicate sibling names are legal in NX and occur in the corpus ??Say.img holds two
-        // "1029", Npc.img two "2104" ??and WZImage.AddProperty throws on a name it already
+        // Duplicate sibling names are legal in NX and occur in the corpus —Say.img holds two
+        // "1029", Npc.img two "2104" —and WZImage.AddProperty throws on a name it already
         // holds. WzPropertyCollection's own Add is the one that permits them, which is why
         // WzNode.Build() goes through it rather than through AddProperty.
         var collection = parent.WzProperties;
@@ -238,6 +238,24 @@ public static class NxToWzFile
         ref int canvases)
     {
         nodes++;
+        string name = node.Name;
+        WzImageProperty built = BuildPropertyCore(node, archive, mode, ref nodes, ref collapsed, ref canvases);
+
+        // Record which NX node this became. The writer needs it to put a shared subtree back
+        // once instead of once per reference; see NxNodeOrigin for why that matters and why
+        // it is exact rather than approximate.
+        NxNodeOrigin.Register(built, node.Index);
+        return built;
+    }
+
+    private static WzImageProperty BuildPropertyCore(
+        NxNode node,
+        NxArchive archive,
+        NxLoadMode mode,
+        ref long nodes,
+        ref long collapsed,
+        ref int canvases)
+    {
         string name = node.Name;
 
         switch (node.Type)
@@ -273,14 +291,14 @@ public static class NxToWzFile
             case NxNodeType.Bitmap:
             {
                 // A bitmap node is NOT a leaf. Across the whole reference corpus, 1,296,108 of
-                // 1,298,868 canvas nodes carry children ??origin, delay, _inlink, _outlink and
-                // whatever else the art was authored with ??and they are the reason a canvas
+                // 1,298,868 canvas nodes carry children —origin, delay, _inlink, _outlink and
+                // whatever else the art was authored with —and they are the reason a canvas
                 // draws where it draws. Treating the type as a leaf silently threw all of them
                 // away: on Morph.nx that was 8,977 properties, a quarter of the file.
                 //
                 // WzCanvasProperty is exactly the right home for them. That is how WZ stores
-                // them too, so everything downstream ??the map editor's placement maths, the
-                // origin-aware renderer, the canvas link repair ??reads them unchanged.
+                // them too, so everything downstream —the map editor's placement maths, the
+                // origin-aware renderer, the canvas link repair —reads them unchanged.
                 NxCanvas canvas = node.AsCanvas!.Value;
                 var property = new WzCanvasProperty(name)
                 {
@@ -338,7 +356,7 @@ public static class NxToWzFile
 /// NX audio is not an opaque blob and it is not encrypted. Every payload in the corpus begins
 /// with the identical 82 bytes, and those 82 bytes are the WZ sound-property header verbatim:
 /// the standard sound GUID, one unknown byte, and a 30-byte <c>Mp3WaveFormat</c>. The first
-/// byte after them is <c>FF F2</c> ??an MPEG frame sync ??which is the MP3 starting exactly
+/// byte after them is <c>FF F2</c> —an MPEG frame sync —which is the MP3 starting exactly
 /// where the header ends.
 /// </para>
 /// <para>
@@ -350,7 +368,7 @@ public static class NxToWzFile
 ///
 /// <para><b>Stated limitation.</b> Only the GUID and the length byte are handed to MapleLib.
 /// Its parser then expects a WAV-shaped <c>WaveFormat</c> and, when the sizes do not line up,
-/// falls back to XOR-decrypting with the enclosing archive's WZ key ??a key an NX-sourced
+/// falls back to XOR-decrypting with the enclosing archive's WZ key —a key an NX-sourced
 /// property does not have, so the fallback dereferences null. Passing the whole 82 bytes
 /// therefore cannot work through the public constructor, and making it work would mean patching
 /// a vendored dependency that a re-clone would undo. The consequence is bounded and named:

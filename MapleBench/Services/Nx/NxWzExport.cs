@@ -13,7 +13,7 @@ namespace MapleBench.Services.Nx;
 /// file; a WZ canvas holds zlib-deflated bytes reachable through a <c>WzBinaryReader</c>. Those
 /// are different storage, and the writers assume the second one: serialising a canvas calls
 /// <c>WzPngProperty.GetCompressedBytes</c>, which on a cache miss does
-/// <c>lock (wzReader)</c> and reads the bytes out of the archive ??and <c>wzReader</c> is null
+/// <c>lock (wzReader)</c> and reads the bytes out of the archive —and <c>wzReader</c> is null
 /// for anything that did not come from a parsed .wz. It does not throw a message about the
 /// format; it throws a <see cref="NullReferenceException"/> from inside a lock statement, which
 /// is why the export endpoint answered "Something went wrong" with no clue.
@@ -41,8 +41,8 @@ public static class NxWzExport
     /// </summary>
     /// <returns>How many canvases were prepared, so a caller can say so in the UI.</returns>
     /// <remarks>
-    /// Idempotent. A canvas already prepared is skipped, so calling this twice ??once on a
-    /// subtree and again on the whole image, say ??costs nothing the second time.
+    /// Idempotent. A canvas already prepared is skipped, so calling this twice —once on a
+    /// subtree and again on the whole image, say —costs nothing the second time.
     /// </remarks>
     public static int MaterializeCanvasPayloads(WzObject? node)
     {
@@ -79,7 +79,7 @@ public static class NxWzExport
     }
 
     /// <summary>
-    /// Walks a child collection, which MapleLib returns as null on a leaf ??only
+    /// Walks a child collection, which MapleLib returns as null on a leaf —only
     /// <c>WzImage</c>, <c>WzSubProperty</c>, <c>WzConvexProperty</c> and
     /// <c>WzCanvasProperty</c> actually hold children.
     /// </summary>
@@ -125,7 +125,7 @@ public static class NxWzExport
     /// Two things have to be arranged that MapleLib will not arrange for itself.
     /// </para>
     /// <para>
-    /// <b>The canvases need WZ payloads</b> ??see <see cref="MaterializeCanvasPayloads"/>,
+    /// <b>The canvases need WZ payloads</b> —see <see cref="MaterializeCanvasPayloads"/>,
     /// called here so no caller can forget.
     /// </para>
     /// <para>
@@ -133,13 +133,13 @@ public static class NxWzExport
     /// <c>WzImage.SaveImage</c> has two branches: when the image is marked changed it
     /// re-serialises the properties it holds, and when it is not it copies the image's bytes
     /// straight out of its <c>WzBinaryReader</c>. An NX image holds no reader and its WZ bytes
-    /// do not exist, so the second branch is not a slow path here ??it is a null dereference.
+    /// do not exist, so the second branch is not a slow path here —it is a null dereference.
     /// The flag is the only switch that selects the right branch.
     /// </para>
     /// <para>
     /// It is restored in a finally rather than left set, because the flag is also what the
     /// files panel reads: an image left marked dirty would claim unsaved work nobody did.
-    /// Setting it for the duration of the write is also the honest reading ??the WZ bytes being
+    /// Setting it for the duration of the write is also the honest reading —the WZ bytes being
     /// produced do not exist anywhere on disk yet.
     /// </para>
     /// </remarks>

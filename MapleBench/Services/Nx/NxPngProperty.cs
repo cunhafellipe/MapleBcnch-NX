@@ -15,8 +15,8 @@ namespace MapleBench.Services.Nx;
 /// link and then calls <c>GetLinkedWzImageProperty().GetBitmap()</c>, and
 /// <c>GetBitmap()</c> is <c>virtual</c> on <c>WzImageProperty</c> and already overridden once on
 /// <c>WzPngProperty</c>. So one override here reaches every caller that goes through the normal
-/// accessor ??the icon service, the minimap, the map editor's placement maths, the canvas link
-/// repair ??instead of a dozen scattered edits that would each have to be found again.
+/// accessor —the icon service, the minimap, the map editor's placement maths, the canvas link
+/// repair —instead of a dozen scattered edits that would each have to be found again.
 ///
 /// <c>GetImage(bool)</c> is the way past, and it is not virtual. The handful of call sites that
 /// invoke it directly (the repair, audit and port paths) still bypass this class; the render
@@ -25,10 +25,10 @@ namespace MapleBench.Services.Nx;
 /// </para>
 ///
 /// <para><b>Why a fresh bitmap per call.</b> MapleLib's <c>GetImage(false)</c> hands back a new
-/// bitmap each time, and callers rely on that ??several of them <c>using</c> the result. Caching
+/// bitmap each time, and callers rely on that —several of them <c>using</c> the result. Caching
 /// a <see cref="Bitmap"/> here would hand the same object to two callers and turn the first
 /// one's <c>Dispose</c> into a use-after-free in the second. The <em>pixels</em> are cached
-/// instead, so a repeat call skips the WebP decode ??which is the expensive part ??and still
+/// instead, so a repeat call skips the WebP decode —which is the expensive part —and still
 /// gets its own bitmap.
 /// </para>
 ///
@@ -125,7 +125,7 @@ public sealed class NxPngProperty : WzPngProperty
     /// <remarks>
     /// An NX canvas arrives with a WebP payload in a mapped file and no <c>WzBinaryReader</c>.
     /// MapleLib's writers ask for the compressed bytes, and with no reader and no cache they
-    /// dereference null ??from inside a lock statement, which is why the export endpoint
+    /// dereference null —from inside a lock statement, which is why the export endpoint
     /// answered "Something went wrong" with nothing useful in it. Assigning
     /// <see cref="WzPngProperty.PNG"/> is what populates the cache: it compresses the bitmap and
     /// keeps the result, so every later read is satisfied without the reader. Nothing else in
@@ -138,7 +138,7 @@ public sealed class NxPngProperty : WzPngProperty
         // Assigning the bitmap makes MapleLib run its own format detection and then compress
         // in whatever it chose. Measured on real archives, that choice is BGRA4444: the payload
         // inflates to exactly half the expected byte count, every time. That is not a mistake
-        // inside MapleLib ??it deliberately picks the narrowest format that fits, and for
+        // inside MapleLib —it deliberately picks the narrowest format that fits, and for
         // MapleStory's own sprites, which are authored 16-bit, that is the right call.
         //
         // It is the wrong call here. NX canvases are 32-bit BGRA8888 with arbitrary 8-bit
@@ -149,7 +149,7 @@ public sealed class NxPngProperty : WzPngProperty
         // have already been produced.
         //
         // So the pixels are compressed here instead, as plain zlib over the raw BGRA, and
-        // handed over with SetCompressedBytes ??which assigns the compressed bytes verbatim
+        // handed over with SetCompressedBytes —which assigns the compressed bytes verbatim
         // and never consults the detector. The result is byte-for-byte what NX held.
         byte[] raw = NxCanvasDecoder.Decode(Canvas);
 
@@ -187,7 +187,7 @@ public sealed class NxPngProperty : WzPngProperty
     /// Size, structure, names and every value node survive untouched.
     /// </para>
     /// <para>
-    /// This is MapleLib's behaviour on its own path, not something introduced here ??it
+    /// This is MapleLib's behaviour on its own path, not something introduced here —it
     /// renders a WZ canvas through the same bitmap type. <c>Format32bppNonArgb</c> would be
     /// the correct format and does not exist in .NET; it is a Win32 GDI concept. Closing the
     /// remaining gap means carrying pixels as a byte array and bypassing GDI+, which is a

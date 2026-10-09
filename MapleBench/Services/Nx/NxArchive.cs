@@ -102,75 +102,50 @@ public sealed unsafe class NxArchive : IDisposable
     /// </summary>
     public const int NodeRecordSize = 20;
 
-    private readonly MemoryMappedFile _map;
-    private readonly MemoryMappedViewAccessor _view;
-    private readonly byte* _base;
+    private MemoryMappedFile _map;
+    private MemoryMappedViewAccessor _view;
+    private byte* _base;
 
     /// <summary>String offsets, read once. <c>string_count</c> is small even in huge files.</summary>
-    private readonly ulong[] _stringOffsets;
+    private ulong[] _stringOffsets;
 
-    private readonly ulong[] _bitmapOffsets;
-    private readonly ulong[] _audioOffsets;
+    private ulong[] _bitmapOffsets;
+    private ulong[] _audioOffsets;
 
-    private readonly long _fileLength;
+    private long _fileLength;
 
     private bool _disposed;
 
-    private NxArchive(MemoryMappedFile map, MemoryMappedViewAccessor view, byte* mapBase, long fileLength)
+    /// <summary>
+    /// Parameterless because the mapping is established separately by <see cref="Map"/>.
+    /// </summary>
+    private NxArchive()
     {
-        _map = map;
-        _view = view;
-        _base = mapBase;
-        _fileLength = fileLength;
-
-        uint nodeCount = ReadUInt32(0x04);
-        ulong nodeOffset = ReadUInt64(0x08);
-        uint stringCount = ReadUInt32(0x10);
-        ulong stringOffset = ReadUInt64(0x14);
-        uint bitmapCount = ReadUInt32(0x1C);
-        ulong bitmapOffset = ReadUInt64(0x20);
-        uint audioCount = ReadUInt32(0x28);
-        ulong audioOffset = ReadUInt64(0x2C);
-
-        NodeCount = (int)nodeCount;
-        NodeOffset = nodeOffset;
-        StringCount = (int)stringCount;
-        StringOffset = stringOffset;
-        BitmapCount = (int)bitmapCount;
-        BitmapOffset = bitmapOffset;
-        AudioCount = (int)audioCount;
-        AudioOffset = audioOffset;
-
-        _stringOffsets = ReadOffsetTable(stringOffset, StringCount);
-        _bitmapOffsets = ReadOffsetTable(bitmapOffset, BitmapCount);
-        _audioOffsets = ReadOffsetTable(audioOffset, AudioCount);
-
-        Root = new NxNode(this, 0);
     }
 
     /// <summary>Number of node records in the archive.</summary>
-    public int NodeCount { get; }
+    public int NodeCount { get; private set; }
 
     /// <summary>Byte offset of the node block.</summary>
-    public ulong NodeOffset { get; }
+    public ulong NodeOffset { get; private set; }
 
     /// <summary>Size of the archive-wide deduplicated string pool.</summary>
-    public int StringCount { get; }
+    public int StringCount { get; private set; }
 
     /// <summary>Byte offset of the string offset table.</summary>
-    public ulong StringOffset { get; }
+    public ulong StringOffset { get; private set; }
 
     /// <summary>Number of distinct canvas payloads.</summary>
-    public int BitmapCount { get; }
+    public int BitmapCount { get; private set; }
 
     /// <summary>Byte offset of the bitmap offset table.</summary>
-    public ulong BitmapOffset { get; }
+    public ulong BitmapOffset { get; private set; }
 
     /// <summary>Number of distinct audio payloads.</summary>
-    public int AudioCount { get; }
+    public int AudioCount { get; private set; }
 
     /// <summary>Byte offset of the audio offset table.</summary>
-    public ulong AudioOffset { get; }
+    public ulong AudioOffset { get; private set; }
 
     /// <summary>
     /// The archive's true size on disk, in bytes.
@@ -184,7 +159,7 @@ public sealed unsafe class NxArchive : IDisposable
     public long FileLength => _fileLength;
 
     /// <summary>The archive's root node. In practice this is the unnamed node owning the <c>*.img</c> children.</summary>
-    public NxNode Root { get; }
+    public NxNode Root { get; private set; }
 
     /// <summary>
     /// The node at a given index in the node block, independent of any path to it.
@@ -226,6 +201,35 @@ public sealed unsafe class NxArchive : IDisposable
     /// <summary>Maps an NX archive read-only.</summary>
     public static NxArchive Open(string path)
     {
+        var archive = new NxArchive();
+        archive.Map(path);
+        return archive;
+    }
+
+    /// <summary>
+    /// Points this instance at the archive at <paramref name="path"/>, replacing any mapping
+    /// it already holds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An <see cref="NxCanvas"/> captured at conversion time holds a reference to the
+    /// <see cref="NxArchive"/> it was built from, and a tree full of them is not reachable from
+    /// here — <c>NxToWzFile.Convert</c> hands the caller both and never keeps a list. That is
+    /// why an in-place save cannot simply swap a new archive into the session: every canvas
+    /// would still be pointing at the old one, and the next decode would read through a
+    /// released pointer. Remapping in place keeps every canvas valid because every canvas
+    /// points at <em>this</em> object.
+    /// </para>
+    /// <para>
+    /// The old mapping is released before the new one is opened, because Windows will not
+    /// rename or replace a file that is still mapped. That ordering is the whole reason this
+    /// method exists.
+    /// </para>
+    /// </remarks>
+    private void Map(string path)
+    {
+        ReleaseMapping();
+
         FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         long fileLength = file.Length;
 
@@ -276,9 +280,14 @@ public sealed unsafe class NxArchive : IDisposable
                     $"'{Path.GetFileName(path)}' is not an NX archive: expected PKG4 magic, found 0x{magic:X8}.");
             }
 
-            var archive = new NxArchive(map, view, basePtr, fileLength);
-            archive.Validate(path);
-            return archive;
+            _map = map;
+            _view = view;
+            _base = basePtr;
+            _fileLength = fileLength;
+            _disposed = false;
+
+            ReadTables();
+            Validate(path);
         }
         catch
         {
@@ -292,6 +301,75 @@ public sealed unsafe class NxArchive : IDisposable
             throw;
         }
     }
+
+    /// <summary>
+    /// Re-reads this archive's four tables from the mapping just established.
+    /// </summary>
+    /// <remarks>
+    /// Pulled out of the constructor so a remap repopulates them. A written archive keeps the
+    /// same node names and payload references only because the writer reproduces the source's
+    /// layout, but nothing guarantees a future writer would, and reading a table that described
+    /// the previous file would turn a save into a corruption.
+    /// </remarks>
+    private void ReadTables()
+    {
+        NodeCount = (int)ReadUInt32(0x04);
+        NodeOffset = ReadUInt64(0x08);
+        StringCount = (int)ReadUInt32(0x10);
+        StringOffset = ReadUInt64(0x14);
+        BitmapCount = (int)ReadUInt32(0x1C);
+        BitmapOffset = ReadUInt64(0x20);
+        AudioCount = (int)ReadUInt32(0x28);
+        AudioOffset = ReadUInt64(0x2C);
+
+        _stringOffsets = ReadOffsetTable(StringOffset, StringCount);
+        _bitmapOffsets = ReadOffsetTable(BitmapOffset, BitmapCount);
+        _audioOffsets = ReadOffsetTable(AudioOffset, AudioCount);
+
+        Root = new NxNode(this, 0);
+    }
+
+    /// <summary>
+    /// Drops the mapping without disposing this instance, so a caller can point the same
+    /// object at a different file.
+    /// </summary>
+    private void ReleaseMapping()
+    {
+        if (_view is null)
+        {
+            return;
+        }
+
+        _view.SafeMemoryMappedViewHandle.ReleasePointer();
+        _view.Dispose();
+        _view = null;
+        _map?.Dispose();
+        _map = null;
+        _base = null;
+    }
+
+    /// <summary>
+    /// Re-points this archive at <paramref name="path"/>, which is expected to hold an
+    /// equivalent archive written since this one was mapped.
+    /// </summary>
+    /// <remarks>
+    /// Used by an in-place save. Every canvas built from this archive holds a reference to
+    /// <em>this</em> instance, so refreshing it in place leaves the whole tree able to decode
+    /// against the new bytes, which replacing the object could not do.
+    /// </remarks>
+    public void Remap(string path) => Map(path);
+
+    /// <summary>
+    /// Drops the mapping but leaves this instance usable, so <see cref="Remap"/> can map the
+    /// same file again.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Dispose"/>, which is permanent: an NX canvas captured at
+    /// conversion time points at this instance, and a disposed one would turn the next decode
+    /// into an access violation instead of an error. An in-place save has to release the
+    /// mapping because Windows refuses to replace a mapped file, and then put it back.
+    /// </remarks>
+    public void Release() => ReleaseMapping();
 
     /// <summary>
     /// Checks that the four tables do not overlap and that the counts fit the file.
@@ -476,8 +554,6 @@ public sealed unsafe class NxArchive : IDisposable
 
         // The pointer has to be released before the view goes away; the reverse order
         // would leave a live Acquire with nothing to release against.
-        _view.SafeMemoryMappedViewHandle.ReleasePointer();
-        _view.Dispose();
-        _map.Dispose();
+        ReleaseMapping();
     }
 }

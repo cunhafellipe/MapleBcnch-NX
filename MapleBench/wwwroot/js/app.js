@@ -2145,18 +2145,13 @@ class App {
           run: () => this.tree.toggle(path) },
         { icon: 'layers', label: 'Expand everything below', run: () => this.expandAll(path) },
         { icon: 'list', label: 'Collapse everything', run: () => this.tree.collapseEverything() },
-        // NX gets a different set, and the differences are all consequences of one fact:
-        // an NX entry can only ever be written to a NEW path. Offering "Save this file" or an
-        // "Allow editing" toggle on one is offering something the backend refuses — and the
-        // toggle is worse than useless, because flipping it removes a read-only guarantee for
-        // no gain. "Save a copy as .nx" is the action that actually works.
-        file?.kind === 'nx'
-          ? { icon: 'save', label: 'Save a copy as .nx', shortcut: 'Ctrl Shift S', run: () => this.saveAs(file) }
-          : null,
-        file?.kind !== 'nx' && file?.kind !== 'img-folder'
+        // NX is saved in place by the writer in Services/Nx, the same way a classic
+        // archive is, so these items are not gated on kind. It used to offer only
+        // "Save a copy as .nx" because writing back in place did not exist yet.
+        file?.kind !== 'img-folder'
           ? { icon: 'save', label: 'Save this file', run: () => file && this.runSave([file], true) }
           : null,
-        file?.kind !== 'nx' && file?.kind !== 'img-folder'
+        file?.kind !== 'img-folder'
           ? { icon: 'save', label: 'Save as…', shortcut: 'Ctrl Shift S', run: () => this.saveAs(file) }
           : null,
         file?.kind === 'img'
@@ -2170,10 +2165,9 @@ class App {
         { icon: 'download', label: 'Export…', run: () => openExportDialog(this, path) },
         { icon: 'externalLink', label: 'Show in Explorer', run: () => this.revealInExplorer(file) },
         { icon: 'copy', label: 'Copy file path', run: () => file && this.copyPath(file.filePath) },
-        // No read-only toggle for NX. The lock is not a setting on an NX entry, it is the
-        // consequence of the format having no in-place write path, and offering to unlock it
-        // would promise an editing mode the save path cannot honour.
-        file?.kind !== 'nx' && file?.kind !== 'img-folder'
+        // A mounted IMG folder is a collection rather than one destination file, so it keeps
+        // no toggle. Everything else, NX included, gets the ordinary session lock.
+        file?.kind !== 'img-folder'
           ? { icon: file?.readOnly ? 'edit' : 'lock',
               label: file?.readOnly ? 'Allow editing' : 'Open for reference only',
               run: () => file && this.setReadOnly(file, !file.readOnly) }

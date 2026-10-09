@@ -125,17 +125,6 @@ public static class Endpoints
             {
                 OpenFile file = session.GetFile(id);
 
-                // An NX entry is read-only because the format has no in-place write path,
-                // not because a setting happens to be on. Letting it be unlocked would
-                // promise an editing mode that the save path cannot honour, so the refusal
-                // lives here rather than only in the menu that used to offer the toggle.
-                if (file.Kind == "nx" && !request.ReadOnly)
-                {
-                    throw new InvalidOperationException(
-                        $"'{file.Name}' is an NX archive and stays reference-only. It can be saved to a new " +
-                        "path as an NX copy, but there is no in-place write for the format yet.");
-                }
-
                 if (file.Kind == "img-folder" && !request.ReadOnly)
                 {
                     throw new InvalidOperationException(

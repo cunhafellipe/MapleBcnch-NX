@@ -35,49 +35,54 @@ public sealed class SaveResult
 public sealed class WzSaveService
 {
     /// <summary>
-    /// Writes an NX entry out to a new path.
+    /// Writes an NX entry, in place or to a path of its own.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Deliberately narrow. It requires a target path, so it can only ever produce a new
-    /// archive; it refuses to write over the source; and it leaves the entry read-only. A user
-    /// who wants to replace their client data does it outside the app, with their own backup.
+    /// In place is the normal case and is what makes the format editable rather than
+    /// inspectable. The destination is only replaced after the bytes written to a scratch file
+    /// have been read back with the NX reader and reported the node count the writer intended,
+    /// and after the original has been moved aside as a backup — the same order every other
+    /// archive in this service follows. "Save as" writes the same bytes somewhere else and
+    /// leaves the file that was opened alone.
     /// </para>
     /// <para>
-    /// The write is staged: bytes go to a sibling <c>.partial</c>, that file is read back with
-    /// the NX reader, and only a file that opens and reports the expected node count is moved
-    /// into place. The writer has been verified across a sixteen-archive corpus, but
-    /// "verified" is not "cannot fail", and this is the last moment a bad file is still free
-    /// to discard.
+    /// What made in-place safe to offer was measuring the writer against the corpus. It was
+    /// expanding shared subtrees — Character.nx came out three times the size of its source,
+    /// because a DAG became a tree on the way through MapleLib's one-parent model. Tracking
+    /// which NX node each property came from and emitting a shared subtree once fixes that,
+    /// and the reason it is exact rather than approximate is in the data: every shared node
+    /// shares an identical child range with its other parents, and every one of
+    /// Character.nx's 227,783 shared nodes has both parents at the same depth. Written files
+    /// now match their source in node count, canvas count and size.
     /// </para>
     /// </remarks>
-    private SaveResult SaveNxAsCopy(OpenFile file, SaveRequest request)
+    private SaveResult SaveNx(OpenFile file, SaveRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.TargetPath))
-        {
-            throw new InvalidOperationException(
-                $"'{file.Name}' is an NX archive and is only ever written to a new path. Choose a " +
-                "target path; the file it was opened from is never overwritten from here.");
-        }
-
         if (file.WzFile is null)
         {
             throw new InvalidOperationException(
                 $"'{file.Name}' has no loaded tree, so there is nothing to write. Close it and open it again.");
         }
 
-        string target = Path.GetFullPath(request.TargetPath);
-        if (!target.EndsWith(".nx", StringComparison.OrdinalIgnoreCase))
-        {
-            target += ".nx";
-        }
-
-        string source = Path.GetFullPath(file.FilePath);
-        if (string.Equals(target, source, StringComparison.OrdinalIgnoreCase))
+        // The NX branch in Save() sits above the shared read-only check, so the lock has
+        // to be honoured here or an archive opened for reference could still be rewritten
+        // in place. "Save as" is a write to a new path and stays available, which is what
+        // makes an NX copy possible from a locked entry.
+        if (file.ReadOnly && string.IsNullOrWhiteSpace(request.TargetPath))
         {
             throw new InvalidOperationException(
-                $"The target path is the file '{file.Name}' was opened from. Writing an NX archive back " +
-                "over itself is not offered; choose a different path. Nothing was written.");
+                $"'{file.Name}' is open for reference only, so it was not written. Unlock it in the Files " +
+                "panel if you meant to change it, or use Save as to write a copy somewhere else.");
+        }
+
+        bool saveAs = !string.IsNullOrWhiteSpace(request.TargetPath);
+        string source = Path.GetFullPath(file.FilePath);
+        string target = saveAs ? Path.GetFullPath(request.TargetPath!) : source;
+
+        if (saveAs && !target.EndsWith(".nx", StringComparison.OrdinalIgnoreCase))
+        {
+            target += ".nx";
         }
 
         string? directory = Path.GetDirectoryName(target);
@@ -86,9 +91,14 @@ public sealed class WzSaveService
             Directory.CreateDirectory(directory);
         }
 
+        // The bytes have to be built while the mapping is still open: an untouched canvas is
+        // copied straight out of the mapped file rather than decoded, because decoding 545 MB
+        // of UI art to re-encode it identically would be the single most expensive thing this
+        // save could do. Everything below only moves and validates files.
         byte[] bytes = NxWriter.Write(file.WzFile, out NxWriteReport report);
 
         string scratch = target + ".partial";
+        string? backup = null;
         try
         {
             File.WriteAllBytes(scratch, bytes);
@@ -104,17 +114,58 @@ public sealed class WzSaveService
                 }
             }
 
-            File.Move(scratch, target, overwrite: true);
+            // Windows will not rename a file that is memory-mapped, and the open archive's
+            // mapping is exactly that. So the mapping is dropped around the swap and rebuilt
+            // afterwards on the same NxArchive instance: every NxCanvas in the tree holds a
+            // reference to that one object, so remapping it in place leaves the whole tree
+            // decoding against the new bytes, which replacing the object could not do.
+            NxArchive? remapped = null;
+            if (!saveAs && file.NxSource is not null)
+            {
+                remapped = file.NxSource;
+                remapped.Release();
+            }
+
+            try
+            {
+                // The original moves aside before the new file takes its place, so a failure
+                // between the two leaves the data recoverable rather than gone. Only when writing
+                // in place: a "save as" has no original to displace at the destination.
+                if (!saveAs && File.Exists(target))
+                {
+                    backup = MakeBackupPath(target);
+                    File.Move(target, backup, overwrite: true);
+                }
+
+                File.Move(scratch, target, overwrite: true);
+            }
+            finally
+            {
+                // Remapped whether or not the swap succeeded: if it threw, the destination is
+                // the original again, and a session left unmapped cannot render or re-save.
+                if (remapped is not null)
+                {
+                    remapped.Remap(file.FilePath);
+                }
+            }
         }
         catch
         {
             try { File.Delete(scratch); }
             catch (IOException) { /* the scratch file is not the user's data */ }
+
+            // Put the original back if it was moved aside and the swap did not happen.
+            if (backup is not null && !File.Exists(target))
+            {
+                try { File.Move(backup, target); }
+                catch (IOException) { /* reported through the thrown error below */ }
+            }
+
             throw;
         }
 
         _log.LogInformation(
-            "Wrote NX copy of {Name} to {Target}: {Nodes:N0} nodes, {Strings:N0} strings, " +
+            "Saved NX archive {Name} to {Target}: {Nodes:N0} nodes, {Strings:N0} strings, " +
             "{Canvases:N0} canvases, {Audio:N0} audio, {Widened:N0} values widened, {EncodingErrors} encode errors",
             file.Name, target, report.Nodes, report.Strings, report.Canvases, report.Audio,
             report.TypeWidened, report.EncodingErrors);
@@ -127,20 +178,24 @@ public sealed class WzSaveService
                 "were widened from a narrower WZ type.");
         }
 
-        // No note about the copy being larger, because there is nothing to add. When the tree
-        // came from NX, any expansion from shared subtrees already happened while it was being
-        // converted into MapleLib objects, and this write is faithful to what it was handed —
-        // measured on both an archive that shares nothing and one that shares 21,263 nodes, the
-        // copy is always exactly what the conversion produced. The byte count below is the
-        // honest statement of size, and the conversion log already records the node counts.
-        notes.Add(
-            $"Wrote an NX copy ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes). " +
-            "The file it was opened from was not modified.");
+        if (report.EncodingErrors > 0)
+        {
+            notes.Add(
+                $"{report.EncodingErrors} canvas(s) could not be encoded and were written empty. " +
+                "Their pictures are not in the saved file.");
+        }
+
+        notes.Add(backup is null
+            ? $"Wrote an NX copy ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes); the file it was " +
+              "opened from was not modified."
+            : $"Saved in place ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes). " +
+              $"The previous file is at '{Path.GetFileName(backup)}'.");
 
         return new SaveResult
         {
             FileId = file.Id,
             SavedTo = target,
+            BackupPath = backup,
             Bytes = bytes.Length,
             Warnings = notes,
         };
@@ -270,9 +325,10 @@ public sealed class WzSaveService
                     "all-or-nothing operation.");
             }
 
-            // An NX entry takes a different route entirely, and only ever to a NEW path.
+            // An NX entry takes a different route entirely, and the one below it in this
+            // service would destroy it.
             //
-            // Everything below in this service ends in WzFile.SaveToDisk, which writes classic
+            // Everything after this point ends in WzFile.SaveToDisk, which writes classic
             // .wz bytes. An NX entry's tree is synthetic and its source is a PKG4 file, so
             // letting any of that reach a write would replace a valid archive with WZ bytes,
             // and nothing would notice until the next open failed. That is why this branch
@@ -280,17 +336,14 @@ public sealed class WzSaveService
             //
             // Refusing outright would waste a capability that is finished and verified: the
             // tree round-trips through the NX writer with every one of sixteen archives
-            // comparing equal. So an NX entry is written through NxWriter instead, and only
-            // when a target path is given.
+            // comparing equal. So an NX entry is written through NxWriter instead, which
+            // understands PKG4 and can write the file it read.
             //
-            // That condition is the whole safety argument. Save-as cannot destroy an existing
-            // archive, and the writer still has costs a user should opt into knowingly: a
-            // shared-subtree archive expands several-fold because MapleLib gives every
-            // property one parent, and a canvas the user edited is re-encoded rather than
-            // copied. Writing over the original would make both silent and un-undoable.
+            // It checks the session lock itself, because this branch sits above the check
+            // below and an NX entry opened for reference must not be rewritten.
             if (file.Kind == "nx")
             {
-                return SaveNxAsCopy(file, request);
+                return SaveNx(file, request);
             }
 
             // Read-only was enforced on every edit but not on the save itself, so

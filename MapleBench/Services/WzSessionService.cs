@@ -266,16 +266,11 @@ public sealed class WzSessionService : IDisposable
                 RefuseIfMemoryIsShortForNx(path);
                 OpenFile nxFile = OpenNxFile(path);
 
-                // NX opens read-only, always, and this is not a politeness setting.
-                //
-                // There is no NX writer yet. Every save path in this application ends in
-                // WzFile.SaveToDisk, which writes classic .wz bytes — so saving an NX entry
-                // would replace a valid 679 MB archive with a truncated WZ file of whatever
-                // the in-memory tree happened to hold. Read-only is the only thing standing
-                // between "browse the client's NX data" and "destroy it", so it is forced here
-                // rather than left to the request.
-                nxFile.ReadOnly = true;
-
+                // Unlike a classic WZ import, an NX entry takes its editability from the
+                // request like any other archive. It used to be forced to read-only here
+                // because the save path ended in WzFile.SaveToDisk, which would have
+                // replaced the archive with classic WZ bytes; the NX writer in Services/Nx
+                // now handles it, so nothing here overrides the caller.
                 _files[nxFile.Id] = nxFile;
                 InvalidateResolution();
                 _log.LogInformation(
