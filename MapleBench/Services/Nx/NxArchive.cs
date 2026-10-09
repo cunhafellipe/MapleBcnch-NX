@@ -207,6 +207,32 @@ public sealed unsafe class NxArchive : IDisposable
     }
 
     /// <summary>
+    /// The node count from the header, or 0 when it cannot be read.
+    ///
+    /// Costs the same one small read as <see cref="IsNxFile"/> and no mapping,
+    /// because it exists to be called <em>before</em> the conversion it is
+    /// sizing: an NX open builds the whole tree as MapleLib objects, so the node
+    /// count is the number that predicts what that will cost. Sizing on file
+    /// size instead was wrong by 7.4x on Character.nx -- a 186 MB archive that
+    /// needs 5.6 GB to open, against a 2x-size estimate of 757 MB. The guard
+    /// that estimate feeds is the only thing between an NX open and an
+    /// out-of-memory kill, and it was under-predicting on precisely the
+    /// archives that blow up.
+    /// </summary>
+    public static int HeaderNodeCount(string path)
+    {
+        try
+        {
+            using FileStream stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            Span<byte> header = stackalloc byte[8];
+            if (stream.Read(header) < 8 || BitConverter.ToUInt32(header) != Magic) return 0;
+            return (int)BitConverter.ToUInt32(header[4..]);
+        }
+        catch (IOException) { return 0; }
+        catch (UnauthorizedAccessException) { return 0; }
+    }
+
+    /// <summary>
     /// Points this instance at the archive at <paramref name="path"/>, replacing any mapping
     /// it already holds.
     /// </summary>
