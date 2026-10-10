@@ -139,7 +139,7 @@ export class MapEditSection {
       this.host.className = 'stage-body';
       this.built = false;
       this.host.append(emptyState(
-        'layers', 'Open the Map archives first',
+        'layers', t('Open the Map archives first'),
         'The map editor reads maps out of Map002.wz and art out of Map.wz, Map001.wz and ' +
         'Map2.wz. Open the client’s Map family (copies, not the live client) and come back.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },

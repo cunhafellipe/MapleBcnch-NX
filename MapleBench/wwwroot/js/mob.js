@@ -236,7 +236,7 @@ export class Mobs {
 
     if (this.error) {
       this.host.append(emptyState(
-        'alert', 'Could not read the mob list',
+        'alert', t('Could not read the mob list'),
         this.error.message,
         el('div', { class: 'mob-empty-actions' },
           el('button', { class: 'btn btn-primary', onclick: () => this.load() },
@@ -261,7 +261,7 @@ export class Mobs {
 
     if (!this.capabilities.available) {
       this.host.append(emptyState(
-        'layers', 'No Mob.wz open',
+        'layers', t('No Mob.wz open'),
         'Mob editing reads the .img files inside Mob.wz. Open Mob.wz or the whole client folder.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
           icon('folderOpen', { size: 15 }), 'Open Mob.wz')));
@@ -447,7 +447,7 @@ export class Mobs {
       // The archive is open and readable and holds nothing -- a different fact
       // from "your filter hid everything", and it needs a different sentence.
       panel.append(emptyState(
-        'layers', 'No mobs in this archive',
+        'layers', t('No mobs in this archive'),
         'The archive opened, but nothing in it looks like a mob image. If you scoped to one file, ' +
         'try the others.',
         el('button', { class: 'btn', onclick: () => this.load() }, icon('refresh', { size: 15 }), 'Reload')));

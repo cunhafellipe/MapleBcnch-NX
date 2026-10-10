@@ -234,7 +234,7 @@ export class AuditSection {
     if (this.plan) { this.host.append(this.planView()); return; }
 
     this.host.append(emptyState(
-      'search', 'Point it at a client folder',
+      'search', t('Point it at a client folder'),
       'The auditor reads every .wz a client mounts and reports what will not resolve once they are ' +
       'mounted together. It opens files read-only and writes nothing.'));
   }

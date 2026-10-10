@@ -1294,4 +1294,23 @@ export const zhHant = {
     '選擇第二個客戶端資料夾。可開啟整個客戶端，或在只需要該系列時只開啟一個封存。',
   'Values is on, so every image it visits has to be parsed. Turning it off answers name questions in milliseconds.':
     '「數值」開啟時，它造訪的每張圖都必須解析。關閉後只需幾毫秒就能回答名稱問題。',
+// ---- empty states -------------------------------------------------------
+  // These were missed by every wrapping pass because they are positional
+  // arguments to emptyState(), not an object property -- so the search that
+  // found text:/label:/message: never saw them, and they are the first thing
+  // anyone reads when a section has nothing to show.
+  'Point it at a client folder': '請指向一個客戶端資料夾',
+  'No cash shop data here': '這裡沒有商城資料',
+  'Open the Map archives first': '請先開啟地圖封存',
+  'Could not read the mob list': '無法讀取怪物清單',
+  'No Mob.wz open': '尚未開啟 Mob.wz',
+  'No mobs in this archive': '這個封存裡沒有怪物',
+  'Could not read the NPC list': '無法讀取 NPC 清單',
+  'No Npc.wz open': '尚未開啟 Npc.wz',
+  'No NPCs in this archive': '這個封存裡沒有 NPC',
+  'Could not read the skill list': '無法讀取技能清單',
+  'No Skill.wz open': '尚未開啟 Skill.wz',
+  'This skill has no levels': '這個技能沒有等級',
+  'Could not reach the name editor': '無法開啟名稱編輯器',
+  'No String.wz open': '尚未開啟 String.wz',
 };

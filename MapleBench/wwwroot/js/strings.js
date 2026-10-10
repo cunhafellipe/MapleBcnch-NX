@@ -325,7 +325,7 @@ export class StringsSection {
 
     if (this.error) {
       this.host.append(emptyState(
-        'alert', 'Could not reach the name editor',
+        'alert', t('Could not reach the name editor'),
         this.error.message,
         el('div', { class: 'str-empty-actions' },
           el('button', { class: 'btn btn-primary', onclick: () => this.load() },
@@ -348,7 +348,7 @@ export class StringsSection {
 
     if (!this.capabilities.available) {
       this.host.append(this.buildHead(), emptyState(
-        'type', 'No String.wz open',
+        'type', t('No String.wz open'),
         'Display names live in String.wz. Open String.wz or the whole client folder before editing names.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
           icon('folderOpen', { size: 15 }), 'Open String.wz')));
@@ -498,7 +498,7 @@ export class StringsSection {
 
     if (this.listError) {
       panel.append(emptyState(
-        'alert', 'That search did not finish',
+        'alert', t('That search did not finish'),
         this.listError.message,
         el('button', { class: 'btn btn-primary', onclick: () => this.runSearch() },
           icon('refresh', { size: 15 }), 'Try again')));

@@ -103,7 +103,7 @@ export class CashShop {
       this.loading = false;
       clear(this.host);
       this.host.append(emptyState(
-        'cart', 'No cash shop data here',
+        'cart', t('No cash shop data here'),
         error.message,
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() }, icon('folderOpen', { size: 15 }), 'Open Etc.wz')));
     }

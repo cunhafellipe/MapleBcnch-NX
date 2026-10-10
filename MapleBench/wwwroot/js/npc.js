@@ -286,7 +286,7 @@ export class NpcSection {
 
     if (this.error) {
       this.host.append(emptyState(
-        'alert', 'Could not read the NPC list',
+        'alert', t('Could not read the NPC list'),
         this.error.message,
         el('div', { class: 'npc-empty-actions' },
           el('button', { class: 'btn btn-primary', onclick: () => this.load() },
@@ -306,7 +306,7 @@ export class NpcSection {
 
     if (!this.capabilities.available) {
       this.host.append(emptyState(
-        'info', 'No Npc.wz open',
+        'info', t('No Npc.wz open'),
         'NPC editing reads Npc.wz and uses String.wz for names and chat text. Open the client folder '
         + 'to make both available.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
@@ -549,7 +549,7 @@ export class NpcSection {
       // The archive is open and readable and holds nothing -- a different fact
       // from "your filter hid everything", and it needs a different sentence.
       panel.append(emptyState(
-        'info', 'No NPCs in this archive',
+        'info', t('No NPCs in this archive'),
         'The archive opened, but nothing in it is named like an NPC image (9000000.img). ' +
         'If you scoped to one file, try the others.',
         el('button', { class: 'btn', onclick: () => this.load() }, icon('refresh', { size: 15 }), 'Reload')));

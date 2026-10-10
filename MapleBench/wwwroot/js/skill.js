@@ -307,7 +307,7 @@ export class SkillSection {
 
     if (this.error) {
       this.host.append(emptyState(
-        'alert', 'Could not read the skill list',
+        'alert', t('Could not read the skill list'),
         this.error.message,
         el('div', { class: 'sk-empty-actions' },
           el('button', { class: 'btn btn-primary', onclick: () => this.load() },
@@ -319,7 +319,7 @@ export class SkillSection {
 
     if (!this.capabilities.available) {
       this.host.append(emptyState(
-        'star', 'No Skill.wz open',
+        'star', t('No Skill.wz open'),
         'Skill editing reads Skill.wz and uses String.wz for names. Open the client folder to make '
         + 'both available.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
@@ -1088,7 +1088,7 @@ export class SkillSection {
       section.append(el('div', { class: 'sk-section-bar' },
         el('span', { class: 'sk-section-name', text: t('Levels') })));
       section.append(emptyState(
-        'grid4', 'This skill has no levels',
+        'grid4', t('This skill has no levels'),
         'Nothing declares a maxLevel and there are no level nodes, so there is no table to draw. ' +
         'Adding level 1 creates the first one.',
         el('button', {
