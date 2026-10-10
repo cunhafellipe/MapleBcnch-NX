@@ -115,6 +115,18 @@ public sealed class MapDocDto
     public int UndoDepth { get; set; }
     public int RedoDepth { get; set; }
     public bool Dirty { get; set; }
+
+    /// <summary>
+    /// Open for reading only: every edit, undo, redo and save on this document
+    /// is refused, and <see cref="ReadOnlyReason"/> says why. The same flag the
+    /// archive list carries, on the document that is actually closed for
+    /// writing — an archive can be writable and one of its maps still not be.
+    /// </summary>
+    public bool ReadOnly { get; set; }
+
+    /// <summary>Why this document cannot be edited, in one sentence. Null when
+    /// it can.</summary>
+    public string? ReadOnlyReason { get; set; }
 }
 
 public sealed class MapBoundsDto

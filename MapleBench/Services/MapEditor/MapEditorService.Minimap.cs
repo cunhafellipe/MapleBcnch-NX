@@ -213,7 +213,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(request.Path);
+            EditorDoc doc = RequireWritable(request.Path);
             doc.Touched = DateTime.UtcNow;
             MapDocDto dto = BuildDto(doc);
 

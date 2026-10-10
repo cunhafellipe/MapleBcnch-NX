@@ -338,6 +338,13 @@ public sealed partial class MapEditorService
     /// Opens a map through <see cref="MapRoundTrip.LoadVerified"/>, or throws
     /// with the model's refusal — the endpoint turns that into the banner. There
     /// is no partial open.
+    ///
+    /// <para><b>An NX map opens without the verification, and is closed for
+    /// writing.</b> NX models a map one level shallower than .wz — the image is
+    /// <c>Map</c>, and the thing addressed as <c>Map0/000010000.img</c> is a
+    /// property — so the address resolves to a node that is not an image at all.
+    /// It is lifted into a synthetic image, read by the same model, and marked
+    /// read-only: see <see cref="NxMapImage"/> and <see cref="RefuseWrite"/>.</para>
     /// </summary>
     public MapDocDto Open(string path)
     {
@@ -352,16 +359,34 @@ public sealed partial class MapEditorService
             MapLoadResult result;
             byte[] iv;
             int generation;
+            string? readOnlyReason = null;
             lock (_session.Gate)
             {
                 OpenFile file = _session.GetFileForPath(path);
-                if (_session.Resolve(path) is not WzImage image)
+                WzObject node = _session.Resolve(path);
+
+                if (node is WzImage resolved)
+                {
+                    iv = file.CustomIv ?? WzTool.GetIvByMapleVersion(file.MapleVersion);
+                    result = MapRoundTrip.LoadVerified(resolved, iv);
+                }
+                else if (IsNx(file))
+                {
+                    // A map in an NX archive. No image, so no block on disk to
+                    // verify a rebuilt one against and no IV to serialise it
+                    // with; the round trip is skipped rather than faked, and the
+                    // document is read-only for the whole reason spelled out in
+                    // the refusal below.
+                    WzImage lifted = NxMapImage(node);
+                    iv = file.CustomIv ?? WzTool.GetIvByMapleVersion(file.MapleVersion);
+                    result = MapDocument.Load(lifted);
+                    readOnlyReason = NxReadOnlyReason(path);
+                }
+                else
                 {
                     throw new InvalidOperationException(
                         $"'{path}' is not a map image. The map editor opens whole .img map images.");
                 }
-                iv = file.CustomIv ?? WzTool.GetIvByMapleVersion(file.MapleVersion);
-                result = MapRoundTrip.LoadVerified(image, iv);
                 generation = _session.Generation;
             }
 
@@ -372,12 +397,81 @@ public sealed partial class MapEditorService
                 throw new InvalidOperationException(result.Reason ?? "The map could not be opened.");
             }
 
-            EditorDoc doc = new(path, result.Document!, iv, generation);
+            EditorDoc doc = new(path, result.Document!, iv, generation)
+            {
+                ReadOnlyReason = readOnlyReason,
+            };
             EvictIfNeeded();
             _docs[path] = doc;
             return BuildDto(doc);
         }
     }
+
+    /// <summary>Whether this entry is an NX archive. Its tree is a synthetic
+    /// MapleLib build of the mapped file, so it is NX in every respect that
+    /// matters here even though the objects look like ordinary WZ ones.</summary>
+    private static bool IsNx(OpenFile file) =>
+        string.Equals(file.Kind, "nx", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Lifts an NX map node into the image the .wz reader would have produced.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// NX puts a map one level shallower than .wz: in <c>Map.wz</c> the chain is
+    /// Directory → Directory → WzImage, and in <c>Map.nx</c> it is WzImage →
+    /// property → property. <see cref="WzNode.ReadImage"/> reads an image by
+    /// iterating its top-level properties and nothing else, so an image whose
+    /// properties are the NX node's own children is read by the unchanged model.
+    /// </para>
+    /// <para>
+    /// The properties are moved, not shared. Re-parenting them into the
+    /// synthetic image would detach them from the live session tree, so every
+    /// other view of that archive would silently lose a map. A copy is the only
+    /// honest thing to hand a document that cannot be written back — which is
+    /// exactly why such a document is read-only.
+    /// </para>
+    /// <para>
+    /// They are added through <see cref="WzPropertyCollection.Add"/> and not
+    /// through <see cref="WzImage.AddProperty"/>, which throws on a duplicate
+    /// name. Duplicate sibling names are legal here: 69 maps carry repeated
+    /// foothold ids, and WZ has no uniqueness rule, so the index tracks a count
+    /// per name precisely because the list may hold several.
+    /// </para>
+    /// </remarks>
+    private static WzImage NxMapImage(WzObject node)
+    {
+        WzPropertyCollection? children = node switch
+        {
+            WzImageProperty property => property.WzProperties,
+            WzImage image => image.WzProperties,
+            _ => null,
+        };
+
+        if (children == null)
+        {
+            throw new InvalidOperationException(
+                $"'{node.Name}' in an NX archive has no properties, so it holds no map to open.");
+        }
+
+        // The name the model derives the map id from, so it must be the leaf's:
+        // "000010000.img", not "Map0".
+        string leaf = node.Name is { Length: > 0 } name ? name : "map.img";
+        WzImage lifted = new(leaf);
+        foreach (WzImageProperty property in children)
+            lifted.WzProperties.Add(property.DeepClone());
+
+        // Parsed: these properties are already in hand and there is no reader
+        // behind this image to parse from. Without it, MapDocument.Load's parse
+        // attempt would fail on a null reader and refuse a map that reads fine.
+        lifted.MarkWzImageAsParsed();
+        return lifted;
+    }
+
+    private static string NxReadOnlyReason(string path) =>
+        $"'{path}' is in an NX archive, where a map has no block of its own to be written back "
+        + "against. It is open for reading: every edit, undo, redo and save is refused rather "
+        + "than made on a copy that could not be saved.";
 
     public MapDocDto GetDoc(string path)
     {
@@ -441,6 +535,36 @@ public sealed partial class MapEditorService
         return doc;
     }
 
+    /// <summary>
+    /// The gate every write to a document passes through, returning the
+    /// document when it may be written and refusing it when it may not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A document that is read-only is read-only because its content is a copy:
+    /// an NX map is read out of a tree that has no image to write back into, so
+    /// the model holds a snapshot rather than a handle. An edit to it would
+    /// succeed, look right, and be gone at save time — or worse, be "saved" into
+    /// an image the archive does not have. A refusal that costs one sentence is
+    /// far cheaper than work that disappears.
+    /// </para>
+    /// <para>
+    /// Placed at <see cref="Require"/> rather than inside each op, so a new edit
+    /// kind cannot forget it. Reading — the document, the inspector, the history
+    /// — never comes through here, because a read-only map is readable.
+    /// </para>
+    /// </remarks>
+    private EditorDoc RequireWritable(string path)
+    {
+        EditorDoc doc = Require(path);
+        if (doc.ReadOnlyReason is { Length: > 0 } reason)
+        {
+            throw new InvalidOperationException(
+                reason + " Nothing was changed.");
+        }
+        return doc;
+    }
+
     private void EvictIfNeeded()
     {
         while (_docs.Count >= MaxOpenDocs)
@@ -467,7 +591,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(request.Path);
+            EditorDoc doc = RequireWritable(request.Path);
             doc.Touched = DateTime.UtcNow;
             MapEditOp op = request.Op;
 
@@ -503,7 +627,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(path);
+            EditorDoc doc = RequireWritable(path);
             Stack<Change> from = redo ? doc.Redo : doc.Undo;
             Stack<Change> to = redo ? doc.Undo : doc.Redo;
 
@@ -967,7 +1091,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(path);
+            EditorDoc doc = RequireWritable(path);
 
             byte[] modelBytes;
             OpenFile file;
@@ -1237,6 +1361,8 @@ public sealed partial class MapEditorService
             UndoDepth = doc.Undo.Count,
             RedoDepth = doc.Redo.Count,
             Dirty = doc.Dirty,
+            ReadOnly = doc.ReadOnlyReason != null,
+            ReadOnlyReason = doc.ReadOnlyReason,
         };
 
         foreach (WzNode node in map.Unmodelled)
@@ -2153,6 +2279,16 @@ public sealed partial class MapEditorService
         public string Path { get; }
         public MapDocument Doc { get; }
         public byte[] Iv { get; }
+
+        /// <summary>
+        /// Null for a document that may be edited. A sentence when it may not:
+        /// the model here is a copy of the archive's content rather than a
+        /// handle on it, so a write could not reach the file. Served on the DTO
+        /// and enforced by <see cref="RequireWritable"/>, so the client can
+        /// grey out what it is about to be refused.
+        /// </summary>
+        public string? ReadOnlyReason { get; set; }
+
         public int Generation { get; set; }
         public DateTime Touched { get; set; }
         public Stack<Change> Undo { get; } = new();

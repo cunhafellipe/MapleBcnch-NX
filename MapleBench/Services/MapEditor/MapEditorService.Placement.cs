@@ -49,7 +49,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(request.Path);
+            EditorDoc doc = RequireWritable(request.Path);
             doc.Touched = DateTime.UtcNow;
 
             MapPlaceResultDto result = request.Kind switch
@@ -493,7 +493,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(request.Path);
+            EditorDoc doc = RequireWritable(request.Path);
             doc.Touched = DateTime.UtcNow;
 
             List<(long X, long Y)> points = (request.Points ?? new List<MapPointDto>())
@@ -519,7 +519,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(request.Path);
+            EditorDoc doc = RequireWritable(request.Path);
             doc.Touched = DateTime.UtcNow;
 
             WzNode entry = doc.NodeAt(request.Addr);
@@ -689,7 +689,7 @@ public sealed partial class MapEditorService
     {
         lock (_gate)
         {
-            EditorDoc doc = Require(request.Path);
+            EditorDoc doc = RequireWritable(request.Path);
             doc.Touched = DateTime.UtcNow;
             if (string.IsNullOrEmpty(request.Ts))
                 throw new ArgumentException("set-layer-ts needs the tile set name.");
