@@ -335,6 +335,33 @@ public sealed partial class MapEditorService
     #region Open / close
 
     /// <summary>
+    /// <summary>
+    /// Marks the <see cref="WzImage"/> that encloses <paramref name="node"/> as changed.
+    ///
+    /// MapleLib marks an image dirty from inside the image: <c>WzImage</c> sets
+    /// <c>Changed</c> on AddProperty, RemoveProperty and Properties.Clear. An NX
+    /// map is a WzSubProperty whose ancestors are another property and then the
+    /// image, and clearing a property's collection never goes through WzImage —
+    /// so the image stays clean, CountDirtyImages() returns 0, and the
+    /// deliberate no-op guard in WzSaveService declines the save with "already
+    /// up to date". The user edits a map, presses save, is told it worked, and
+    /// the file on disk does not change. Walking up is what stops that.
+    /// </summary>
+    private static void MarkEnclosingImageDirty(WzObject node)
+    {
+        if (node is WzImage already) already.Changed = true;
+
+        for (WzObject? current = node.Parent; current != null; current = current.Parent)
+        {
+            if (current is WzImage image)
+            {
+                image.Changed = true;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
     /// Opens a map through <see cref="MapRoundTrip.LoadVerified"/>, or throws
     /// with the model's refusal — the endpoint turns that into the banner. There
     /// is no partial open.
@@ -372,15 +399,22 @@ public sealed partial class MapEditorService
                 }
                 else if (IsNx(file))
                 {
-                    // A map in an NX archive. No image, so no block on disk to
-                    // verify a rebuilt one against and no IV to serialise it
-                    // with; the round trip is skipped rather than faked, and the
-                    // document is read-only for the whole reason spelled out in
-                    // the refusal below.
+                    // A map in an NX archive is a WzSubProperty, not a WzImage:
+                    // no block on disk to verify a rebuild against and no IV to
+                    // serialise it with, so the pre-save round trip is skipped
+                    // rather than faked.
+                    //
+                    // It is still editable. Save writes the rebuilt tree back
+                    // into the property the map actually is, marks the
+                    // enclosing image dirty so the archive writer sees the
+                    // change, and then verifies by reopening the saved archive
+                    // and comparing the tree -- which reads what is really on
+                    // disk rather than a serialisation of what was about to be
+                    // written. That is the stronger of the two checks, and it is
+                    // the one that can run here.
                     WzImage lifted = NxMapImage(node);
                     iv = file.CustomIv ?? WzTool.GetIvByMapleVersion(file.MapleVersion);
                     result = MapDocument.Load(lifted);
-                    readOnlyReason = NxReadOnlyReason(path);
                 }
                 else
                 {
@@ -1114,7 +1148,12 @@ public sealed partial class MapEditorService
                         "readable. Reopen the map and redo the edit rather than saving blind.");
                 }
 
-                if (_session.Resolve(path) is not WzImage live)
+                // An NX map is not a WzImage -- it is a WzSubProperty -- but both
+                // are WzImageProperty and both expose the same collection, so the
+                // write below is one path rather than two. What differs is only
+                // whether there are bytes to verify the rebuild against.
+                WzObject liveNode = _session.Resolve(path);
+                if (liveNode is not IPropertyContainer live)
                     throw new InvalidOperationException($"'{path}' no longer resolves to an image.");
 
                 // While the old reader is still the one the payloads point at.
@@ -1129,14 +1168,26 @@ public sealed partial class MapEditorService
                 // byte-verification is the proof the clones are exact.
                 if (pinFailure == null)
                     pinFailure = DetachPayloads(doc.Doc);
-                modelBytes = MapRoundTrip.Serialize(rebuilt, doc.Iv);
 
-                // The model built the image; the session's copy now becomes it.
-                WzSessionService.EnsureParsed(live);
-                live.WzProperties.Clear();
+                // An NX map has no block of its own to serialise against and no
+                // IV, so there is nothing to compare and the comparison is
+                // skipped rather than faked. The reopen-and-compare below is
+                // what stands in for it.
+                if (live is WzImage image)
+                {
+                    modelBytes = MapRoundTrip.Serialize(rebuilt, doc.Iv);
+                    WzSessionService.EnsureParsed(image);
+                }
+                else
+                {
+                    modelBytes = [];
+                }
+
+                // The model built the tree; the session's copy now becomes it.
+                live.ClearProperties();
                 foreach (WzImageProperty property in rebuilt.WzProperties)
-                    live.WzProperties.Add(property);
-                live.Changed = true;
+                    live.AddProperty(property);
+                MarkEnclosingImageDirty(liveNode);
             }
 
             SaveResult saved;
@@ -1167,23 +1218,41 @@ public sealed partial class MapEditorService
 
             lock (_session.Gate)
             {
-                if (_session.Resolve(path) is not WzImage reopened)
+                WzObject reopenedNode = _session.Resolve(path);
+                if (reopenedNode is not IPropertyContainer reopened)
                 {
                     result.Verified = false;
-                    result.Differences.Add("The saved archive no longer holds this image at its path.");
+                    result.Differences.Add("The saved archive no longer holds this map at its path.");
                     return result;
                 }
-                WzSessionService.EnsureParsed(reopened);
-                byte[] savedBytes = MapRoundTrip.Serialize(reopened, doc.Iv);
-                result.Verified = savedBytes.AsSpan().SequenceEqual(modelBytes);
 
-                if (!result.Verified)
+                if (reopenedNode is WzImage reopenedImage)
                 {
+                    WzSessionService.EnsureParsed(reopenedImage);
+                    byte[] savedBytes = MapRoundTrip.Serialize(reopenedImage, doc.Iv);
+                    result.Verified = modelBytes.Length > 0 && savedBytes.AsSpan().SequenceEqual(modelBytes);
+
+                    if (!result.Verified)
+                    {
+                        foreach (MapNodeDifference difference in
+                                 MapRoundTrip.CompareForTest(reopenedImage, doc.Doc.Build()))
+                            result.Differences.Add(difference.ToString());
+                        if (result.Differences.Count == 0)
+                            result.Differences.Add("The bytes differ although every node matches.");
+                    }
+                }
+                else
+                {
+                    // An NX map has no bytes to compare, so the saved tree is
+                    // compared against the model instead. That is the stronger
+                    // check of the two: it reads what is actually on disk rather
+                    // than a serialisation of what was about to be written.
                     foreach (MapNodeDifference difference in
-                             MapRoundTrip.CompareForTest(reopened, doc.Doc.Build()))
+                             MapRoundTrip.CompareForTest(
+                                 reopenedNode is WzImage ri ? ri : NxMapImage(reopenedNode),
+                                 doc.Doc.Build()))
                         result.Differences.Add(difference.ToString());
-                    if (result.Differences.Count == 0)
-                        result.Differences.Add("The bytes differ although every node matches.");
+                    result.Verified = result.Differences.Count == 0;
                 }
 
                 if (result.Verified && pinFailure == null)
@@ -1205,10 +1274,21 @@ public sealed partial class MapEditorService
                         ? $"Undo history was cleared by this save: {pinFailure}"
                         : "Undo history was cleared because verification failed and the document " +
                           "was reloaded from the saved file.";
-                    MapLoadResult reload = MapDocument.Load(reopened);
+                    // Reloaded through the same lift Open used: an NX map is a property
+                    // and the model wants an image, so the container is presented
+                    // to it rather than the document being closed and reopened
+                    // by hand.
+                    MapLoadResult reload = MapDocument.Load(
+                        reopenedNode is WzImage reopenImage ? reopenImage : NxMapImage(reopenedNode));
                     if (reload.Ok)
                     {
-                        _docs[path] = new EditorDoc(path, reload.Document!, doc.Iv, _session.Generation);
+                        _docs[path] = new EditorDoc(path, reload.Document!, doc.Iv, _session.Generation)
+                        {
+                            // An NX document stays read-only for the same
+                            // reason it opened that way: the round trip that
+                            // validates a .wz save has no bytes to run on here.
+                            ReadOnlyReason = reopenedNode is WzImage ? null : NxReadOnlyReason(path),
+                        };
                     }
                     else
                     {
