@@ -166,10 +166,11 @@ export class AuditSection {
   async repairApply() {
     const archive = this.repair.archive;
     if (!archive) return;
-    const ok = window.confirm(
-      `Write a repaired copy of ${archive}?\n\n` +
-      'This creates a NEW file beside it and does not touch the original or your client. ' +
-      'It needs as much free disk as the archive is big, and takes about as long as a save.');
+    const ok = window.confirm(t(
+      'Write a repaired copy of {name}?\n\n'
+      + 'This creates a NEW file beside it and does not touch the original or your client. '
+      + 'It needs as much free disk as the archive is big, and takes about as long as a save.',
+      { name: archive }));
     if (!ok) return;
 
     try {
@@ -236,8 +237,8 @@ export class AuditSection {
 
     this.host.append(emptyState(
       'search', t('Point it at a client folder'),
-      t('The auditor reads every .wz a client mounts and reports what will not resolve once they are ') +
-      'mounted together. It opens files read-only and writes nothing.'));
+      t('The auditor reads every .wz a client mounts and reports what will not resolve once they are '
+        + 'mounted together. It opens files read-only and writes nothing.')));
   }
 
   head() {
@@ -256,8 +257,8 @@ export class AuditSection {
         el('h2', { text: t('Client integrity') }),
         el('p', {
           class: 'audit-sub',
-          text: t('Every check here answers a question no single archive can: what happens once they are ') +
-                'all mounted together. Read-only — nothing is written, moved or fixed.',
+          text: t('Every check here answers a question no single archive can: what happens once they are '
+                + 'all mounted together. Read-only — nothing is written, moved or fixed.'),
         })),
       el('div', { class: 'audit-controls' },
         input,
@@ -279,14 +280,15 @@ export class AuditSection {
       family.archives.map((archive, index) => el('tr', {},
         el('td', { text: index === 0 ? family.family : '' }),
         el('td', {}, el('code', { text: archive.name })),
-        el('td', { class: 'num', text: archive.mountOrder === 0 ? 'first' : `#${archive.mountOrder}` }),
+        el('td', { class: 'num', text: archive.mountOrder === 0 ? t('first') : `#${archive.mountOrder}` }),
         el('td', { class: 'num', text: gb(archive.bytes) }))));
 
     const skipped = this.plan.skipped ?? [];
 
     return el('div', { class: 'audit-plan' },
       el('div', { class: 'audit-card' },
-        el('h3', { text: `${rows.length} archives in ${this.plan.families.length} families` }),
+        el('h3', { text: t('{n} archives in {families} families',
+          { n: rows.length, families: this.plan.families.length }) }),
         el('table', { class: 'table audit-table' },
           el('thead', {}, el('tr', {},
             el('th', { text: t('Family') }), el('th', { text: t('Archive') }),
@@ -297,13 +299,13 @@ export class AuditSection {
       // the user is the only one who knows which of them they meant.
       skipped.length
         ? el('div', { class: 'audit-card audit-muted' },
-            el('h3', { text: `${skipped.length} files skipped` }),
+            el('h3', { text: t('{n} files skipped', { n: skipped.length }) }),
             el('ul', {}, ...skipped.map((file) =>
               el('li', {},
                 el('code', { text: file.name }),
                 el('span', { text: `${file.bytes ? ` (${gb(file.bytes)})` : ''} — ${file.why}` })))))
         : null,
-      this.notes(this.plan.assumptions, 'What this run assumes'));
+      this.notes(this.plan.assumptions, t('What this run assumes')));
   }
 
   running() {
@@ -315,8 +317,10 @@ export class AuditSection {
       el('div', { class: 'audit-bar' }, el('div', { class: 'audit-bar-fill', style: `width:${share}%` })),
       el('p', {
         class: 'audit-sub',
-        text: `${p.archivesDone} of ${p.archivesTotal} archives · ${fmt.format(p.imagesDone)} images ` +
-              `· ${fmt.format(p.findings)} findings so far`,
+        text: t('{done} of {total} archives · {images} images · {findings} findings so far', {
+          done: p.archivesDone, total: p.archivesTotal,
+          images: fmt.format(p.imagesDone), findings: fmt.format(p.findings),
+        }),
       }),
       el('button', { class: 'btn', onclick: () => this.cancel() }, t('Stop')));
   }
@@ -324,7 +328,7 @@ export class AuditSection {
   failure() {
     return el('div', { class: 'audit-card audit-failed' },
       el('h3', { text: t('The audit stopped') }),
-      el('p', { text: this.progress.error ?? 'No reason was reported.' }));
+      el('p', { text: this.progress.error ?? t('No reason was reported.') }));
   }
 
   reportView() {
@@ -342,10 +346,10 @@ export class AuditSection {
       ...SEVERITIES.map((severity) => el('div', {
         class: 'audit-chip',
         'data-severity': severity,
-        'data-tip': SEVERITY_BLURB[severity],
+        'data-tip': t(SEVERITY_BLURB[severity]),
       },
         el('span', { class: 'audit-chip-n', text: fmt.format(totals[severity]) }),
-        el('span', { class: 'audit-chip-l', text: severity }))));
+        el('span', { class: 'audit-chip-l', text: t(severity) }))));
 
     const fired = report.checks.filter((check) => check.found > 0)
       .sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || b.found - a.found);
@@ -357,8 +361,10 @@ export class AuditSection {
     return [
       el('div', { class: 'audit-card' },
         el('h3', {
-          text: `${report.archives.length} archives · ${fmt.format(images)} images · ` +
-                `${fmt.format(canvases)} canvases · ${report.seconds.toFixed(0)}s`,
+          text: t('{n} archives · {images} images · {canvases} canvases · {seconds}s', {
+            n: report.archives.length, images: fmt.format(images),
+            canvases: fmt.format(canvases), seconds: report.seconds.toFixed(0),
+          }),
         }),
         summary),
 
@@ -372,11 +378,11 @@ export class AuditSection {
       // this the report is unfalsifiable: a clean screen and a check that never
       // ran look identical, and the number beside each one is the difference.
       el('div', { class: 'audit-card audit-muted' },
-        el('h3', { text: `${quiet.length} checks found nothing` }),
+        el('h3', { text: t('{n} checks found nothing', { n: quiet.length }) }),
         el('ul', { class: 'audit-quiet' }, ...quiet.map((check) =>
           el('li', {},
             el('span', { text: check.title }),
-            el('span', { class: 'audit-dim', text: ` — ${fmt.format(check.examined)} examined` }),
+            el('span', { class: 'audit-dim', text: t(' — {n} examined', { n: fmt.format(check.examined) }) }),
             // A zero beside a zero is the one thing this screen must never leave
             // ambiguous: "found nothing" and "looked at nothing" read the same,
             // and only the examined count and the limit tell them apart.
@@ -387,8 +393,8 @@ export class AuditSection {
               ? el('div', { class: 'audit-dim audit-limit', text: check.notChecked })
               : null)))),
 
-      this.notes(report.notChecked, 'What was deliberately not checked'),
-      this.notes(report.assumptions, 'What this run assumed'),
+      this.notes(report.notChecked, t('What was deliberately not checked')),
+      this.notes(report.assumptions, t('What this run assumed')),
       this.skipped(report),
       this.archives(report),
     ];
@@ -428,7 +434,8 @@ export class AuditSection {
                 el('td', { class: 'num', text: fmt.format(row.orphans) }),
                 el('td', { class: 'num', text: fmt.format(row.unnamed) }),
               ]
-            : [el('td', { class: 'audit-dim', colspan: 4, text: `not compared — ${row.why}` })]))))));
+            : [el('td', { class: 'audit-dim', colspan: 4,
+              text: t('not compared — {why}', { why: row.why }) })]))))));
   }
 
   /**
@@ -443,7 +450,7 @@ export class AuditSection {
     if (!rows.length) return null;
 
     return el('div', { class: 'audit-card audit-muted' },
-      el('h3', { text: `${rows.length} files in the folder were not audited` }),
+      el('h3', { text: t('{n} files in the folder were not audited', { n: rows.length }) }),
       el('ul', {}, ...rows.map((file) => el('li', {},
         el('code', { text: file.name }),
         el('span', { text: ` (${gb(file.bytes)}) — ${file.why}` })))));
@@ -470,7 +477,7 @@ export class AuditSection {
         el('tbody', {}, ...report.archives.map((archive) => el('tr', {},
           el('td', {}, el('code', { text: archive.name })),
           el('td', { text: archive.family }),
-          el('td', { class: 'num', text: archive.mountOrder === 0 ? 'first' : `#${archive.mountOrder}` }),
+          el('td', { class: 'num', text: archive.mountOrder === 0 ? t('first') : `#${archive.mountOrder}` }),
           el('td', { class: 'num', text: gb(archive.bytes) }),
           el('td', {
             class: archive.parseStatus === 'Success' ? '' : 'audit-dim',
@@ -495,7 +502,7 @@ export class AuditSection {
           this.render();
         },
       },
-        el('span', { class: 'audit-sev', 'data-severity': check.severity, text: check.severity }),
+        el('span', { class: 'audit-sev', 'data-severity': check.severity, text: t(check.severity) }),
         el('span', { class: 'audit-check-title', text: check.title }),
         el('span', { class: 'audit-check-n', text: fmt.format(check.found) }),
         el('code', { class: 'audit-dim', text: check.id })),
@@ -507,13 +514,15 @@ export class AuditSection {
             // reader to take a row at face value and go looking for the caveat
             // afterwards, which nobody does.
             check.notChecked
-              ? el('p', { class: 'audit-sub audit-limit', text: `Limits of this check: ${check.notChecked}` })
+              ? el('p', { class: 'audit-sub audit-limit',
+                  text: t('Limits of this check: {limit}', { limit: check.notChecked }) })
               : null,
             check.truncated
               ? el('p', {
                   class: 'audit-sub',
-                  text: `Showing ${fmt.format(rows.length)} of ${fmt.format(check.found)}. ` +
-                        'The count is complete; the list is capped so one noisy check cannot bury the rest.',
+                  text: t('Showing {shown} of {total}. The count is complete; the list is capped '
+                    + 'so one noisy check cannot bury the rest.',
+                    { shown: fmt.format(rows.length), total: fmt.format(check.found) }),
                 })
               : null,
             el('table', { class: 'table audit-table' },
@@ -556,49 +565,51 @@ export class AuditSection {
       el('h3', { text: t('Repair: re-join the split format value') }),
       el('p', {
         class: 'audit-sub',
-        text: t('These canvases carry a format that was written across two fields — the low byte in ') +
-              'the format and the rest in the magnification beside it. This app wrote them that way ' +
-              'before the writer was fixed; the client reads the second number as a magnification ' +
-              'and shifts the sprite down to a couple of pixels, or to none.',
+        text: t('These canvases carry a format that was written across two fields — the low byte in '
+              + 'the format and the rest in the magnification beside it. This app wrote them that way '
+              + 'before the writer was fixed; the client reads the second number as a magnification '
+              + 'and shifts the sprite down to a couple of pixels, or to none.'),
       }),
       el('p', {
         class: 'audit-sub',
-        text: t('A magnification of 1, 2 or 4 is ordinary in real data, and each of those joins to a ') +
-              'real format (257, 513, 1026), so the pair on its own proves nothing. What decides is ' +
-              'the payload: a genuinely scaled canvas stores its pixels at the reduced size, a split ' +
-              'value stores them full-size in the joined format. Only the second is touched.',
+        text: t('A magnification of 1, 2 or 4 is ordinary in real data, and each of those joins to a '
+              + 'real format (257, 513, 1026), so the pair on its own proves nothing. What decides is '
+              + 'the payload: a genuinely scaled canvas stores its pixels at the reduced size, a split '
+              + 'value stores them full-size in the joined format. Only the second is touched.'),
       }),
 
       running
         ? el('div', {},
-            el('p', { class: 'audit-sub', text: `${state} — ${this.repair.progress.phase || ''} ` +
-              `${this.repair.progress.archive || ''} · ` +
-              `${fmt.format(this.repair.progress.canvasesDone)} canvases · ` +
-              `${fmt.format(this.repair.progress.found)} found` }),
+            el('p', { class: 'audit-sub', text: t('{state} — {phase} {archive} · {canvases} canvases · {found} found', {
+              state: t(state), phase: this.repair.progress.phase || '', archive: this.repair.progress.archive || '',
+              canvases: fmt.format(this.repair.progress.canvasesDone),
+              found: fmt.format(this.repair.progress.found),
+            }) }),
             el('button', { class: 'btn', onclick: () => api.repairCancel().catch(() => {}) }, t('Stop')))
         : el('div', { class: 'audit-controls' },
             ...archives.map((name) => el('button', {
               class: 'btn',
               onclick: () => this.repairScan(full(name)),
-              'data-tip': `Open ${name} read-only and measure every canvas. Writes nothing.`,
-            }, icon('search', { size: 15 }), `Scan ${name}`))),
+              'data-tip': t('Open {name} read-only and measure every canvas. Writes nothing.', { name }),
+            }, icon('search', { size: 15 }), t('Scan {name}', { name })))),
 
       state === 'failed'
-        ? el('p', { class: 'audit-sub', text: this.repair.progress.error ?? 'The run stopped.' })
+        ? el('p', { class: 'audit-sub', text: this.repair.progress.error ?? t('The run stopped.') })
         : null,
 
       scan && !running
         ? el('div', {},
-            el('p', { class: 'audit-sub', text:
-              `${fmt.format(scan.canvases)} canvases examined · ` +
-              `${fmt.format(scan.canvasesWithMag)} carry a magnification · ` +
-              `${fmt.format(scan.split)} are a split value · ` +
-              `${fmt.format(scan.genuine)} are a real magnification · ` +
-              `${fmt.format(scan.undecidable)} could not be decided and will be left alone` }),
+            el('p', { class: 'audit-sub', text: t('{canvases} canvases examined · {withMag} carry a magnification '
+              + '· {split} are a split value · {genuine} are a real magnification '
+              + '· {undecidable} could not be decided and will be left alone', {
+                canvases: fmt.format(scan.canvases), withMag: fmt.format(scan.canvasesWithMag),
+                split: fmt.format(scan.split), genuine: fmt.format(scan.genuine),
+                undecidable: fmt.format(scan.undecidable),
+              }) }),
             el('table', { class: 'table audit-table' },
               el('thead', {}, el('tr', {},
-                el('th', { text: 'format' }), el('th', { text: 'mag' }),
-                el('th', { class: 'num', text: 'canvases' }), el('th', { text: 'example' }))),
+                el('th', { text: t('format') }), el('th', { text: t('mag') }),
+                el('th', { class: 'num', text: t('canvases') }), el('th', { text: t('example') }))),
               el('tbody', {}, ...scan.pairs.map((pair) => el('tr', {},
                 el('td', { text: String(pair.format) }),
                 el('td', { text: String(pair.mag) }),
@@ -609,18 +620,20 @@ export class AuditSection {
                   class: 'btn btn-primary',
                   onclick: () => this.repairApply(),
                   'data-tip': t('Writes a new archive beside this one. The original is not touched.'),
-                }, icon('save', { size: 15 }), `Write a repaired copy (${fmt.format(scan.split)})`)
+                }, icon('save', { size: 15 }),
+                t('Write a repaired copy ({n})', { n: fmt.format(scan.split) }))
               : el('p', { class: 'audit-sub', text: t('Nothing in this archive is a split value.') }),
-            this.notes(scan.notes, 'What the scan concluded'))
+            this.notes(scan.notes, t('What the scan concluded')))
         : null,
 
       result && result.output && !running
         ? el('div', { class: 'audit-card audit-muted' },
-            el('h3', { text: `${fmt.format(result.repaired)} repaired · ` +
-                             `${fmt.format(result.decoded)} decode from the saved file` }),
+            el('h3', { text: t('{repaired} repaired · {decoded} decode from the saved file', {
+              repaired: fmt.format(result.repaired), decoded: fmt.format(result.decoded),
+            }) }),
             result.failedToDecode
-              ? el('p', { class: 'audit-sub', text:
-                  `${fmt.format(result.failedToDecode)} did not decode. Do not install this file.` })
+              ? el('p', { class: 'audit-sub', text: t('{n} did not decode. Do not install this file.',
+                  { n: fmt.format(result.failedToDecode) }) })
               : null,
             ...(result.failures ?? []).map((line) => el('p', { class: 'audit-sub', text: line })),
             el('p', { class: 'audit-sub', text: t('Written to:') }),
@@ -630,8 +643,8 @@ export class AuditSection {
             // behalf -- and the command takes the backup first, in the same
             // line, so there is no ordering to get wrong.
             el('p', { class: 'audit-sub', text:
-              t('To install it, run this in PowerShell. It backs the current archive up first, and ') +
-              'only copies if that backup succeeded:' }),
+              t('To install it, run this in PowerShell. It backs the current archive up first, '
+                + 'and only copies if that backup succeeded:') }),
             el('pre', {}, el('code', { text: result.installCommand })),
             el('button', {
               class: 'btn',
@@ -640,7 +653,7 @@ export class AuditSection {
                 toast(t('Command copied'));
               },
             }, t('Copy command')),
-            this.notes(result.notes, 'What the repair did'))
+            this.notes(result.notes, t('What the repair did')))
         : null);
   }
 

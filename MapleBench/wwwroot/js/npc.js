@@ -307,8 +307,8 @@ export class NpcSection {
     if (!this.capabilities.available) {
       this.host.append(emptyState(
         'info', t('No Npc.wz open'),
-        'NPC editing reads Npc.wz and uses String.wz for names and chat text. Open the client folder '
-        + 'to make both available.',
+        t('NPC editing reads Npc.wz and uses String.wz for names and chat text. Open the client folder '
+        + 'to make both available.'),
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
           icon('folderOpen', { size: 15 }), t('Open client'))));
       return;
@@ -385,7 +385,7 @@ export class NpcSection {
 
     // The picker only earns its place when there is a real choice to make.
     if (candidates.length > 1) {
-      const select = el('select', { class: 'npc-select', 'aria-label': 'Which archive to edit' },
+      const select = el('select', { class: 'npc-select', 'aria-label': t('Which archive to edit') },
         el('option', { value: '', text: `All Npc archives (${candidates.length})`, selected: !this.fileId }),
         candidates.map((file) => el('option', { value: file.id, text: file.name, selected: file.id === this.fileId })));
       select.addEventListener('change', () => {
@@ -437,7 +437,7 @@ export class NpcSection {
     const search = el('input', {
       type: 'search', value: this.query,
       placeholder: t('Search by NPC ID, name, job line or script…'),
-      'aria-label': 'Search NPCs',
+      'aria-label': t('Search NPCs'),
     });
     // Only the results are re-rendered, never the toolbar holding this input:
     // rebuilding it destroys the caret and drops IME composition mid-word.
@@ -458,7 +458,7 @@ export class NpcSection {
         },
       }, t(label), el('span', { class: 'cat-count', text: this.countFor(value) }))));
 
-    const sort = el('select', { class: 'npc-select', 'aria-label': 'Sort NPCs' },
+    const sort = el('select', { class: 'npc-select', 'aria-label': t('Sort NPCs') },
       SORTS.map(([value, label]) => el('option', { value, text: t(label), selected: value === this.sort })));
     sort.addEventListener('change', () => {
       this.sort = sort.value;
@@ -550,8 +550,8 @@ export class NpcSection {
       // from "your filter hid everything", and it needs a different sentence.
       panel.append(emptyState(
         'info', t('No NPCs in this archive'),
-        'The archive opened, but nothing in it is named like an NPC image (9000000.img). ' +
-        'If you scoped to one file, try the others.',
+        t('The archive opened, but nothing in it is named like an NPC image (9000000.img). ' +
+        'If you scoped to one file, try the others.'),
         el('button', { class: 'btn', onclick: () => this.load() }, icon('refresh', { size: 15 }), t('Reload'))));
     } else if (!results.length) {
       panel.append(emptyState(
@@ -797,7 +797,7 @@ export class NpcSection {
 
     /* --- the parts that must survive a repaint --- */
     const search = el('input', {
-      type: 'search', placeholder: t('Find a field by name…'), 'aria-label': 'Find a field',
+      type: 'search', placeholder: t('Find a field by name…'), 'aria-label': t('Find a field'),
     });
     search.addEventListener('input', debounce(() => {
       ctx.search = search.value;
@@ -1113,8 +1113,7 @@ export class NpcSection {
     if (field.hint) row.append(el('div', { class: 'npc-field-hint', text: field.hint }));
     if (field.kind === 'Flag' && !FLAGGABLE.has(current)) {
       row.append(el('div', { class: 'npc-field-hint',
-        text: `This is normally a 0/1 flag, but this NPC holds "${current}". ` +
-              'Shown as text so ticking a box cannot throw that value away.' }));
+        text: t('This is normally a 0/1 flag, but this NPC holds "{value}". Shown as text so ticking a box cannot throw that value away.', { value: current }) }));
     }
     if (!field.present) {
       row.append(el('div', { class: 'npc-field-hint',
@@ -1137,8 +1136,8 @@ export class NpcSection {
     // makes a user distrust the numbers beside it.
     const count = /^(\d+) entries$/.exec(field.value || '');
     const label = count
-      ? `${fmt.format(Number(count[1]))} ${count[1] === '1' ? 'entry' : 'entries'}`
-      : field.value || 'a group of values';
+      ? `${fmt.format(Number(count[1]))} ${count[1] === '1' ? t('entry') : t('entries')}`
+      : field.value || t('a group of values');
 
     return el('div', { class: 'npc-container' },
       el('span', { class: 'npc-container-count', text: label }),
@@ -1167,7 +1166,7 @@ export class NpcSection {
       list.append(el('div', { class: 'npc-binding' },
         el('span', { class: 'npc-binding-index', text: entry.index === '' ? 'script' : `#${entry.index}` }),
         el('div', { class: 'npc-binding-body' },
-          el('div', { class: 'npc-binding-main', text: entry.script || 'no handler name in this entry' }),
+          el('div', { class: 'npc-binding-main', text: entry.script || t('no handler name in this entry') }),
           extra.length
             ? el('div', { class: 'npc-binding-extra',
                 text: extra.map(([key, value]) => `${key}: ${value ?? '—'}`).join(' · ') })
@@ -1360,19 +1359,19 @@ export class NpcSection {
   async buildBulkDialog() {
     const paths = [...this.selection];
     if (!paths.length) {
-      toast('Tick a few NPCs first — every card has a checkbox in its corner.', 'info');
+      toast(t('Tick a few NPCs first — every card has a checkbox in its corner.'), 'info');
       return;
     }
 
     const fields = await this.bulkFieldOptions(paths[0]);
 
-    const fieldSelect = el('select', { class: 'npc-select', 'aria-label': 'Field to change' },
+    const fieldSelect = el('select', { class: 'npc-select', 'aria-label': t('Field to change') },
       fields.map((field) => el('option', { value: field.key, text: field.label })));
-    const opSelect = el('select', { class: 'npc-select', 'aria-label': 'What to do' });
+    const opSelect = el('select', { class: 'npc-select', 'aria-label': t('What to do') });
     // Text rather than number: "set" writes its operand verbatim, and an NPC
     // field is as likely to hold a script name as a count.
     const valueInput = el('input', { class: 'npc-input', value: '1', spellcheck: 'false' });
-    const roundSelect = el('select', { class: 'npc-select', 'aria-label': 'Rounding' },
+    const roundSelect = el('select', { class: 'npc-select', 'aria-label': t('Rounding') },
       ROUNDING.map(([value, label]) => el('option', { value, text: t(label) })));
 
     const kindOf = (key) => fields.find((f) => f.key === key)?.kind ?? 'Text';
@@ -1440,7 +1439,7 @@ export class NpcSection {
     previewButton.addEventListener('click', () => this.guard('bulk-preview', async () => {
       const body = recipe();
       if (body.op !== 'set' && !Number.isFinite(Number(body.value))) {
-        toast('Type a number to change the field by.', 'warning');
+        toast(t('Type a number to change the field by.'), 'warning');
         return;
       }
       clear(previewHost);
@@ -1471,10 +1470,10 @@ export class NpcSection {
       width: 'min(96vw, 900px)',
       body: el('div', { class: 'npc-bulk' },
         el('div', { class: 'npc-bulk-grid' },
-          bulkField('Field', fieldSelect, 'Only fields the first selected NPC already carries — bulk edit never creates one.'),
-          bulkField('Change', opSelect),
-          bulkField('Value', valueInput),
-          bulkField('Rounding', roundSelect, 'Multiply and percent can produce fractions; WZ integers cannot hold one.')),
+          bulkField(t('Field'), fieldSelect, t('Only fields the first selected NPC already carries — bulk edit never creates one.')),
+          bulkField(t('Change'), opSelect),
+          bulkField(t('Value'), valueInput),
+          bulkField(t('Rounding'), roundSelect, t('Multiply and percent can produce fractions; WZ integers cannot hold one.'))),
         el('div', { class: 'npc-bulk-actions' }, previewButton, applyButton),
         previewHost,
         el('div', { class: 'tips' },
@@ -1493,8 +1492,8 @@ export class NpcSection {
       const changing = (preview.changes || []).filter((c) => !c.skipped);
       const ok = await confirmDialog({
         title: `Change ${fieldSelect.value} on ${fmt.format(changing.length)} NPC${changing.length === 1 ? '' : 's'}?`,
-        message: `${t(OPS.find(([v]) => v === opSelect.value)?.[1])} ${valueInput.value} — this is the preview you ` +
-                 'are looking at. Nothing is written to disk until you save, and you can undo it.',
+        message: `${t(OPS.find(([v]) => v === opSelect.value)?.[1])} ${valueInput.value} — ` +
+                 t('this is the preview you are looking at. Nothing is written to disk until you save, and you can undo it.'),
         confirmLabel: t('Apply the changes'),
         danger: false,
       });

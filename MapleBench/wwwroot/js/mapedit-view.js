@@ -41,6 +41,8 @@
  * phases; see git history for the evidence trail.
  */
 
+import { t } from './i18n.js';
+
 const CHUNK = 1024;
 const MAX_CHUNKS = 256;
 const GRID = 256;              // spatial index bucket, world px
@@ -2197,7 +2199,7 @@ function describe(hit) {
       return `foothold ${e.id}${hit.vertex ? ` · vertex ${hit.vertex}` : ''} · layer ${e.layer} `
         + `· (${e.x1}, ${e.y1})→(${e.x2}, ${e.y2}) · prev ${e.prev} next ${e.next}`;
     case 'ladder': return `${e.l === 1 ? 'ladder' : 'rope'} · x ${e.x} · y ${e.y1}→${e.y2}`;
-    case 'portal': return `portal ${e.pn || '(unnamed)'} pt ${e.pt} → ${e.tn || '—'}${e.tm && e.tm !== 999999999 ? ` @ ${e.tm}` : ''} · (${e.x}, ${e.y})`;
+    case 'portal': return `portal ${e.pn || t('(unnamed)')} pt ${e.pt} → ${e.tn || '—'}${e.tm && e.tm !== 999999999 ? ` @ ${e.tm}` : ''} · (${e.x}, ${e.y})`;
     case 'life': return `${(e.type || '').toLowerCase() === 'n' ? 'NPC' : 'mob'} ${e.name ?? e.id} · fh ${e.fh} · (${e.x}, ${e.cy || e.y})`;
     case 'reactor': return `reactor ${e.id ?? ''} · (${e.x}, ${e.y})`;
     case 'rect': return `${e.kind}/${e.name} · (${e.x1}, ${e.y1})→(${e.x2}, ${e.y2})`;

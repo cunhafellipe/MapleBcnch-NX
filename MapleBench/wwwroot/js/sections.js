@@ -198,6 +198,7 @@ export class Sections {
 
       for (const section of SECTIONS) {
         const state = el('span', { class: 'sec-state' });
+              const label = el('span', { class: 'sec-label', text: t(section.label) });
         const entry = el('button', {
           class: 'sec-item',
           'aria-label': t(section.label),
@@ -207,10 +208,10 @@ export class Sections {
           el('span', { class: 'sec-glyph' }, icon(section.icon, { size: 16 })),
           el('span', { class: 'sec-body' },
             el('span', { class: 'sec-head' },
-              el('span', { class: 'sec-label', text: t(section.label) }),
+              label,
               section.soon ? el('span', { class: 'sec-chip', text: t('Coming soon') }) : null,
               state)));
-        this.entries.set(section.id, { entry, state });
+        this.entries.set(section.id, { entry, state, label });
         this.listHost.append(entry);
       }
       this.listBuilt = true;
@@ -239,6 +240,14 @@ export class Sections {
       const active = hasClient && section.id === this.active && !section.soon;
       refs.entry.dataset.active = active ? 'true' : 'false';
       refs.entry.setAttribute('aria-current', active ? 'true' : 'false');
+      // The visible name and its aria-label are built once, inside the
+      // listBuilt guard, while every other translated string in this list
+      // is refreshed on each paint. Switching language therefore left
+      // seven section names in English even though all seven are in the
+      // dictionary. Re-translating here costs nothing and leaves the guard
+      // doing what it exists for: not rebuilding the elements.
+      refs.label.textContent = t(section.label);
+      refs.entry.setAttribute('aria-label', t(section.label));
       refs.entry.setAttribute('data-tip', [
         t(section.blurb),
         hasClient ? this.noteFor(section, status) : t('Requires {archive}', { archive: section.archive }),

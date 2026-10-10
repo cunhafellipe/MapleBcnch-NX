@@ -15,6 +15,7 @@
 import { api } from './api.js';
 import { el, clear, sortNodes, archiveQualifiers } from './ui.js';
 import { icon, nodeIcon } from './icons.js';
+import { t } from './i18n.js';
 
 const ROW_H = 28;
 const OVERSCAN = 8;
@@ -716,7 +717,7 @@ export class TreeView {
     if (this.checkable) {
       row.append(el('input', {
         type: 'checkbox', class: 'tree-check', tabindex: '-1',
-        'aria-label': 'Include this in the import',
+        'aria-label': t('Include this in the import'),
       }));
     }
     return row;
@@ -789,7 +790,7 @@ export class TreeView {
       iconSlot.append(nodeIcon(node, 14));
     }
 
-    label.textContent = node.name || '(unnamed)';
+    label.textContent = node.name || t('(unnamed)');
 
     // displayName is optional and absent far more often than present, and it is
     // never identity: the row is still addressed by node.path, type-ahead and
@@ -804,15 +805,19 @@ export class TreeView {
     source.textContent = node.source ?? '';
     source.dataset.shadowed = node.shadowed ? 'true' : 'false';
     source.title = node.shadowed
-      ? `Also in ${(node.sources ?? []).slice(1).join(', ')}. Only this copy is shown; `
-        + 'which one wins is decided by mount order alone.'
-      : (node.source ? `In ${node.source}` : '');
+      ? t('Also in {others}. Only this copy is shown; '
+        + 'which one wins is decided by mount order alone.',
+        { others: (node.sources ?? []).slice(1).join(', ') })
+      : (node.source ? t('In {file}', { file: node.source }) : '');
 
     row.dataset.tip = [
       node.name || '',
       displayName,
       node.type || '',
-      node.shadowed ? `in ${node.source} — also in ${(node.sources ?? []).slice(1).join(', ')}` : '',
+      node.shadowed
+        ? t('in {file} — also in {others}',
+            { file: node.source, others: (node.sources ?? []).slice(1).join(', ') })
+        : '',
     ].filter(Boolean).join(' · ');
 
     value.textContent = node.kind === 'Property' && node.value != null ? node.value : '';
@@ -1187,15 +1192,17 @@ export class TreeView {
    * cannot perform, and the user would only find out after the drop.
    */
   refuseDragOutright(nodes) {
-    if (!nodes.length) return 'Nothing to move.';
+    if (!nodes.length) return t('Nothing to move.');
     for (const node of nodes) {
       if (node.kind === 'File')
-        return 'An archive is not inside anything, so it cannot be moved. Close it instead.';
+        return t('An archive is not inside anything, so it cannot be moved. Close it instead.');
       if (node.kind === 'Directory')
-        return `Folders cannot be moved between archives or into other folders, so ${node.name} stays where it is.`;
+        return t('Folders cannot be moved between archives or into other folders, so {name} stays where it is.',
+          { name: node.name });
       const file = this.fileFor(node.path);
       if (file?.readOnly)
-        return `${file.name} is open for reference only, so nothing in it can be moved.`;
+        return t('{file} is open for reference only, so nothing in it can be moved.',
+          { file: file.name });
     }
     return null;
   }
@@ -1295,10 +1302,12 @@ export class TreeView {
   planDrop(hit) {
     const drag = this.drag;
     if (drag.blocked) return { ok: false, reason: drag.blocked };
-    if (!hit || !hit.entry || hit.entry.skeleton) return { ok: false, reason: 'Drop onto a node.' };
+    if (!hit || !hit.entry || hit.entry.skeleton) return { ok: false, reason: t('Drop onto a node.') };
 
     const target = hit.entry.node;
-    const names = drag.nodes.length === 1 ? drag.nodes[0].name : `${drag.nodes.length} nodes`;
+    const names = drag.nodes.length === 1
+      ? drag.nodes[0].name
+      : t('{n} nodes', { n: drag.nodes.length });
 
     // Where in the row are we? A drag that can never be ordered -- several
     // nodes, an image, or a tree sorted by name -- gets no edge bands at all,
@@ -1335,13 +1344,14 @@ export class TreeView {
 
     for (const node of drag.nodes) {
       if (target.path === node.path)
-        return { ok: false, reason: `${node.name} cannot be dropped on itself.` };
+        return { ok: false, reason: t('{name} cannot be dropped on itself.', { name: node.name }) };
       // The check the backend also makes. Worth repeating here because the
       // failure it prevents -- a subtree adopted by its own child -- is one the
       // user is most likely to attempt while the branch is expanded in front of
       // them, and an error afterwards would leave them guessing.
       if (target.path.startsWith(node.path + '/'))
-        return { ok: false, reason: `${target.name} is inside ${node.name}, so it cannot become its parent.` };
+        return { ok: false, reason: t('{target} is inside {name}, so it cannot become its parent.',
+          { target: target.name, name: node.name }) };
       // Transfer adds the copy before removing the original, so a node dropped
       // into the parent it already has collides with itself: it is auto-renamed
       // to "name copy" at the end of the list and the original is deleted.
@@ -1350,8 +1360,9 @@ export class TreeView {
         return {
           ok: false,
           reason: drag.canOrder
-            ? `${node.name} is already in ${target.name} — drop between two of its siblings to reorder it.`
-            : `${node.name} is already in ${target.name}.`,
+            ? t('{name} is already in {target} — drop between two of its siblings to reorder it.',
+                { name: node.name, target: target.name })
+            : t('{name} is already in {target}.', { name: node.name, target: target.name }),
         };
       }
     }
@@ -1361,7 +1372,8 @@ export class TreeView {
 
     const file = this.fileFor(target.path);
     if (file?.readOnly)
-      return { ok: false, reason: `${file.name} is open for reference only, so nothing can be moved into it.` };
+      return { ok: false, reason: t('{file} is open for reference only, so nothing can be moved into it.',
+        { file: file.name }) };
 
     const crossFile = drag.nodes.some((node) => node.path.split('/')[0] !== target.path.split('/')[0]);
     return {
@@ -1370,7 +1382,7 @@ export class TreeView {
       targetPath: target.path, targetName: target.name,
       anchorPath: null, anchor: null, position: null,
       crossFile,
-      label: `Move ${names} into ${target.name}`,
+      label: t('Move {names} into {target}', { names, target: target.name }),
     };
   }
 
@@ -1382,17 +1394,18 @@ export class TreeView {
     const sourceParent = parentOf(node.path);
 
     if (!anchorParent)
-      return { ok: false, reason: 'An archive root has no siblings to sit between.' };
+      return { ok: false, reason: t('An archive root has no siblings to sit between.') };
     if (anchor.path === node.path)
-      return { ok: false, reason: 'Already there.' };
+      return { ok: false, reason: t('Already there.') };
     if (anchor.path.startsWith(node.path + '/'))
-      return { ok: false, reason: `${anchor.name} is inside ${node.name}.` };
+      return { ok: false, reason: t('{anchor} is inside {name}.', { anchor: anchor.name, name: node.name }) };
 
     // Only properties have an index. WzEditService.Reorder says so outright, and
     // a directory's images are appended by AddImage with no insert-at, so there
     // is nothing to place them between.
     if (anchor.kind !== 'Property')
-      return { ok: false, reason: `${anchor.name} is not a property, so nothing can be ordered against it.` };
+      return { ok: false, reason: t('{anchor} is not a property, so nothing can be ordered against it.',
+        { anchor: anchor.name }) };
 
     const parentNode = this.nodes.get(anchorParent);
     const verdict = this.accepts(parentNode, drag.nodes);
@@ -1400,7 +1413,7 @@ export class TreeView {
 
     const file = this.fileFor(anchorParent);
     if (file?.readOnly)
-      return { ok: false, reason: `${file.name} is open for reference only.` };
+      return { ok: false, reason: t('{file} is open for reference only.', { file: file.name }) };
 
     if (sourceParent === anchorParent) {
       // Same parent: a pure reorder. Dropping straight above or below where it
@@ -1410,7 +1423,7 @@ export class TreeView {
       const from = siblings.indexOf(node.path);
       const at = siblings.indexOf(anchor.path);
       if (from >= 0 && at >= 0 && (zone === 'before' ? at - 1 === from : at + 1 === from))
-        return { ok: false, reason: 'Already there.' };
+        return { ok: false, reason: t('Already there.') };
 
       return {
         ok: true, kind: 'reorder', zone,
@@ -1418,7 +1431,9 @@ export class TreeView {
         targetPath: anchorParent, targetName: parentNode?.name ?? '',
         anchorPath: anchor.path, anchor, position: zone,
         crossFile: false,
-        label: `Move ${node.name} ${zone} ${anchor.name}`,
+        label: t('Move {name} {zone} {anchor}', {
+          name: node.name, zone: zone === 'before' ? t('before') : t('after'), anchor: anchor.name,
+        }),
       };
     }
 
@@ -1428,7 +1443,9 @@ export class TreeView {
       targetPath: anchorParent, targetName: parentNode?.name ?? '',
       anchorPath: anchor.path, anchor, position: zone,
       crossFile: node.path.split('/')[0] !== anchor.path.split('/')[0],
-      label: `Move ${names} ${zone} ${anchor.name}`,
+      label: t('Move {names} {zone} {anchor}', {
+        names, zone: zone === 'before' ? t('before') : t('after'), anchor: anchor.name,
+      }),
     };
   }
 
@@ -1454,10 +1471,10 @@ export class TreeView {
   /** What to change so that dropping between rows becomes available. */
   whyNoOrdering() {
     if (this.sortMode !== 'wz')
-      return 'Sort by File order to drop between rows and change the order.';
+      return t('Sort by File order to drop between rows and change the order.');
     if (this.nameFilter || this.typeFilter.size)
-      return 'Clear the filter to drop between rows: hidden siblings make the position ambiguous.';
-    return 'Drag one property at a time to drop between rows.';
+      return t('Clear the filter to drop between rows: hidden siblings make the position ambiguous.');
+    return t('Drag one property at a time to drop between rows.');
   }
 
   /**
@@ -1469,7 +1486,7 @@ export class TreeView {
    * down, which is the only moment the user can act on it.
    */
   accepts(target, nodes) {
-    if (!target) return { ok: false, reason: 'That node is not loaded yet.' };
+    if (!target) return { ok: false, reason: t('That node is not loaded yet.') };
     const folder = target.kind === 'Directory' || target.kind === 'File';
 
     for (const node of nodes) {
@@ -1479,8 +1496,9 @@ export class TreeView {
           if (target.type === 'Convex' && !EXTENDED_TYPES.has(node.type)) {
             return {
               ok: false,
-              reason: `A Convex holds only Vector, Canvas, Sound, SubProperty, Convex and UOL children, ` +
-                      `and ${node.name} is ${node.type}. It would be lost on the next save.`,
+              reason: t('A Convex holds only Vector, Canvas, Sound, SubProperty, Convex and UOL children, ' +
+                      'and {name} is {type}. It would be lost on the next save.',
+                      { name: node.name, type: node.type }),
             };
           }
           continue;
@@ -1488,17 +1506,20 @@ export class TreeView {
         return {
           ok: false,
           reason: folder
-            ? `${target.name} is a folder, and a folder holds images and folders — not properties.`
-            : `${target.name} is ${target.type ?? 'a leaf'}, which cannot hold children.`,
+            ? t('{target} is a folder, and a folder holds images and folders — not properties.',
+                { target: target.name })
+            : t('{target} is {type}, which cannot hold children.',
+                { target: target.name, type: target.type ?? t('a leaf') }),
         };
       }
 
       if (node.kind === 'Image') {
         if (folder) continue;
-        return { ok: false, reason: `An image can only go in a folder, and ${target.name} is not one.` };
+        return { ok: false, reason: t('An image can only go in a folder, and {target} is not one.',
+          { target: target.name }) };
       }
 
-      return { ok: false, reason: `${node.name} cannot be moved.` };
+      return { ok: false, reason: t('{name} cannot be moved.', { name: node.name }) };
     }
     return { ok: true };
   }

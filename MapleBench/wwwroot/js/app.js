@@ -894,7 +894,7 @@ class App {
       : '';
     $('#status-path').textContent = readable;
     const file = this.currentPath ? this.files.find((f) => f.id === this.currentPath.split('/')[0]) : null;
-    $('#status-version').textContent = file ? `${file.mapleVersion}${file.gameVersion ? ` v${file.gameVersion}` : ''}${file.is64Bit ? ' 64-bit' : ''}` : '';
+    $('#status-version').textContent = file ? `${file.mapleVersion}${file.gameVersion ? ` v${file.gameVersion}` : ''}${file.is64Bit ? ' ' + t('64-bit') : ''}` : '';
     const node = this.currentPath ? this.tree.getNode(this.currentPath) : null;
     $('#status-counts').textContent = node && node.childCount >= 0
       ? t(node.childCount === 1

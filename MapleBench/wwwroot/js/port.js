@@ -19,6 +19,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, statChip } from './ui.js';
 import { icon } from './icons.js';
 
@@ -96,10 +97,14 @@ function intoNeeds(spec) {
   const families = [...new Set((spec?.satellites || [])
     .map((s) => archiveFamily(String(s).split('/')[0]))
     .filter(Boolean))];
-  if (!families.length) return 'Nothing else has to be open for this kind.';
-  if (families.length === 1) return `${families[0]} has to be open here too, or that part has nowhere to land.`;
+  if (!families.length) return t('Nothing else has to be open for this kind.');
+  if (families.length === 1) {
+    return t('{family} has to be open here too, or that part has nowhere to land.',
+      { family: families[0] });
+  }
   const list = `${families.slice(0, -1).join(', ')} and ${families[families.length - 1]}`;
-  return `${list} have to be open here too, or those parts have nowhere to land.`;
+  return t('{families} have to be open here too, or those parts have nowhere to land.',
+    { families: list });
 }
 
 /**
@@ -224,33 +229,36 @@ function openTheseArchives(plan) {
     icon('alert', { size: 18 }),
     el('div', {},
       el('b', { text: named.length
-        ? `Open ${listOf(named)} — on both clients — before you import this`
-        : 'Some of this art comes out of archives that are not open' }),
+        ? t('Open {files} — on both clients — before you import this',
+            { files: listOf(named) })
+        : t('Some of this art comes out of archives that are not open') }),
       urgent.map((line) => el('p', { text: line })),
       art.entries
         ? el('p', { text:
-            `${fmt.format(art.entries)} of the entries below point at art this import cannot see`
-            + (shown.length ? `: ${shown.join(', ')}` : '')
+            t('{n} of the entries below point at art this import cannot see',
+              { n: fmt.format(art.entries) })
+            + (shown.length ? t(', among them: {files}', { files: shown.join(', ') }) : '')
             + (art.images.length > shown.length
-                ? ` and ${fmt.format(art.images.length - shown.length)} more`
+                ? t(', and {n} more', { n: fmt.format(art.images.length - shown.length) })
                 : '')
-            + '. Each of those is repeated on its own card, where it is one line among hundreds — '
-            + 'this is the same news, said once, where it can be acted on.' })
+            + t('. Each of those is repeated on its own card, where it is one line among hundreds — '
+              + 'this is the same news, said once, where it can be acted on.') })
         : null,
       // The item list is capped, so this count is read off a sample. Said,
       // because "3 entries" over a four-thousand-entry port reads as "nearly
       // none of them" and the truth may be the opposite.
       art.entries && (plan.itemsTruncated ?? 0) > 0
         ? el('p', { text:
-            `That is counted from the ${fmt.format((plan.items || []).length)} entries listed, out of `
-            + `${fmt.format(plan.totals?.entries ?? 0)} in the import — a sample, not the total.` })
+            t('That is counted from the {shown} entries listed, out of {total} in the import — a sample, not the total.',
+              { shown: fmt.format((plan.items || []).length),
+                total: fmt.format(plan.totals?.entries ?? 0) }) })
         : null,
       el('p', { text:
-        'Imported as it stands, those frames would arrive as links to art the target client cannot resolve. '
-        + 'That is not a blank sprite: it is what takes the client down when the window that draws it '
-        + 'opens. An archive family answers as a whole, so the numbered siblings count — Skill001.wz '
-        + 'and Skill003.wz are both "Skill", and the icon book a skill points at often lives in one of '
-        + 'them rather than in the archive you picked.' })));
+        t('Imported as it stands, those frames would arrive as links to art the target client cannot resolve. '
+          + 'That is not a blank sprite: it is what takes the client down when the window that draws it '
+          + 'opens. An archive family answers as a whole, so the numbered siblings count — Skill001.wz '
+          + 'and Skill003.wz are both "Skill", and the icon book a skill points at often lives in one of '
+          + 'them rather than in the archive you picked.') })));
 }
 
 /**
@@ -287,11 +295,11 @@ export async function openPortDialog({ app, kind, paths, scope = 'selection', so
   const wholeArchive = scope === 'archive' || scope === 'folder';
 
   if (!wholeArchive && !paths?.length) {
-    toast('Select one or more entries first.', 'info');
+    toast(t('Select one or more entries first.'), 'info');
     return;
   }
   if (wholeArchive && !sourceFileId) {
-    toast('Choose a source archive before importing the whole archive.', 'warning');
+    toast(t('Choose a source archive before importing the whole archive.'), 'warning');
     return;
   }
 
@@ -299,7 +307,7 @@ export async function openPortDialog({ app, kind, paths, scope = 'selection', so
   try {
     capabilities = await api.portCapabilities();
   } catch (error) {
-    toastError(error, 'Could not check which clients are open');
+    toastError(error, t('Could not check which clients are open'));
     return;
   }
 
@@ -311,7 +319,8 @@ export async function openPortDialog({ app, kind, paths, scope = 'selection', so
   // what is hard about it".
   if (spec && !spec.supported) {
     modal({
-      title: `Importing ${spec.plural.toLowerCase()} is not available`,
+      title: t('Importing {kind} is not available',
+        { kind: spec.plural.toLowerCase() }),
       body: el('div', { class: 'port-blocked' },
         icon('info', { size: 18 }),
         el('p', { text: spec.unsupportedReason })),
@@ -321,16 +330,16 @@ export async function openPortDialog({ app, kind, paths, scope = 'selection', so
 
   if (!capabilities.available) {
     modal({
-      title: 'Open a source and target client',
+      title: t('Open a source and target client'),
       body: el('div', { class: 'port-blocked' },
         icon('alert', { size: 18 }),
         el('div', {},
           el('p', { text: capabilities.reason }),
           el('p', { class: 'port-hint', text:
-            'A client is a folder. Open the second client\'s Mob.wz, String.wz and Sound.wz — ' +
-            'the importer reads names and sounds from the same folder as the selected content.' }))),
+            t('A client is a folder. Open the second client\'s Mob.wz, String.wz and Sound.wz — '
+              + 'the importer reads names and sounds from the same folder as the selected content.') }))),
       actions: [
-        { label: 'Open a file', class: 'btn-primary', run: () => app.openFilePicker() },
+        { label: t('Open a file'), class: 'btn-primary', run: () => app.openFilePicker() },
       ],
     });
     return;
@@ -425,7 +434,7 @@ export async function openPortDialog({ app, kind, paths, scope = 'selection', so
       confirmed: true,
     });
   } catch (error) {
-    toastError(error, 'Could not import that');
+    toastError(error, t('Could not import that'));
     return undefined;
   }
 
@@ -563,7 +572,7 @@ function missingOpenFamilies(client, wanted) {
  * without saying so would be the wrong kind of helpful.
  */
 async function offerMissingArchives({ app, spec, gap }) {
-  const label = (spec?.plural || 'entries').toLowerCase();
+  const label = (spec?.plural || t('entries')).toLowerCase();
   const candidates = await findArchives(gap.client, gap.families);
 
   const bytes = candidates.reduce((sum, f) => sum + (f.size || 0), 0);
@@ -577,9 +586,12 @@ async function offerMissingArchives({ app, spec, gap }) {
       return el('li', {},
         el('b', { text: found.length ? found.map((f) => f.name).join(', ') : `${family}.wz` }),
         el('span', { text: ' — ' + (ARCHIVE_CARRIES[family]
-          ?? `where ${gap.client?.label ?? 'the target'} keeps its ${label}`) }),
+          ? t(ARCHIVE_CARRIES[family])
+          : t('where {client} keeps its {label}',
+              { client: gap.client?.label ?? t('the target'), label })) }),
         found.length ? null : el('div', { class: 'port-hint', text:
-          `Not in ${gap.client?.folder ?? 'that folder'} — open it from wherever that client keeps it.` }));
+          t('Not in {folder} — open it from wherever that client keeps it.',
+            { folder: gap.client?.folder ?? t('that folder') }) }));
     }));
 
   return new Promise((resolve) => {
@@ -591,34 +603,47 @@ async function offerMissingArchives({ app, spec, gap }) {
     let pending = null;
     const { dialog } = modal({
       title: gap.sourceSide
-        ? `${gap.client?.label ?? 'The source'} needs ${fmt.format(gap.families.length)} more source file`
-          + `${gap.families.length === 1 ? '' : 's'} for a complete import`
+        ? (gap.families.length === 1
+            ? t('{client} needs {n} more source file for a complete import',
+                { client: gap.client?.label ?? t('The source'),
+                  n: fmt.format(gap.families.length) })
+            : t('{client} needs {n} more source files for a complete import',
+                { client: gap.client?.label ?? t('The source'),
+                  n: fmt.format(gap.families.length) }))
         : gap.blocking
-        ? `${gap.client?.label ?? 'The other client'} has nowhere to put ${label}`
-        : `${gap.client?.label ?? 'The target'} is missing ${fmt.format(gap.families.length)} file`
-          + `${gap.families.length === 1 ? '' : 's'} this import needs`,
+          ? t('{client} has nowhere to put {label}',
+              { client: gap.client?.label ?? t('The other client'), label })
+          : (gap.families.length === 1
+              ? t('{client} is missing {n} file this import needs',
+                  { client: gap.client?.label ?? t('The target'),
+                    n: fmt.format(gap.families.length) })
+              : t('{client} is missing {n} files this import needs',
+                  { client: gap.client?.label ?? t('The target'),
+                    n: fmt.format(gap.families.length) })),
       subtitle: gap.client?.folder,
       width: 'min(96vw, 720px)',
       body: el('div', { class: 'port' },
         el('div', { class: 'port-empty', 'data-tone': gap.blocking ? 'bad' : null },
           icon(gap.blocking ? 'alert' : 'info', { size: 15 }),
           el('span', { text: gap.sourceSide
-            ? 'MapleBenchX must inspect every source archive this kind can depend on before it can tell which '
+            ? t('MapleBenchX must inspect every source archive this kind can depend on before it can tell which '
               + 'parts the selection actually uses. Open these read-only; only dependencies that really exist '
-              + 'for the selected entries will be copied.'
+              + 'for the selected entries will be copied.')
             : gap.blocking
-            ? (gap.readOnly
-                ? 'Its archive of this kind is open for reference only, so nothing can be written to it. '
-                  + 'Unlock it in the Files panel, or open a writable one.'
-                : 'An import writes into an archive that is already open. Until one of these is open there is '
-                  + 'nowhere for the copy to go.')
-            : 'The copy itself would land, and everything below would not. That is the failure this tool '
-              + 'exists to catch, so it is asking first rather than reporting it afterwards.' })),
+              ? (gap.readOnly
+                  ? t('Its archive of this kind is open for reference only, so nothing can be written to it. '
+                    + 'Unlock it in the Files panel, or open a writable one.')
+                : t('An import writes into an archive that is already open. Until one of these is open there is '
+                  + 'nowhere for the copy to go.'))
+              : t('The copy itself would land, and everything below would not. That is the failure this tool '
+                + 'exists to catch, so it is asking first rather than reporting it afterwards.') })),
         lines),
       actions: [
         candidates.length
           ? {
-              label: `Open ${fmt.format(candidates.length)} file${candidates.length === 1 ? '' : 's'}`
+              label: (candidates.length === 1
+                  ? t('Open {n} file', { n: fmt.format(candidates.length) })
+                  : t('Open {n} files', { n: fmt.format(candidates.length) }))
                 + (sizeMb ? ` · ${fmt.format(sizeMb)} MB` : ''),
               class: 'btn-primary',
               run: () => {
@@ -628,11 +653,11 @@ async function offerMissingArchives({ app, spec, gap }) {
             }
           : null,
         {
-          label: candidates.length ? 'Choose files…' : 'Open a file',
+          label: candidates.length ? t('Choose files…') : t('Open a file'),
           class: candidates.length ? '' : 'btn-primary',
           run: () => { app.openFilePicker(gap.client?.folder); },
         },
-        { label: 'Cancel' },
+        { label: t('Cancel') },
       ].filter(Boolean),
     });
     dialog.addEventListener('close', async () => {
@@ -669,17 +694,19 @@ async function findArchives(client, families) {
 }
 
 async function openArchives(app, files) {
-  const busy = toast(`Opening ${files.map((f) => f.name).join(', ')}…`, 'info');
+  const busy = toast(t('Opening {files}…', { files: files.map((f) => f.name).join(', ') }),
+    'info');
   try {
     const result = await api.openMany(files.map((f) => f.path));
     busy.remove();
     for (const failure of result.failed || []) {
-      toast(`${failure.name} could not be opened: ${failure.message}`, 'error');
+      toast(t('{file} could not be opened: {message}',
+        { file: failure.name, message: failure.message }), 'error');
     }
     await app.refreshFiles();
   } catch (error) {
     busy.remove();
-    toastError(error, 'Could not open those');
+    toastError(error, t('Could not open those'));
   }
 }
 
@@ -704,14 +731,20 @@ function showResult({ app, spec, result }) {
     // over a port that was refused is the same lie as over one that dropped a
     // name, so it gets the same treatment.
     title: plan.blocked
-      ? `Nothing was imported into ${plan.targetClient}`
+      ? t('Nothing was imported into {client}', { client: plan.targetClient })
       : missed.length
-        ? `Imported into ${plan.targetClient} — ${fmt.format(missed.length)} dependency issue`
-          + `${missed.length === 1 ? '' : 's'} remain`
-        : `Imported into ${plan.targetClient}`,
-    subtitle: `${fmt.format(plan.totals?.entries ?? 0)} ${(plan.totals?.entries === 1 ? spec.label : spec.plural).toLowerCase()}`
-      + ` · ${fmt.format(result.written)} node${result.written === 1 ? '' : 's'} written`
-      + ` · ${(result.seconds ?? 0).toFixed(1)}s`,
+        ? (missed.length === 1
+            ? t('Imported into {client} — {n} dependency issue remains',
+                { client: plan.targetClient, n: fmt.format(missed.length) })
+            : t('Imported into {client} — {n} dependency issues remain',
+                { client: plan.targetClient, n: fmt.format(missed.length) }))
+        : t('Imported into {client}', { client: plan.targetClient }),
+    subtitle: t('{n} {kind} · {w} written · {s}s', {
+      n: fmt.format(plan.totals?.entries ?? 0),
+      kind: (plan.totals?.entries === 1 ? spec.label : spec.plural).toLowerCase(),
+      w: fmt.format(result.written),
+      s: (result.seconds ?? 0).toFixed(1),
+    }),
     width: 'min(96vw, 1000px)',
     body: el('div', { class: 'port' }, renderPlan(plan, { app, result })),
     actions: [
@@ -719,10 +752,10 @@ function showResult({ app, spec, result }) {
       // panel above. The picker is the action that answers that panel; Undo is
       // not, and offering it here would undo whatever the user did BEFORE this.
       plan.blocked
-        ? { label: 'Open a file', class: 'btn-primary', run: () => app.openFilePicker() }
+        ? { label: t('Open a file'), class: 'btn-primary', run: () => app.openFilePicker() }
         : null,
       result.written
-        ? { label: 'Undo import', run: () => { app.undo(); } }
+        ? { label: t('Undo import'), run: () => { app.undo(); } }
         : null,
       { label: 'Done', class: plan.blocked ? '' : 'btn-primary' },
     ].filter(Boolean),
@@ -771,13 +804,13 @@ function buildDialog({
     }
   }
 
-  const targetSelect = el('select', { class: 'mob-select', 'aria-label': 'Where to put them' },
+  const targetSelect = el('select', { class: 'mob-select', 'aria-label': t('Where to put them') },
     targets.length
       ? targets.map(({ client, archive }) => el('option', {
           value: archive.fileId,
           text: `${client.label} · ${archive.name}`,
         }))
-      : el('option', { value: '', text: 'No other client has a writable archive of this kind' }));
+      : el('option', { value: '', text: t('No other client has a writable archive of this kind') }));
 
   // Preselected rather than defaulted: a drop already said which archive, and
   // the select is here so it can be read and changed, not so it can decide.
@@ -794,9 +827,9 @@ function buildDialog({
         el('span', { text: fixedTarget.archive.name }))
     : targetSelect;
 
-  const overwrite = checkbox('Replace anything the target already has', false,
-    'Off by default and never assumed. Losing a mob the target already had is worse than ' +
-    'not importing one.');
+  const overwrite = checkbox(t('Replace anything the target already has'), false,
+    t('Off by default and never assumed. Losing a mob the target already had is worse than '
+      + 'not importing one.'));
   overwrite.wrapper.dataset.danger = 'true';
   // Ticked before the user sees it only when they have already made the replace
   // gesture somewhere else. It changes nothing about what happens next: the
@@ -814,10 +847,10 @@ function buildDialog({
   //
   // Only alongside Replace, because on its own it would delete what it is not
   // allowed to overwrite.
-  const match = checkbox('Match the source — remove what the newer version no longer has', false,
-    'Only inside the containers this import writes to. An id goes only when the source has ' +
-    'that same container and no such id in it, so another book is never touched. One undo ' +
-    'puts them back.');
+  const match = checkbox(t('Match the source — remove what the newer version no longer has'), false,
+    t('Only inside the containers this import writes to. An id goes only when the source has '
+      + 'that same container and no such id in it, so another book is never touched. One undo '
+      + 'puts them back.'));
   match.wrapper.dataset.danger = 'true';
   match.input.disabled = true;
 
@@ -833,11 +866,11 @@ function buildDialog({
   const previewHost = el('div', { class: 'port-preview-host' });
   let plan = null;
 
-  const previewButton = el('button', { class: 'btn' }, icon('eye', { size: 15 }), 'Preview import');
+  const previewButton = el('button', { class: 'btn' }, icon('eye', { size: 15 }), t('Preview import'));
   const applyButton = el('button', {
     class: 'btn btn-primary', disabled: true,
-    'data-tip': 'Preview first — nothing is written until you have seen what it would do',
-  }, icon('check', { size: 15 }), 'Import');
+    'data-tip': t('Preview first — nothing is written until you have seen what it would do'),
+  }, icon('check', { size: 15 }), t('Import'));
 
   /**
    * Any change to the recipe throws the preview away.
@@ -853,8 +886,8 @@ function buildDialog({
     previewHost.append(el('div', { class: 'port-empty' },
       icon('info', { size: 15 }),
       el('span', { text:
-        'Preview to see every file this would touch, what the target already has, and what it ' +
-        'cannot carry. Nothing is written until then.' })));
+        t('Preview to see every file this would touch, what the target already has, and what it '
+          + 'cannot carry. Nothing is written until then.') })));
   };
   for (const box of [overwrite]) {
     box.input.addEventListener('change', invalidate);
@@ -871,9 +904,9 @@ function buildDialog({
     previewHost.append(el('div', { class: 'port-empty', 'data-tone': 'bad' },
       icon('alert', { size: 15 }),
       el('span', { text:
-        `${fmt.format(plan.totals?.entriesAlreadyThere ?? 0)} of these are already in `
-        + `${plan.targetClient} and nothing was written. Select Replace to overwrite them, or import the `
-        + 'rest by deselecting those.' })));
+        t('{n} of these are already in {client} and nothing was written. Select Replace to overwrite them, or import the '
+          + 'rest by deselecting those.',
+          { n: fmt.format(plan.totals?.entriesAlreadyThere ?? 0), client: plan.targetClient }) })));
     previewHost.append(renderPlan(plan, { app }));
     applyButton.disabled = false;
   }
@@ -955,10 +988,10 @@ function buildDialog({
    */
   const preview = async () => {
     if (!targetSelect.value) {
-      toast('There is no other client open with a writable archive to import into.', 'warning');
+      toast(t('There is no other client open with a writable archive to import into.'), 'warning');
       return;
     }
-    const stop = working('Working out what would be written…');
+    const stop = working(t('Working out what would be written…'));
     try {
       plan = await api.portPlan(recipe());
       stop();
@@ -967,8 +1000,8 @@ function buildDialog({
       previewHost.append(renderPlan(plan, { app }));
       applyButton.disabled = plan.blocked || (plan.totals?.willWrite ?? 0) === 0;
       applyButton.dataset.tip = applyButton.disabled
-        ? 'Nothing here would be written'
-        : `Write ${fmt.format(plan.totals.willWrite)} file entries`;
+        ? t('Nothing here would be written')
+        : t('Write {n} file entries', { n: fmt.format(plan.totals.willWrite) });
     } catch (error) {
       plan = null;
       clear(previewHost);
@@ -990,7 +1023,7 @@ function buildDialog({
   // nothing to say but what is open, so it says so in those words. Once a plan
   // exists it switches to the archives the plan actually found something in.
   const fromArchives = el('span', { class: 'port-end-sub', text: sourceClient
-    ? `Open: ${sourceClient.archives.map((a) => a.name).join(' · ')}`
+    ? t('Open: {files}', { files: sourceClient.archives.map((a) => a.name).join(' · ') })
     : '' });
 
   const showUsedArchives = (result) => {
@@ -1000,33 +1033,39 @@ function buildDialog({
       .filter((part) => part.sourceArchive && part.status !== 'Absent')
       .map((part) => part.sourceArchive))];
     fromArchives.textContent = used.length
-      ? `Using: ${used.join(' · ')}`
-      : `Open: ${sourceClient.archives.map((a) => a.name).join(' · ')}`;
+      ? t('Using: {files}', { files: used.join(' · ') })
+      : t('Open: {files}', { files: sourceClient.archives.map((a) => a.name).join(' · ') });
   };
 
   const { dialog, close } = modal({
     title: wholeArchive
-      ? `Import every ${spec.label.toLowerCase()} in ${sourceArchive?.name ?? 'the archive'}`
-      : `Import ${fmt.format(paths.length)} ${paths.length === 1 ? spec.label.toLowerCase() : spec.plural.toLowerCase()}`,
+      ? t('Import every {kind} in {archive}',
+          { kind: spec.label.toLowerCase(), archive: sourceArchive?.name ?? t('the archive') })
+      : (paths.length === 1
+          ? t('Import {n} {kind}',
+              { n: fmt.format(paths.length), kind: spec.label.toLowerCase() })
+          : t('Import {n} {kind}',
+              { n: fmt.format(paths.length), kind: spec.plural.toLowerCase() })),
     subtitle: wholeArchive
       // Named as a preview rather than as a run. At this size the Preview button
       // is not a formality the user may skip -- it is the only thing between them
       // and thousands of writes, and the button below stays dead until it is
       // pressed.
-      ? `from ${sourceClient?.label ?? 'the source client'} — preview it before anything is written`
+      ? t('from {client} — preview it before anything is written',
+          { client: sourceClient?.label ?? t('the source client') })
       : sourceClient
-        ? `from ${sourceClient.label}`
-        : 'from the archives the selection came from',
+        ? t('from {client}', { client: sourceClient.label })
+        : t('from the archives the selection came from'),
     width: 'min(96vw, 1000px)',
     body: el('div', { class: 'port' },
       el('div', { class: 'port-route' },
         el('div', { class: 'port-end' },
-          el('span', { class: 'port-end-label', text: 'From' }),
-          el('b', { text: sourceClient?.label ?? 'the selection' }),
+          el('span', { class: 'port-end-label', text: t('From') }),
+          el('b', { text: sourceClient?.label ?? t('the selection') }),
           fromArchives),
         el('span', { class: 'port-arrow' }, icon('arrowRight', { size: 18 })),
         el('div', { class: 'port-end' },
-          el('span', { class: 'port-end-label', text: 'Into' }),
+          el('span', { class: 'port-end-label', text: t('Into') }),
           targetControl,
           el('span', { class: 'port-end-sub', text: intoNeeds(spec) }))),
       el('div', { class: 'port-options' },
@@ -1035,10 +1074,10 @@ function buildDialog({
       wholeArchive
         ? el('div', { class: 'port-empty' }, icon('info', { size: 15 }),
             el('span', { text:
-              'Everything of this kind in the archive comes across, so there is nothing for the link '
-              + 'switches to add — what one entry borrows from another is already in the import. Preview '
-              + 'first: it counts what is new, what the target already has and what cannot be carried, '
-              + 'and it is where an import too big to run says so.' }))
+              t('Everything of this kind in the archive comes across, so there is nothing for the link '
+                + 'switches to add — what one entry borrows from another is already in the import. Preview '
+                + 'first: it counts what is new, what the target already has and what cannot be carried, '
+                + 'and it is where an import too big to run says so.') }))
         : null,
       el('div', { class: 'port-actions' }, previewButton, applyButton),
       previewHost),
@@ -1050,17 +1089,25 @@ function buildDialog({
     const conflicts = plan.totals?.conflicts ?? 0;
 
     const ok = await confirmDialog({
-      title: `Import ${fmt.format(plan.totals.entries)} ${plan.totals.entries === 1 ? spec.label.toLowerCase() : spec.plural.toLowerCase()} into ${plan.targetClient}?`,
+      title: t('Import {n} {kind} into {client}?', {
+        n: fmt.format(plan.totals.entries),
+        kind: plan.totals.entries === 1 ? spec.label.toLowerCase() : spec.plural.toLowerCase(),
+        client: plan.targetClient,
+      }),
       message:
-        `${fmt.format(willWrite)} ${willWrite === 1 ? 'entry' : 'entries'} will be written` +
+        t('{n} {noun} will be written',
+          { n: fmt.format(willWrite), noun: willWrite === 1 ? t('entry') : t('entries') }) +
         (overwrite.input.checked && conflicts
-          ? `, and ${fmt.format(conflicts)} of them REPLACE what ${plan.targetClient} already has. ` +
-            'That data is recoverable with one undo until you save, and not after.'
+          ? t(', and {n} of them REPLACE what {client} already has. '
+            + 'That data is recoverable with one undo until you save, and not after.'
+            + ' Nothing reaches disk until you save.',
+            { n: fmt.format(conflicts), client: plan.targetClient })
           : conflicts
-            ? `. ${fmt.format(conflicts)} the target already has are being left alone.`
-            : '.') +
-        ' Nothing reaches disk until you save.',
-      confirmLabel: 'Import',
+            ? t('. {n} the target already has are being left alone.'
+              + ' Nothing reaches disk until you save.',
+              { n: fmt.format(conflicts) })
+            : t('. Nothing reaches disk until you save.')),
+      confirmLabel: t('Import'),
       danger: overwrite.input.checked && conflicts > 0,
     });
     if (!ok) return;
@@ -1068,9 +1115,11 @@ function buildDialog({
     // Named for what it is doing and roughly how big it is, because "please
     // wait" on a job that may run for a minute tells the user nothing they can
     // act on.
-    const stop = working(
-      `Importing ${fmt.format(willWrite)} ${willWrite === 1 ? 'entry' : 'entries'} into `
-      + `${plan.targetClient}. Art is copied frame by frame, so a boss takes longer than an item —`);
+    const stop = working(t(
+      'Importing {n} {noun} into {client}. Art is copied frame by frame, so a boss takes longer than an item —',
+      { n: fmt.format(willWrite),
+        noun: willWrite === 1 ? t('entry') : t('entries'),
+        client: plan.targetClient }));
     try {
       const result = await api.portApply({ ...recipe(), confirmed: true });
       stop();
@@ -1085,18 +1134,22 @@ function buildDialog({
       const missed = shortfall(result.plan);
       toast(
         missed.length
-          ? `Imported ${fmt.format(result.written)} entries; ${fmt.format(missed.length)} dependency issue`
-            + `${missed.length === 1 ? '' : 's'} remain — the panel lists them.`
-          : `Imported ${fmt.format(result.written)} entries into ${result.plan.targetClient}. Save each archive to keep them.`,
+          ? (missed.length === 1
+              ? t('Imported {w} entries; {n} dependency issue remains — the panel lists them.',
+                  { w: fmt.format(result.written), n: fmt.format(missed.length) })
+              : t('Imported {w} entries; {n} dependency issues remain — the panel lists them.',
+                  { w: fmt.format(result.written), n: fmt.format(missed.length) }))
+          : t('Imported {w} entries into {client}. Save each archive to keep them.',
+              { w: fmt.format(result.written), client: result.plan.targetClient }),
         missed.length ? 'warning' : 'success',
         result.written
-          ? { action: { label: 'Undo import', run: async () => { await app.undo(); close(); } } }
+          ? { action: { label: t('Undo import'), run: async () => { await app.undo(); close(); } } }
           : undefined);
     } catch (error) {
       clear(previewHost);
       previewHost.append(el('div', { class: 'port-empty', 'data-tone': 'bad' },
         icon('alert', { size: 15 }), el('span', { text: error.message })));
-      toastError(error, 'Could not import that');
+      toastError(error, t('Could not import that'));
     } finally {
       stop();
     }
@@ -1140,16 +1193,18 @@ function renderPlan(plan, { app, result } = {}) {
     host.append(el('div', { class: 'port-result', 'data-tone': missed.length ? 'warn' : 'good' },
       icon(missed.length ? 'alert' : 'check', { size: 16 }),
       el('div', {},
-        el('b', { text: `${fmt.format(result.written)} written` +
-                        (result.failed ? `, ${fmt.format(result.failed)} failed` : '') }),
+        el('b', { text: result.failed
+          ? t('{w} written, {f} failed',
+              { w: fmt.format(result.written), f: fmt.format(result.failed) })
+          : t('{w} written', { w: fmt.format(result.written) }) }),
         missed.length
           ? el('ul', { class: 'port-lines' }, missed.map((line) => el('li', { text: line })))
-          : el('div', { text: 'Every part the source had for these was written — the entries, and each '
+          : el('div', { text: t('Every part the source had for these was written — the entries, and each '
                             + 'name, sound and listing that existed to carry. Review the import boundaries '
-                            + 'below, before you call it done.' }),
+                            + 'below, before you call it done.') }),
         el('div', { class: 'port-hint', text:
-          `Undo entry: ${result.undoLabel ?? 'none — nothing was written'}. ` +
-          'Every archive below is now unsaved; save each one to keep the import.' }))));
+          t('Undo entry: {undo}. Every archive below is now unsaved; save each one to keep the import.',
+            { undo: result.undoLabel ?? t('none — nothing was written') }) }))));
   }
 
   // Zeros are dropped -- by statChip now, which is where the rest of the app
@@ -1162,11 +1217,11 @@ function renderPlan(plan, { app, result } = {}) {
   // furniture exactly when the screen is busiest. A number appears here when it
   // has something to say; the two that frame the decision stay even at zero.
   host.append(el('div', { class: 'port-totals' },
-    statChip('Entries', totals.entries ?? 0, { drop: false }),
-    statChip('To copy', totals.new ?? 0, { tone: 'good', drop: false }),
-    statChip('Already there', totals.conflicts, { tone: 'warn' }),
-    statChip('Blocked', totals.blocked, { tone: 'bad' }),
-    statChip('Identical', totals.identical)));
+    statChip(t('Entries'), totals.entries ?? 0, { drop: false }),
+    statChip(t('To copy'), totals.new ?? 0, { tone: 'good', drop: false }),
+    statChip(t('Already there'), totals.conflicts, { tone: 'warn' }),
+    statChip(t('Blocked'), totals.blocked, { tone: 'bad' }),
+    statChip(t('Identical'), totals.identical)));
   // "Not in source" is gone entirely, at any value.
   //
   // Dropping the zero was not enough. Porting Zakum into a client that has
@@ -1184,7 +1239,7 @@ function renderPlan(plan, { app, result } = {}) {
   // whose first three are about version stamps.
   const { rest } = splitWarnings(plan);
   if (rest.length) {
-    host.append(section('Read before you apply', 'alert', 'warn', rest));
+    host.append(section(t('Read before you apply'), 'alert', 'warn', rest));
   }
 
   /* --- per entry --- */
@@ -1208,10 +1263,13 @@ function renderPlan(plan, { app, result } = {}) {
     host.append(el('div', { class: 'port-empty', 'data-tone': 'warn' },
       icon('info', { size: 15 }),
       el('span', { text:
-        `Showing ${fmt.format((plan.items || []).length)} of ${fmt.format(totals.entries ?? 0)} entries. `
-        + `The other ${fmt.format(truncated)} are in the import and in the counts above — they are not `
-        + 'listed because nobody can read four thousand rows. Use the selection or folder scope if you '
-        + 'need to check each one.' })));
+        t('Showing {shown} of {total} entries. '
+          + 'The other {n} are in the import and in the counts above — they are not '
+          + 'listed because nobody can read four thousand rows. Use the selection or folder scope if you '
+          + 'need to check each one.',
+          { shown: fmt.format((plan.items || []).length),
+            total: fmt.format(totals.entries ?? 0),
+            n: fmt.format(truncated) }) })));
   }
 
   const list = el('div', { class: 'port-items' });
@@ -1224,25 +1282,26 @@ function renderPlan(plan, { app, result } = {}) {
     for (const suggestion of plan.suggestions.slice(0, 40)) {
       rows.append(el('div', { class: 'port-suggestion' },
         el('b', { text: String(suggestion.id) }),
-        el('span', { text: suggestion.name || 'no name in String.wz' }),
+        el('span', { text: suggestion.name || t('no name in String.wz') }),
         el('span', { class: 'port-hint', text: suggestion.reason }),
         app
           ? el('button', {
               class: 'btn btn-sm',
               onclick: () => { app.setMode('explorer'); app.navigate(suggestion.path); },
-            }, icon('externalLink', { size: 13 }), 'Show')
+            }, icon('externalLink', { size: 13 }), t('Show'))
           : null));
     }
     host.append(el('details', { class: 'port-section', 'data-tone': 'muted' },
       el('summary', {},
         icon('help', { size: 15 }),
-        el('span', { text: `${fmt.format(plan.suggestions.length)} nearby ids you may also want` }),
-        el('span', { class: 'port-hint', text: 'suggestions — nothing here is selected or copied' })),
+        el('span', { text: t('{n} nearby ids you may also want',
+          { n: fmt.format(plan.suggestions.length) }) }),
+        el('span', { class: 'port-hint', text: t('suggestions — nothing here is selected or copied') })),
       rows));
   }
 
   /* --- the boundaries of this import. Always shown. --- */
-  host.append(section('What this does not do, in any client', 'info', 'muted', plan.limits || [], true));
+  host.append(section(t('What this does not do, in any client'), 'info', 'muted', plan.limits || [], true));
 
   return host;
 }
@@ -1268,8 +1327,12 @@ function shortfall(plan) {
 
   const failed = parts.filter((part) => part.error);
   if (failed.length) {
-    lines.push(`${fmt.format(failed.length)} part${failed.length === 1 ? '' : 's'} could not be written: `
-      + [...new Set(failed.map((part) => part.error))].slice(0, 3).join(' · '));
+    const reasons = [...new Set(failed.map((part) => part.error))].slice(0, 3).join(' · ');
+    lines.push(failed.length === 1
+      ? t('{n} part could not be written: {reasons}',
+          { n: fmt.format(failed.length), reasons })
+      : t('{n} parts could not be written: {reasons}',
+          { n: fmt.format(failed.length), reasons }));
   }
 
   // Blocked, grouped by what the player loses. The reason is the server's and
@@ -1282,8 +1345,9 @@ function shortfall(plan) {
     byKind.get(part.kind).push(part);
   }
   for (const [kind, group] of byKind) {
-    const what = PART_CARRIES[kind] || kind;
-    lines.push(`${what} was not carried for ${fmt.format(group.length)} of them. ${group[0].reason ?? ''}`.trim());
+    const what = PART_CARRIES[kind] ? t(PART_CARRIES[kind]) : kind;
+    lines.push(t('{what} was not carried for {n} of them. {reason}',
+      { what, n: fmt.format(group.length), reason: group[0].reason ?? '' }).trim());
   }
 
   // A conflict left alone is the right outcome and still a thing that did not
@@ -1291,9 +1355,13 @@ function shortfall(plan) {
   // stopped would never know their newer copy is not in there.
   const kept = parts.filter((part) => part.status === 'Conflict' && part.applied !== true);
   if (kept.length) {
-    lines.push(`${fmt.format(kept.length)} part${kept.length === 1 ? '' : 's'} were left as `
-      + `${plan.targetClient} already had them — nothing is replaced unless you tick Replace. `
-      + 'The table below shows what it currently holds for each.');
+    lines.push(kept.length === 1
+      ? t('{n} part was left as {client} already had them — nothing is replaced unless you tick Replace. '
+        + 'The table below shows what it currently holds for each.',
+        { n: fmt.format(kept.length), client: plan.targetClient })
+      : t('{n} parts were left as {client} already had them — nothing is replaced unless you tick Replace. '
+        + 'The table below shows what it currently holds for each.',
+        { n: fmt.format(kept.length), client: plan.targetClient }));
   }
 
   // The notes themselves, not a count of them.
@@ -1311,16 +1379,24 @@ function shortfall(plan) {
     const distinct = [...new Set(all)];
     lines.push(distinct[0]);
     if (distinct.length > 1) {
-      lines.push(`${fmt.format(distinct.length - 1)} other note`
-        + `${distinct.length === 2 ? '' : 's'} like it, across `
-        + `${fmt.format(noted.length)} ${noted.length === 1 ? 'entry' : 'entries'} — each one is on its card below.`);
+      const m = fmt.format(distinct.length - 1);
+      const n = fmt.format(noted.length);
+      const noun = noted.length === 1 ? t('entry') : t('entries');
+      lines.push(distinct.length === 2
+        ? t('{m} other note like it, across {n} {noun} — each one is on its card below.',
+            { m, n, noun })
+        : t('{m} other notes like it, across {n} {noun} — each one is on its card below.',
+            { m, n, noun }));
     }
   }
 
   if (lines.length && (plan.itemsTruncated ?? 0) > 0) {
-    lines.push(`Only ${fmt.format(items.length)} of ${fmt.format(totals.entries ?? 0)} entries are listed, `
-      + `so the reasons above are a sample. The counts above them are not: ${fmt.format(totals.blocked ?? 0)} `
-      + 'parts were blocked in total.');
+    lines.push(t('Only {shown} of {total} entries are listed, '
+      + 'so the reasons above are a sample. The counts above them are not: {n} '
+      + 'parts were blocked in total.',
+      { shown: fmt.format(items.length),
+        total: fmt.format(totals.entries ?? 0),
+        n: fmt.format(totals.blocked ?? 0) }));
   }
 
   return lines;
@@ -1336,7 +1412,9 @@ function renderItem(item, plan, app) {
     item.requested
       ? null
       : el('span', { class: 'port-badge', 'data-kind': 'link',
-                     text: item.pulledInBy ? `added: ${item.pulledInBy}` : 'added by a link' })));
+                     text: item.pulledInBy
+                       ? t('added: {id}', { id: item.pulledInBy })
+                       : t('added by a link') })));
 
   // Only the parts that are telling you something.
   //
@@ -1362,15 +1440,18 @@ function renderItem(item, plan, app) {
   // there is nothing here to act on.
   if (dull.length) {
     const extra = el('tbody');
-    const label = el('span', { text: `${fmt.format(dull.length)} needed nothing doing` });
+    const label = el('span', { text: t('{n} needed nothing doing',
+      { n: fmt.format(dull.length) }) });
     const toggle = el('button', {
       class: 'port-quiet',
-      'data-tip': 'The source had none, or the target already matches. Nothing was lost.',
+      'data-tip': t('The source had none, or the target already matches. Nothing was lost.'),
       onclick: () => {
         const showing = extra.childElementCount > 0;
         clear(extra);
         if (!showing) for (const part of dull) extra.append(renderPart(part, app));
-        label.textContent = showing ? `${fmt.format(dull.length)} needed nothing doing` : 'hide';
+        label.textContent = showing
+          ? t('{n} needed nothing doing', { n: fmt.format(dull.length) })
+          : t('hide');
       },
     }, icon('info', { size: 12 }), label);
     rows.append(extra);
@@ -1407,7 +1488,7 @@ function renderPart(part, app) {
   const where = applied && part.targetPath && app
     ? el('button', {
         class: 'port-path',
-        'data-tip': 'Show this in the Explorer',
+        'data-tip': t('Show this in the Explorer'),
         // The dialog closes first. Navigating underneath a modal that is still
         // up moves the tree where the user cannot see it, which reads as a
         // button that does nothing.
@@ -1438,10 +1519,11 @@ function renderPart(part, app) {
       where),
     el('td', { class: 'port-part-status' },
       el('span', { class: 'port-chip', 'data-tone': failed ? 'bad' : applied ? 'good' : status.tone,
-                   text: failed ? 'failed' : applied ? 'copied' : status.label })),
+                   text: failed ? t('failed') : applied ? t('copied') : t(status.label) })),
     el('td', { class: 'port-part-note' },
       part.error ? el('div', { class: 'port-hint', 'data-tone': 'bad', text: part.error }) : null,
-      part.existing ? el('div', { class: 'port-hint', text: `target holds: ${part.existing}` }) : null,
+      part.existing ? el('div', { class: 'port-hint', text: t('target holds: {value}',
+        { value: part.existing }) }) : null,
       part.reason ? el('div', { class: 'port-hint', text: part.reason }) : null));
 }
 
@@ -1459,7 +1541,7 @@ function renderPart(part, app) {
 function megabytes(bytes) {
   if (bytes >= 1024 * 1024) return `${fmt.format(Math.round(bytes / (1024 * 1024)))} MB`;
   if (bytes >= 1024) return `${fmt.format(Math.round(bytes / 1024))} KB`;
-  return `${fmt.format(bytes)} bytes`;
+  return t('{n} bytes', { n: fmt.format(bytes) });
 }
 
 function section(title, glyph, tone, lines, collapsed = false) {

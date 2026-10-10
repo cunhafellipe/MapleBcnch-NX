@@ -88,6 +88,12 @@ public sealed class WzSaveService
         bool saveAs = !string.IsNullOrWhiteSpace(request.TargetPath);
         string source = Path.GetFullPath(file.FilePath);
         string target = saveAs ? Path.GetFullPath(request.TargetPath!) : source;
+        // The whole NX write is one call into NxWriter plus a file write and a
+        // read-back check, and on a 679 MB Map.nx that is ten seconds — so the
+        // clock has to start here. This branch returned a SaveResult with
+        // Seconds left at its default, and the map editor shows that number
+        // after every save.
+        DateTime started = DateTime.UtcNow;
 
         if (saveAs && !target.EndsWith(".nx", StringComparison.OrdinalIgnoreCase))
         {
@@ -227,6 +233,7 @@ public sealed class WzSaveService
             SavedTo = target,
             BackupPath = backup,
             Bytes = bytes.Length,
+            Seconds = (DateTime.UtcNow - started).TotalSeconds,
             Warnings = notes,
         };
     }

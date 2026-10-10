@@ -282,7 +282,7 @@ export class GenChoiceSection {
     const read = JSON.parse(json);
     if (read.schema !== 'maplebench/genchoice-decisions@1') {
       throw new Error(t('\'{schema}\' is not a decisions export this screen understands.',
-        { schema: read.schema ?? '(no schema)' }));
+        { schema: read.schema ?? t('(no schema)') }));
     }
     this.decisions = read.decisions ?? {};
     this.saveDecisions();
@@ -410,8 +410,8 @@ export class GenChoiceSection {
       : this.progress?.restore;
     const innerLine = inner && inner.state !== 'idle'
       ? `${inner.state}${inner.phase ? ` — ${inner.phase}` : ''}`
-        + (inner.imagesDone ? ` · ${fmt.format(inner.imagesDone)} images` : '')
-        + (inner.canvasesDone ? ` · ${fmt.format(inner.canvasesDone)} canvases` : '')
+        + (inner.imagesDone ? ` · ${t('{n} images', { n: fmt.format(inner.imagesDone) })}` : '')
+        + (inner.canvasesDone ? ` · ${t('{n} canvases', { n: fmt.format(inner.canvasesDone) })}` : '')
       : '';
     return el('div', { class: 'gc-card' },
       el('h3', { text: chooser.state === 'building' ? t('Building from the choice…') : t('Preparing the choice…') }),
@@ -592,13 +592,16 @@ export class GenChoiceSection {
       el('div', { class: 'gc-result-grid' },
         this.stat(t('Accepted skills'), `${r.acceptedSkillIds?.length ?? 0}`),
         this.stat(t('Rejected/undecided'), `${r.rejectedSkillIds?.length ?? 0}`),
-        this.stat(t('Links restored'), `${restore.written ?? 0} (identity held ${restore.identityHeld ?? 0})`),
+        this.stat(t('Links restored'), `${restore.written ?? 0}`
+          + ` (${t('identity held {n}', { n: restore.identityHeld ?? 0 })})`),
         this.stat(t('Dangling'), `${restore.danglingBefore ?? 0} → ${restore.danglingAfter ?? 0}`),
         this.stat(t('Silent canvases'), `${fmt.format(restore.danglingCanvasesBefore ?? 0)} → `
                                    + `${fmt.format(restore.danglingCanvasesAfter ?? 0)}`),
-        this.stat(t('Format repairs'), format ? `${format.repaired} (decoded ${format.decoded})` : t('pass not reached')),
+        this.stat(t('Format repairs'), format
+          ? `${format.repaired} (${t('decoded {n}', { n: format.decoded })})`
+          : t('pass not reached')),
         this.stat(t('Bystanders decoded'), `${fmt.format((restore.bystandersDecoded ?? 0) + (format?.bystandersDecoded ?? 0))}`
-                                      + `, failed ${(restore.bystandersFailed ?? 0) + (format?.bystandersFailed ?? 0)}`),
+                                      + `, ${t('failed {n}', { n: (restore.bystandersFailed ?? 0) + (format?.bystandersFailed ?? 0) })}`),
         this.stat(t('Bytes'), `${fmt.format(restore.sourceBytes ?? 0)} → ${fmt.format(r.finalBytes ?? 0)}`)),
       el('p', { class: 'gc-sub', text: t('Final archive: {path}', { path: r.finalOutput || t('(nothing was written)') }) }),
       r.installCommand ? el('div', { class: 'gc-install' },

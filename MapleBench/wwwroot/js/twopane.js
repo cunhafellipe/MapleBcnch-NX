@@ -47,6 +47,7 @@ import { el, clear, toast, toastError, fmt, modal, debounce } from './ui.js';
 import { icon } from './icons.js';
 import { TreeView } from './tree.js';
 import { openPortDialog } from './port.js';
+import { t } from './i18n.js';
 
 /** Where the splitter was left. Per browser, not per client pair — it is a shape preference. */
 const SPLIT_KEY = 'mb.twopane.split';
@@ -101,7 +102,19 @@ const bytes = (n) => {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
 };
 
-const plural = (n, one, many) => `${fmt.format(n)} ${n === 1 ? one : many}`;
+/**
+ * The noun for a kind, lowercased.
+ *
+ * The server names a kind in the game's own vocabulary — Mob, NPC, Morph,
+ * Quest — and those are domain terms, so they stay Latin. Only the code's own
+ * fallback is interface text, and that one is translated.
+ */
+const FALLBACK_NOUNS = new Set(['entry', 'entries']);
+
+const nounOf = (head, many = false) => {
+  const word = many ? head.plural : head.label;
+  return (FALLBACK_NOUNS.has(word) ? t(word) : word).toLowerCase();
+};
 
 /**
  * Opens the two-pane view.
@@ -117,7 +130,7 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
   try {
     capabilities = await api.portCapabilities();
   } catch (error) {
-    toastError(error, 'Could not check which clients are open');
+    toastError(error, t('Could not check which clients are open'));
     return undefined;
   }
 
@@ -126,22 +139,27 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
   // Two panes need two clients, and saying which half is missing is the whole
   // difference between an instruction and a dead end.
   if (clients.length < 2 || !clients.some((c) => c.anyWritable)) {
+    const blockedNote = clients.length >= 2
+      ? t('Every archive open right now is open for reference only, so there is nothing to '
+        + 'import into. Open the target client normally first.')
+      : (clients.length === 1
+          ? t('One client is open. Open the client you want to edit, then choose a source client '
+            + 'to place beside it.')
+          : t('No client is open. Open the client you want to edit, then choose a source client '
+            + 'to place beside it.'));
+
     modal({
-      title: 'Dual Client View needs two clients',
+      title: t('Dual Client View needs two clients'),
       body: el('div', { class: 'port-blocked' },
         icon('alert', { size: 18 }),
         el('div', {},
-          el('p', { text: clients.length < 2
-            ? `${clients.length === 1 ? 'One client is' : 'No client is'} open. `
-              + 'Open the client you want to edit, then choose a source client to place beside it.'
-            : 'Every archive open right now is open for reference only, so there is nothing to '
-              + 'import into. Open the target client normally first.' }),
+          el('p', { text: blockedNote }),
           el('p', { class: 'port-hint', text:
-            'The second client is always opened read-only. Dragging into the writable client runs '
-            + 'the dependency-aware import as one undoable action.' }))),
+            t('The second client is always opened read-only. Dragging into the writable client runs '
+              + 'the dependency-aware import as one undoable action.') }))),
       actions: [
-        { label: 'Choose source client…', class: 'btn-primary', run: () => app.openDualView() },
-        { label: 'Open target client', run: () => app.openFilePicker() },
+        { label: t('Choose source client…'), class: 'btn-primary', run: () => app.openDualView() },
+        { label: t('Open target client'), run: () => app.openFilePicker() },
       ],
     });
     return undefined;
@@ -207,6 +225,8 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
       .then((head) => {
         const value = {
           kind: head.kind || null,
+          // The server's noun stays as sent — Mob, NPC, Skill are domain terms, not
+          // interface text — so it is read through nounOf() at each use instead.
           label: head.label || 'entry',
           plural: head.plural || 'entries',
           supported: !!head.supported,
@@ -247,7 +267,7 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
   if (host) {
     let ended = false;
     dialog = el('section', {
-      class: 'tp-inline', role: 'region', 'aria-label': 'Dual Client View',
+      class: 'tp-inline', role: 'region', 'aria-label': t('Dual Client View'),
     });
     closeView = () => {
       if (ended) return;
@@ -260,19 +280,20 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
       el('header', { class: 'tp-inline-head' },
         el('div', { class: 'tp-inline-mark', 'aria-hidden': 'true' }, icon('grid', { size: 16 })),
         el('div', { class: 'tp-inline-title' },
-          el('h2', { text: 'Dual Client View' }),
-          el('p', { text: 'Drag from Other client to Your client. The row you drop onto is the destination.' })),
+          el('h2', { text: t('Dual Client View') }),
+          el('p', { text: t('Drag from Other client to Your client. '
+            + 'The row you drop onto is the destination.') })),
         el('button', {
-          class: 'btn btn-sm btn-ghost', 'aria-label': 'Close Dual Client View',
-          'data-tip': 'Return to Explorer', onclick: closeView,
-        }, icon('close', { size: 14 }), 'Exit Dual View')),
+          class: 'btn btn-sm btn-ghost', 'aria-label': t('Close Dual Client View'),
+          'data-tip': t('Return to Explorer'), onclick: closeView,
+        }, icon('close', { size: 14 }), t('Exit Dual View'))),
       body);
     clear(host);
     host.append(dialog);
   } else {
     const opened = modal({
-      title: 'Dual Client View',
-      subtitle: 'Drag from Other client to Your client. The row you drop onto is the destination.',
+      title: t('Dual Client View'),
+      subtitle: t('Drag from Other client to Your client. The row you drop onto is the destination.'),
       width: 'min(98vw, 1680px)',
       body,
     });
@@ -293,8 +314,8 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
   const splitter = el('div', {
     class: 'tp-splitter', role: 'separator', tabindex: '0',
     'aria-orientation': 'vertical',
-    'aria-label': 'Width of the two panes',
-    'data-tip': 'Drag to resize · ← → to nudge · Home to centre',
+    'aria-label': t('Width of the two panes'),
+    'data-tip': t('Drag to resize · ← → to nudge · Home to centre'),
   }, el('span', { class: 'tp-grip', 'aria-hidden': 'true' }));
 
   const panes = el('div', { class: 'tp-panes' }, sourcePane.root, splitter, targetPane.root);
@@ -370,8 +391,10 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
     const findInput = el('input', {
       type: 'search', class: 'field-input no-icon',
-      placeholder: 'Find by name or id…',
-      'aria-label': `Find an entry in the ${side} client`,
+      placeholder: t('Find by name or id…'),
+      'aria-label': isSource
+        ? t('Find an entry in the source client')
+        : t('Find an entry in the target client'),
     });
 
     const findHost = el('div', { class: 'tp-find', hidden: true });
@@ -380,7 +403,7 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     const sizer = el('div', { class: 'tree-sizer' });
     const rows = el('div', {
       class: 'tree-rows', role: 'tree',
-      'aria-label': isSource ? 'The source client' : 'The target client',
+      'aria-label': isSource ? t('The source client') : t('The target client'),
       'aria-multiselectable': 'true', tabindex: '0',
     });
     sizer.append(rows);
@@ -416,7 +439,7 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
       findHost.hidden = false;
       clear(findHost);
-      findHost.append(el('div', { class: 'tp-find-note', text: 'Looking…' }));
+      findHost.append(el('div', { class: 'tp-find-note', text: t('Looking…') }));
 
       // Every open archive on this side, asked in turn. A hit carries the path
       // the PLAN resolves against, so revealing it lands on the row a drag would
@@ -443,16 +466,21 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
       clear(findHost);
       if (!hits.length) {
-        findHost.append(el('div', { class: 'tp-find-note', text: refused
-          ? `Nothing matched "${query}". ${plural(refused, 'archive', 'archives')} here `
-            + 'contains no independently importable entries, so it was not searched.'
-          : `Nothing matched "${query}". Names come from this client's own String archive, so `
-            + 'anything it does not name can only be found by id.' }));
+        const missNote = !refused
+          ? t('Nothing matched "{query}". Names come from this client\'s own String archive, so '
+            + 'anything it does not name can only be found by id.', { query })
+          : (refused === 1
+              ? t('Nothing matched "{query}". The archive here contains no independently importable '
+                + 'entries, so it was not searched.', { query })
+              : t('Nothing matched "{query}". The {n} archives here contain no independently '
+                + 'importable entries, so they were not searched.',
+                { query, n: fmt.format(refused) }));
+        findHost.append(el('div', { class: 'tp-find-note', text: missNote }));
         return;
       }
 
       findHost.append(el('div', { class: 'tp-find-note',
-        text: `${plural(hits.length, 'match', 'matches')} — click one to show it in the tree` }));
+        text: t('{n} matches — click one to show it in the tree', { n: fmt.format(hits.length) }) }));
       for (const hit of hits.slice(0, SEARCH_LIMIT)) {
         findHost.append(el('button', {
           class: 'tp-find-row',
@@ -474,19 +502,19 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
           el('span', { class: 'tp-find-name',
             text: hit.entry.name || hit.entry.relative || leaf(hit.entry.path) }),
           el('span', { class: 'tp-find-meta', text: `${hit.archive} · ${hit.entry.id || ''}` }),
-          hit.entry.inTarget ? el('span', { class: 'tp-have', text: 'in target' }) : null));
+          hit.entry.inTarget ? el('span', { class: 'tp-have', text: t('in target') }) : null));
       }
     };
 
     const root = el('div', { class: 'tp-pane', 'data-side': side },
       el('div', { class: 'tp-pane-head' },
         el('div', { class: 'tp-pane-title' },
-          el('span', { class: 'tp-pane-role', text: isSource ? 'Other client' : 'Your client' }),
+          el('span', { class: 'tp-pane-role', text: isSource ? t('Other client') : t('Your client') }),
           clientName,
           isSource
             ? el('span', { class: 'tp-lock', 'data-tip':
-                'Whatever is open read-only here cannot be edited or saved over.' },
-                icon('lock', { size: 11 }), 'read-only')
+                t('Whatever is open read-only here cannot be edited or saved over.') },
+                icon('lock', { size: 11 }), t('read-only'))
             : null),
         el('div', { class: 'tp-pane-inputs' },
           el('div', { class: 'tp-input' }, icon('search', { size: 14 }), findInput))),
@@ -538,17 +566,18 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
    */
   const resolveSelection = async (paths, tree, signal) => {
     const roots = topMost(paths);
-    if (!roots.length) throw new Error('Nothing to import.');
+    if (!roots.length) throw new Error(t('Nothing to import.'));
 
     const fileIds = new Set(roots.map((p) => p.split('/')[0]));
     if (fileIds.size > 1) {
-      throw new Error('These come from different archives. Drag one archive\'s worth at a time — '
-                    + 'a port carries one kind into one archive.');
+      throw new Error(t('These come from different archives. Drag one archive\'s worth at a time — '
+                    + 'a port carries one kind into one archive.'));
     }
     const fileId = [...fileIds][0];
     const head = await kindFor(fileId);
     if (!head.supported || !head.kind) {
-      throw new Error(head.reason || `${head.archive} holds nothing this can carry.`);
+      throw new Error(head.reason
+        || t('{archive} holds nothing this can carry.', { archive: head.archive }));
     }
 
     const cap = (head.maxSelection || maxSelection) + 1;
@@ -593,37 +622,41 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
   const planDropOn = (path, resolution) => {
     const node = targetPane.tree.getNode(path);
-    if (!node) return { ok: false, reason: 'That row is not loaded yet.' };
+    if (!node) return { ok: false, reason: t('That row is not loaded yet.') };
 
     const fileId = path.split('/')[0];
     const found = archiveOf(fileId);
-    if (!found) return { ok: false, reason: 'That archive is not available for import.' };
+    if (!found) return { ok: false, reason: t('That archive is not available for import.') };
     const { client, archive } = found;
 
     if (client.key === sourceClient.key) {
-      return { ok: false, reason: 'Choose a destination in the other client.' };
+      return { ok: false, reason: t('Choose a destination in the other client.') };
     }
     if (archive.readOnly) {
-      return { ok: false, reason: `${archive.name} is read-only. Choose a writable target archive.` };
+      return { ok: false, reason: t('{archive} is read-only. Choose a writable target archive.',
+        { archive: archive.name }) };
     }
 
     if (!resolution) {
-      return { ok: false, reason: 'Still working out what is inside — hold on.' };
+      return { ok: false, reason: t('Still working out what is inside — hold on.') };
     }
     if (!(archive.kinds || []).includes(resolution.kind)) {
       const canTake = targetClient.archives
         .filter((a) => !a.readOnly && (a.kinds || []).includes(resolution.kind))
         .map((a) => a.name);
+      const noun = nounOf(resolution.head, true);
       return {
         ok: false,
-        reason: `${archive.name} cannot hold ${resolution.head.plural.toLowerCase()}.`
-              + (canTake.length ? ` Drop onto ${canTake.join(' or ')}.` : ''),
+        reason: canTake.length
+          ? t('{archive} cannot hold {plural}. Drop onto {names}.', {
+              archive: archive.name, plural: noun, names: canTake.join(` ${t('and')} `) })
+          : t('{archive} cannot hold {plural}.', { archive: archive.name, plural: noun }),
       };
     }
     if (!resolution.entries.length) {
       return {
         ok: false,
-        reason: 'This selection contains no independently importable entries.',
+        reason: t('This selection contains no independently importable entries.'),
       };
     }
 
@@ -639,8 +672,10 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
       const cap = resolution.head.maxSelection || maxSelection;
       return {
         ok: false,
-        reason: `${fmt.format(resolution.total)} ${resolution.head.plural.toLowerCase()} inside — `
-              + `more than one import can carry (${fmt.format(cap)}). Choose a narrower folder or row.`,
+        reason: t('{n} {plural} inside — more than one import can carry ({cap}). '
+              + 'Choose a narrower folder or row.', {
+                n: fmt.format(resolution.total), plural: nounOf(resolution.head, true),
+                cap: fmt.format(cap) }),
       };
     }
 
@@ -660,9 +695,12 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
         targetFileId: archive.fileId, targetArchive: archive.name,
         targetPath: path, targetName: node.name,
         label: resolution.entries.length === 1
-          ? `Replace ${node.name} in ${archive.name}`
-          : `Replace ${node.name} and add ${plural(resolution.entries.length - 1, 'entry', 'entries')} to ${archive.name}`,
-        hint: `${archive.name}'s own ${node.name} is overwritten. One undo puts it back, until you save.`,
+          ? t('Replace {name} in {archive}', { name: node.name, archive: archive.name })
+          : t('Replace {name} in {archive} and add {n} more', {
+              name: node.name, archive: archive.name,
+              n: fmt.format(resolution.entries.length - 1) }),
+        hint: t('{archive}\'s own {name} is overwritten. One undo puts it back, until you save.',
+          { archive: archive.name, name: node.name }),
       };
     }
 
@@ -671,8 +709,8 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     if (!container) {
       return {
         ok: false,
-        reason: `${node.name} cannot contain this selection. Drop onto a folder or image, or onto `
-              + 'the matching target entry to replace it.',
+        reason: t('{name} cannot contain this selection. Drop onto a folder or image, or onto '
+              + 'the matching target entry to replace it.', { name: node.name }),
       };
     }
 
@@ -680,10 +718,12 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
       ok: true, mode: 'into',
       targetFileId: archive.fileId, targetArchive: archive.name,
       targetPath: path, targetName: node.name,
-      label: `Add ${plural(resolution.entries.length, resolution.head.label.toLowerCase(),
-                           resolution.head.plural.toLowerCase())} to ${archive.name}`,
-      hint: `They land where ${sourceClient.label} has them, inside ${archive.name}. `
+      label: t('Add {n} {plural} to {archive}', {
+        n: fmt.format(resolution.entries.length), plural: nounOf(resolution.head),
+        archive: archive.name }),
+      hint: t('They land where {client} has them, inside {archive}. '
           + 'Nothing the target already has is touched.',
+        { client: sourceClient.label, archive: archive.name }),
     };
   };
 
@@ -744,12 +784,13 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
    */
   const consequence = (probe) => {
     if (!probe) return null;
-    if (probe.state === 'loading') return { tone: 'wait', lines: ['Working out what comes with it…'] };
+    if (probe.state === 'loading') return { tone: 'wait', lines: [t('Working out what comes with it…')] };
     if (probe.state === 'error') return { tone: 'bad', lines: [probe.error.message] };
 
     const plan = probe.plan;
     if (plan.blocked) {
-      return { tone: 'bad', lines: [`Refused: ${plan.blockedReason || 'this port cannot run.'}`] };
+      return { tone: 'bad', lines: [t('Refused: {reason}', {
+        reason: plan.blockedReason || t('this port cannot run.') })] };
     }
 
     const totals = plan.totals || {};
@@ -770,19 +811,21 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     const pulled = (plan.items || []).filter((i) => !i.requested).length;
 
     const lines = [];
-    lines.push(`${plural(totals.willWrite ?? 0, 'part', 'parts')} would be written`
+    lines.push(t('{n} parts would be written', { n: fmt.format(totals.willWrite ?? 0) })
       + (totals.entriesAlreadyThere
-          ? ` · ${fmt.format(totals.entriesAlreadyThere)} already there`
+          ? ` · ${t('{n} already there', { n: fmt.format(totals.entriesAlreadyThere) })}`
           : '')
       + (totals.bytes ? ` · ${bytes(totals.bytes)}` : ''));
 
     const extras = [];
-    if (pulled) extras.push(`${plural(pulled, 'entry', 'entries')} pulled in by links`);
-    if (art) extras.push(`${plural(art, 'picture', 'pictures')} it draws with`);
-    if (elsewhere.length) extras.push(`reads ${elsewhere.join(', ')}`);
-    if (extras.length) lines.push(`Comes with it: ${extras.join(' · ')}`);
+    if (pulled) extras.push(t('{n} entries pulled in by links', { n: fmt.format(pulled) }));
+    if (art) extras.push(t('{n} pictures it draws with', { n: fmt.format(art) }));
+    if (elsewhere.length) extras.push(t('reads {names}', { names: elsewhere.join(', ') }));
+    if (extras.length) lines.push(t('Comes with it: {extras}', { extras: extras.join(' · ') }));
 
-    if (totals.blocked) lines.push(`${plural(totals.blocked, 'part', 'parts')} cannot be carried.`);
+    if (totals.blocked) {
+      lines.push(t('{n} parts cannot be carried.', { n: fmt.format(totals.blocked) }));
+    }
 
     return {
       tone: totals.blocked ? 'warn' : 'ok',
@@ -882,7 +925,7 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
       abort: new AbortController(),
       label: paths.length === 1
         ? (tree.getNode(path)?.name ?? leaf(path))
-        : `${paths.length} rows`,
+        : t('{n} rows', { n: fmt.format(paths.length) }),
     };
 
     try { sourcePane.rows.setPointerCapture(event.pointerId); } catch { /* carry on */ }
@@ -954,8 +997,8 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
       drag.plan = {
         ok: false,
         reason: drag.resolving
-          ? 'Working out what is inside…'
-          : 'Drop onto the target client on the right.',
+          ? t('Working out what is inside…')
+          : t('Drop onto the target client on the right.'),
       };
     } else {
       drag.plan = planDropOn(hit.entry.path, drag.resolution);
@@ -1044,7 +1087,9 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     node.dataset.mode = plan?.ok ? plan.mode : 'no';
 
     const mode = node.querySelector('.tp-ghost-mode');
-    mode.textContent = plan?.ok ? (plan.mode === 'replace' ? 'REPLACE' : 'INTO') : 'NO';
+    mode.textContent = plan?.ok
+      ? (plan.mode === 'replace' ? t('REPLACE') : t('INTO'))
+      : t('NO');
 
     const label = node.querySelector('.tp-ghost-label');
     label.textContent = plan?.ok ? plan.label : (plan?.reason ?? '');
@@ -1053,9 +1098,10 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     // What is being carried, said once the count is real. Before that it says
     // it is still counting rather than showing a number that is about to change.
     const carrying = drag.resolution && !drag.resolution.capped
-      ? `${plural(drag.resolution.total, drag.resolution.head.label.toLowerCase(),
-                  drag.resolution.head.plural.toLowerCase())} from ${drag.resolution.head.archive}`
-      : (drag.resolving ? 'Counting what is inside…' : '');
+      ? t('{n} {plural} from {archive}', {
+          n: fmt.format(drag.resolution.total),
+          plural: nounOf(drag.resolution.head), archive: drag.resolution.head.archive })
+      : (drag.resolving ? t('Counting what is inside…') : '');
     hint.textContent = plan?.ok ? `${carrying}${plan.hint ? ` — ${plan.hint}` : ''}` : carrying;
     hint.hidden = !hint.textContent;
 
@@ -1109,19 +1155,22 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     };
 
     const { dialog: conflictDialog } = modal({
-      title: count === 1 ? 'An entry already exists' : `${fmt.format(count)} entries already exist`,
-      subtitle: `Choose how MapleBenchX should handle conflicts in ${targetArchive}.`,
+      title: count === 1
+        ? t('An entry already exists')
+        : t('{n} entries already exist', { n: fmt.format(count) }),
+      subtitle: t('Choose how MapleBenchX should handle conflicts in {archive}.',
+        { archive: targetArchive }),
       width: 'min(92vw, 560px)',
       body: el('div', { class: 'tp-conflict' },
         el('div', { class: 'tp-conflict-icon', 'aria-hidden': 'true' }, icon('replace', { size: 22 })),
         el('div', {},
-          el('b', { text: 'What do you want to do with the existing entries?' }),
-          el('p', { text: 'Keep existing imports only entries that are missing. Replace uses the '
-            + 'source versions for conflicts. The destination comes from where you dropped.' }))),
+          el('b', { text: t('What do you want to do with the existing entries?') }),
+          el('p', { text: t('Keep existing imports only entries that are missing. Replace uses the '
+            + 'source versions for conflicts. The destination comes from where you dropped.') }))),
       actions: [
-        { label: 'Cancel', run: () => finish(null) },
-        { label: 'Keep existing', class: 'btn-primary', run: () => finish('into') },
-        { label: 'Replace', class: 'btn-red', run: () => finish('replace') },
+        { label: t('Cancel'), run: () => finish(null) },
+        { label: t('Keep existing'), class: 'btn-primary', run: () => finish('into') },
+        { label: t('Replace'), class: 'btn-red', run: () => finish('replace') },
       ],
       onOpen: (node) => node.querySelectorAll('.modal-foot .btn')[1]?.focus(),
     });
@@ -1140,8 +1189,8 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     if (checked?.state === 'loading') await checked.promise;
     if (closed) return;
     if (checked?.state !== 'ok') {
-      toastError(checked?.error ?? new Error('The import plan could not be checked.'),
-        'Nothing was imported');
+      toastError(checked?.error ?? new Error(t('The import plan could not be checked.')),
+        t('Nothing was imported'));
       return;
     }
 
@@ -1165,9 +1214,10 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
   function queueDirectImport({ resolution, plan, probe }) {
     if (resolution.capped) {
-      toast(`${fmt.format(resolution.total)} exceeds the per-import limit `
-          + `(${fmt.format(resolution.head.maxSelection || maxSelection)}). Nothing was imported; `
-          + 'choose a narrower folder or row.',
+      toast(t('{n} exceeds the per-import limit ({cap}). Nothing was imported; '
+          + 'choose a narrower folder or row.', {
+            n: fmt.format(resolution.total),
+            cap: fmt.format(resolution.head.maxSelection || maxSelection) }),
             'warning');
       return null;
     }
@@ -1273,8 +1323,9 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
 
     if (!after) {
       group.done = group.entries.some((e) => e.id)
-        ? `${group.targetArchive} could not be re-read, so nothing here can say whether it landed.`
-        : 'Imported. These have no id to look up, so check them in the tree.';
+        ? t('{archive} could not be re-read, so nothing here can say whether it landed.',
+            { archive: group.targetArchive })
+        : t('Imported. These have no id to look up, so check them in the tree.');
       return;
     }
 
@@ -1282,17 +1333,23 @@ export async function openTwoPane({ app, sourceFileId = null, host = null, onClo
     const missing = after.checked - after.held.size;
 
     if (gained > 0 && missing === 0) {
-      group.done = `In ${group.targetArchive} now — ${gained} of the ${after.checked} checked were `
-                 + 'not there before and are now. Save it to keep them.';
+      group.done = t('In {archive} now — {gained} of the {checked} checked were not there before '
+                 + 'and are now. Save it to keep them.',
+        { archive: group.targetArchive, gained: fmt.format(gained), checked: fmt.format(after.checked) });
     } else if (gained > 0) {
-      group.done = `${gained} newly in ${group.targetArchive}, and ${missing} of the ${after.checked} `
-                 + 'checked are still not there. The port result says which.';
+      group.done = t('{gained} newly in {archive}, and {missing} of the {checked} checked are still '
+                 + 'not there. The port result says which.',
+        { gained: fmt.format(gained), archive: group.targetArchive,
+          missing: fmt.format(missing), checked: fmt.format(after.checked) });
     } else if (missing === 0) {
-      group.done = `${group.targetArchive} holds all ${after.checked} checked — and held them before `
-                 + 'this too, so nothing here proves the port wrote anything. Read its result.';
+      group.done = t('{archive} holds all {checked} checked — and held them before this too, so '
+                 + 'nothing here proves the port wrote anything. Read its result.',
+        { archive: group.targetArchive, checked: fmt.format(after.checked) });
     } else {
-      group.done = `Nothing changed in ${group.targetArchive}: ${missing} of the ${after.checked} `
-                 + 'checked are still missing. The port was cancelled, refused, or undone.';
+      group.done = t('Nothing changed in {archive}: {missing} of the {checked} checked are still '
+                 + 'missing. The port was cancelled, refused, or undone.',
+        { archive: group.targetArchive, missing: fmt.format(missing),
+          checked: fmt.format(after.checked) });
     }
   }
 

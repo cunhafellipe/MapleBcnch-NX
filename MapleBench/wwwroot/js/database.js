@@ -290,7 +290,7 @@ export class Database {
           el('b', { text: subject }),
           el('span', { text: this.available ? '' : t(' · not readable') }))),
       el('button', {
-        class: 'btn btn-icon', 'data-tip': 'Check the open archives again',
+        class: 'btn btn-icon', 'data-tip': t('Check the open archives again'),
         onclick: () => this.load(),
       }, icon('refresh', { size: 15 })));
   }

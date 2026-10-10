@@ -148,17 +148,17 @@ export function openExportDialog(app, path) {
 
   const folderInput = el('input', {
     class: 'field-input no-icon',
-    placeholder: 'C:\\dumps  — an empty folder, not your client folder',
+    placeholder: t('C:\\dumps  — an empty folder, not your client folder'),
     spellcheck: 'false',
     value: localStorage.getItem(FOLDER_KEY) ?? '',
   });
 
   const { dialog } = modal({
-    title: 'Export',
+    title: t('Export'),
     subtitle: path,
     width: 'min(96vw, 780px)',
     body,
-    actions: [{ label: 'Close' }],
+    actions: [{ label: t('Close') }],
   });
 
   // The poll has to stop, but the dump does not: /dump/start deliberately does
@@ -181,7 +181,7 @@ export function openExportDialog(app, path) {
     .catch((error) => {
       if (closed) return;
       clear(body);
-      body.append(notice('bad', 'alert', 'This node cannot be described',
+      body.append(notice('bad', 'alert', t('This node cannot be described'),
         error.message, error.detail));
     });
 
@@ -203,9 +203,9 @@ export function openExportDialog(app, path) {
 
     if (referenced.length) {
       body.append(group(
-        'These are not the same file',
-        'Each one exports something different under this node\'s name. Pick the one you meant.',
-        referenced.map((format) => formatRow(format, REFERENCE_TAGS[format.id]))));
+        t('These are not the same file'),
+        t('Each one exports something different under this node\'s name. Pick the one you meant.'),
+        referenced.map((format) => formatRow(format, t(REFERENCE_TAGS[format.id])))));
     }
 
     // Recommended first, and otherwise the order the server chose -- it puts the
@@ -213,7 +213,7 @@ export function openExportDialog(app, path) {
     const ordered = [...rest].sort((a, b) => Number(b.recommended) - Number(a.recommended));
     if (ordered.length) {
       body.append(group(
-        referenced.length ? 'Everything else' : null, null,
+        referenced.length ? t('Everything else') : null, null,
         ordered.map((format) => formatRow(format))));
     }
 
@@ -223,10 +223,10 @@ export function openExportDialog(app, path) {
   function head() {
     const facts = [];
     if (target.width || target.height) facts.push(`${target.width}x${target.height}`);
-    if (target.frames) facts.push(`${target.frames} frames`);
+    if (target.frames) facts.push(t('{n} frames', { n: target.frames }));
     if (target.totalMs) facts.push(`${fmt.format(target.totalMs)} ms`);
     if (target.canvasFormat) facts.push(target.canvasFormat);
-    if (target.soundMs) facts.push(`${(target.soundMs / 1000).toFixed(1)} s of audio`);
+    if (target.soundMs) facts.push(t('{n} s of audio', { n: (target.soundMs / 1000).toFixed(1) }));
     if (target.soundExtension) facts.push(target.soundExtension);
     facts.push(target.typeName);
 
@@ -242,19 +242,20 @@ export function openExportDialog(app, path) {
   function linkNotice(link) {
     const where = link.resolves
       ? el('p', {},
-          el('span', { text: 'It resolves to ' }),
+          el('span', { text: t('It resolves to') + ' ' }),
           el('code', { text: link.targetPath ?? '' }),
           el('span', {
-            text: `${link.targetKind ? ` (${link.targetKind})` : ''}. Exporting that target is offered `
-                + 'below as its own choice — the file it makes holds the target\'s contents under this '
-                + 'node\'s name, which is worth knowing before it ends up somewhere as evidence.',
+            text: (link.targetKind ? ` (${link.targetKind})` : '')
+              + t('. Exporting that target is offered below as its own choice — the file it makes '
+                  + "holds the target's contents under this node's name, which is worth knowing "
+                  + 'before it ends up somewhere as evidence.'),
           }))
       : el('p', {
           text: link.note
-            ? `It does not resolve: ${link.note} There are no pixels to export, so only the reference `
-              + 'itself can be written out.'
-            : 'It does not resolve, so there are no pixels behind it. Only the reference itself can be '
-              + 'written out.',
+            ? t('It does not resolve: {note} There are no pixels to export, so only the reference '
+                + 'itself can be written out.', { note: link.note })
+            : t('It does not resolve, so there are no pixels behind it. Only the reference itself '
+                + 'can be written out.'),
         });
 
     return el('div', { class: 'notice dump-link', 'data-tone': link.resolves ? 'warn' : 'bad' },
@@ -262,11 +263,15 @@ export function openExportDialog(app, path) {
       el('div', {},
         el('b', {
           text: link.resolves
-            ? 'This node is a reference, not the thing it refers to.'
-            : 'This node is a reference, and it points at nothing.',
+            ? t('This node is a reference, not the thing it refers to.')
+            : t('This node is a reference, and it points at nothing.'),
         }),
         el('p', {},
-          el('span', { text: `Stored as ${LINK_KINDS[link.kind] ?? link.kind}. It says ` }),
+          el('span', {
+            text: t('Stored as {kind}. It says ', {
+              kind: t(LINK_KINDS[link.kind] ?? link.kind),
+            }),
+          }),
           el('code', { text: link.text }),
           el('span', { text: '.' })),
         where));
@@ -288,7 +293,7 @@ export function openExportDialog(app, path) {
       },
     },
       icon(isJob ? 'folderOpen' : 'download', { size: 14 }),
-      el('span', { text: isJob ? 'Set up…' : 'Download' }));
+      el('span', { text: isJob ? t('Set up…') : t('Download') }));
 
     const row = el('div', {
       class: 'dump-format',
@@ -298,7 +303,7 @@ export function openExportDialog(app, path) {
       el('div', { class: 'dump-format-text' },
         el('div', { class: 'dump-format-label' },
           el('span', { text: format.label }),
-          format.recommended ? el('span', { class: 'dump-tag dump-tag-rec', text: 'Recommended' }) : null,
+          format.recommended ? el('span', { class: 'dump-tag dump-tag-rec', text: t('Recommended') }) : null,
           tag ? el('span', { class: 'dump-tag', text: tag }) : null),
         format.note ? el('p', { class: 'dump-format-note', text: format.note }) : null),
       button);
@@ -329,7 +334,7 @@ export function openExportDialog(app, path) {
       return;
     }
 
-    const restore = busyButton(button, 'Exporting…');
+    const restore = busyButton(button, t('Exporting…'));
     try {
       const response = await api.dumpDownload(format.url);
       const issues = Number(response.headers.get('X-Dump-Issues') ?? '0');
@@ -340,17 +345,20 @@ export function openExportDialog(app, path) {
       saveBlob(await response.blob(), name);
 
       if (issues > 0) {
-        toast(
-          `${name} was saved, but ${fmt.format(issues)} ${issues === 1 ? 'thing' : 'things'} in it did `
-          + `not come out.${note ? ` ${note}` : ''}`,
-          'warning', { title: 'Saved, and incomplete' });
+        const message = issues === 1
+          ? t('{name} was saved, but 1 thing in it did not come out.', { name })
+          : t('{name} was saved, but {n} things in it did not come out.',
+              { name, n: fmt.format(issues) });
+        toast(note ? `${message} ${note}` : message,
+          'warning', { title: t('Saved, and incomplete') });
       } else if (truncated) {
-        toast(`${name} was saved, but it stopped early — it is not the whole node.`, 'warning');
+        toast(t('{name} was saved, but it stopped early — it is not the whole node.', { name }),
+          'warning');
       } else {
-        toast(`Saved ${name}.`, 'success');
+        toast(t('Saved {name}.', { name }), 'success');
       }
     } catch (error) {
-      toastError(error, 'That export did not run');
+      toastError(error, t('That export did not run'));
     } finally {
       restore();
     }
@@ -398,7 +406,7 @@ export function openExportDialog(app, path) {
     const start = el('button', {
       class: 'btn btn-primary',
       onclick: () => submit(start),
-    }, icon('download', { size: 15 }), el('span', { text: 'Start the dump' }));
+    }, icon('download', { size: 15 }), el('span', { text: t('Start the dump') }));
 
     const resolve = el('input', {
       type: 'checkbox', checked: job.resolveLinks,
@@ -418,43 +426,43 @@ export function openExportDialog(app, path) {
           class: 'btn btn-sm',
           onclick: async () => {
             try {
-              const chosen = await window.mapleBenchDesktop.pickFolder('Where should the dump go?');
+              const chosen = await window.mapleBenchDesktop.pickFolder(t('Where should the dump go?'));
               if (chosen) folderInput.value = chosen;
             } catch (error) {
-              toastError(error, 'The folder dialog could not be opened');
+              toastError(error, t('The folder dialog could not be opened'));
             }
           },
-        }, icon('folder', { size: 14 }), 'Browse')
+        }, icon('folder', { size: 14 }), t('Browse'))
       : null;
 
     return el('div', { class: 'dump-form' },
       el('div', { class: 'dump-field' },
-        el('label', { class: 'dump-label', text: 'Where the dump folder should be made' }),
+        el('label', { class: 'dump-label', text: t('Where the dump folder should be made') }),
         el('div', { class: 'dump-row' }, folderInput, browse),
         el('p', { class: 'dump-hint',
-          text: 'A subfolder named after this node is created inside it. The folder you name is not '
-              + 'emptied and nothing outside the new subfolder is touched.' })),
+          text: t('A subfolder named after this node is created inside it. The folder you name is not '
+              + 'emptied and nothing outside the new subfolder is touched.') })),
 
       el('div', { class: 'dump-field' },
         el('label', { class: 'check-row' }, resolve,
-          el('span', { text: 'Follow _inlink, _outlink and UOL and write the target\'s pixels' })),
+          el('span', { text: t('Follow _inlink, _outlink and UOL and write the target\'s pixels') })),
         el('p', { class: 'dump-hint',
-          text: 'Every file written this way is marked as resolved in the folder\'s JSON sidecar, so a '
+          text: t('Every file written this way is marked as resolved in the folder\'s JSON sidecar, so a '
               + 'picture that came from somewhere else can still be traced back to where it really '
               + 'lives. With this off, a reference is recorded as a reference and no pixels are '
-              + 'written for it.' })),
+              + 'written for it.') })),
 
       job.offerAllowNonEmpty
         ? el('div', { class: 'dump-field' },
             el('label', { class: 'check-row' }, allow,
-              el('span', { text: 'I know that folder is not empty — write into it anyway' })),
+              el('span', { text: t('I know that folder is not empty — write into it anyway') })),
             el('p', { class: 'dump-hint',
-              text: 'Files already there with the same names are overwritten. Anything else stays, '
-                  + 'mixed in with the dump.' }))
+              text: t('Files already there with the same names are overwritten. Anything else stays, '
+                  + 'mixed in with the dump.') }))
         : null,
 
       job.refusal
-        ? notice('warn', 'alert', 'That destination was refused', job.refusal)
+        ? notice('warn', 'alert', t('That destination was refused'), job.refusal)
         : null,
 
       el('div', { class: 'dump-actions' }, start));
@@ -468,7 +476,7 @@ export function openExportDialog(app, path) {
   async function submit(button) {
     const outputDir = folderInput.value.trim();
     if (!outputDir) {
-      job.refusal = 'No destination folder was given.';
+      job.refusal = t('No destination folder was given.');
       renderJob();
       return;
     }
@@ -484,13 +492,13 @@ export function openExportDialog(app, path) {
       maxNodes: 0,
     };
 
-    const restore = busyButton(button, 'Checking the folder…');
+    const restore = busyButton(button, t('Checking the folder…'));
     try {
       const check = await api.dumpPreflight(request);
       if (closed) return;
 
       if (!check.ok) {
-        job.refusal = check.refusal ?? 'That destination was refused.';
+        job.refusal = check.refusal ?? t('That destination was refused.');
         // Grown only by a refusal the checkbox can actually answer; the rest
         // are walls, not doors.
         if (overridable(check)) job.offerAllowNonEmpty = true;
@@ -513,7 +521,7 @@ export function openExportDialog(app, path) {
       // toast, where the next render will not eat it.
       job.refusal = error.detail ? `${error.message} ${error.detail}` : error.message;
       renderJob();
-      toastError(error, 'The dump did not start');
+      toastError(error, t('The dump did not start'));
     } finally {
       restore();
     }
@@ -538,11 +546,11 @@ export function openExportDialog(app, path) {
   }
 
   async function cancel(button) {
-    const restore = busyButton(button, 'Stopping…');
+    const restore = busyButton(button, t('Stopping…'));
     try {
       job.progress = await api.dumpCancel();
     } catch (error) {
-      toastError(error, 'Could not ask the dump to stop');
+      toastError(error, t('Could not ask the dump to stop'));
     } finally {
       restore();
       renderJob();
@@ -560,34 +568,37 @@ export function openExportDialog(app, path) {
       class: 'btn', disabled: p.cancelling,
       onclick: () => cancel(stop),
     }, icon('close', { size: 14 }),
-       el('span', { text: p.cancelling ? 'Stopping…' : 'Stop' }));
+       el('span', { text: p.cancelling ? t('Stopping…') : t('Stop') }));
 
     return el('div', { class: 'dump-progress' },
       el('div', { class: 'dump-progress-head' },
-        el('b', { text: p.stage || 'Working' }),
+        el('b', { text: p.stage || t('Working') }),
         el('span', { class: 'dump-secs', text: `${p.seconds.toFixed(0)}s` })),
       el('div', { class: 'dump-bar', 'data-unknown': known ? null : 'true' },
         el('div', { class: 'dump-bar-fill', style: known ? `width:${share}%` : null })),
       el('code', { class: 'dump-current', text: p.current || p.node || '' }),
       el('p', { class: 'dump-hint',
         text: known
-          ? `${fmt.format(p.done)} of ${fmt.format(p.total)} nodes written.`
-          : `${fmt.format(p.done)} nodes written so far. There is no percentage because the server does `
-            + 'not count a WZ tree before walking it — a made-up one would be worse than none.' }),
+          ? t('{done} of {total} nodes written.', {
+              done: fmt.format(p.done), total: fmt.format(p.total),
+            })
+          : t('{n} nodes written so far. There is no percentage because the server does not count a '
+              + 'WZ tree before walking it — a made-up one would be worse than none.',
+            { n: fmt.format(p.done) }) }),
       p.cancelling
         ? el('p', { class: 'dump-hint',
-            text: 'Stopping between nodes. What is already written stays written, and the summary will '
-                + 'say how far it got.' })
+            text: t('Stopping between nodes. What is already written stays written, and the summary will '
+                + 'say how far it got.') })
         : null,
       el('div', { class: 'dump-actions' }, stop),
       el('p', { class: 'dump-hint',
-        text: 'Closing this window does not stop the dump. Reopen this dialog to watch it again.' }));
+        text: t('Closing this window does not stop the dump. Reopen this dialog to watch it again.') }));
   }
 
   function failedView() {
     return el('div', { class: 'dump-progress' },
-      notice('bad', 'alert', 'The dump stopped',
-        job.progress.message || 'No reason was reported.'),
+      notice('bad', 'alert', t('The dump stopped'),
+        job.progress.message || t('No reason was reported.')),
       el('div', { class: 'dump-actions' }, againButton()));
   }
 
@@ -608,29 +619,29 @@ export function openExportDialog(app, path) {
     if (!result) {
       return el('div', { class: 'dump-progress' },
         notice(cancelled ? 'warn' : 'info', 'info',
-          cancelled ? 'The dump was stopped' : 'The dump finished',
-          p.message || 'No report was produced.'),
+          cancelled ? t('The dump was stopped') : t('The dump finished'),
+          p.message || t('No report was produced.')),
         el('div', { class: 'dump-actions' }, againButton()));
     }
 
     const where = result.outputPath ?? job.outputPath;
     const counts = [
-      ['Files', fmt.format(result.files)],
-      ['On disk', bytes(result.bytes)],
-      ['Canvases', fmt.format(result.canvases)],
-      ['Sounds', fmt.format(result.sounds)],
-      ['Nodes', fmt.format(result.nodes)],
+      [t('Files'), fmt.format(result.files)],
+      [t('On disk'), bytes(result.bytes)],
+      [t('Canvases'), fmt.format(result.canvases)],
+      [t('Sounds'), fmt.format(result.sounds)],
+      [t('Nodes'), fmt.format(result.nodes)],
       // Named the long way round because the short way ("Links 812") reads as
       // 812 links exported, which is the opposite of what happened to them.
-      ['Links left unfollowed', fmt.format(result.linksRecorded)],
+      [t('Links left unfollowed'), fmt.format(result.linksRecorded)],
     ];
 
     return el('div', { class: 'dump-progress' },
       notice(cancelled ? 'warn' : 'good', cancelled ? 'alert' : 'check',
-        cancelled ? 'Stopped part-way — what was written is still there' : 'Written',
+        cancelled ? t('Stopped part-way — what was written is still there') : t('Written'),
         where ? el('p', {}, el('code', { text: where })) : null,
         cancelled
-          ? 'This is a partial dump. Everything below is what it managed before it stopped.'
+          ? t('This is a partial dump. Everything below is what it managed before it stopped.')
           : null),
 
       el('div', { class: 'dump-counts' },
@@ -639,8 +650,8 @@ export function openExportDialog(app, path) {
           el('span', { class: 'dump-count-l', text: label })))),
 
       result.truncated
-        ? notice('warn', 'alert', 'This dump is not the whole node',
-            result.truncatedReason || 'It stopped at a limit before it ran out of nodes.')
+        ? notice('warn', 'alert', t('This dump is not the whole node'),
+            result.truncatedReason || t('It stopped at a limit before it ran out of nodes.'))
         : null,
 
       issuesView(result.issues ?? []),
@@ -648,7 +659,7 @@ export function openExportDialog(app, path) {
       el('div', { class: 'dump-actions' },
         where
           ? el('button', { class: 'btn btn-sm', onclick: () => app.copyText(where) },
-              icon('copy', { size: 14 }), 'Copy the folder path')
+              icon('copy', { size: 14 }), t('Copy the folder path'))
           : null,
         againButton()));
   }
@@ -656,7 +667,7 @@ export function openExportDialog(app, path) {
   function issuesView(issues) {
     if (!issues.length) {
       return el('p', { class: 'dump-hint dump-clean',
-        text: 'Nothing was skipped: every node under here produced a file or a sidecar entry.' });
+        text: t('Nothing was skipped: every node under here produced a file or a sidecar entry.') });
     }
 
     const kinds = new Map();
@@ -667,8 +678,10 @@ export function openExportDialog(app, path) {
       el('summary', {},
         el('span', { class: 'dump-issues-n', text: fmt.format(issues.length) }),
         el('span', {
-          text: `${issues.length === 1 ? 'thing' : 'things'} did not export`
-              + `${breakdown ? ` — ${breakdown}` : ''}`,
+          text: (issues.length === 1
+            ? t('{n} thing did not export', { n: fmt.format(issues.length) })
+            : t('{n} things did not export', { n: fmt.format(issues.length) }))
+              + (breakdown ? ` — ${breakdown}` : ''),
         })),
       el('table', { class: 'table dump-issue-table' },
         el('tbody', {}, issues.map((issue) => el('tr', {},
@@ -685,5 +698,5 @@ export function openExportDialog(app, path) {
   const againButton = () => el('button', {
     class: 'btn btn-sm',
     onclick: () => { job.progress = null; job.refusal = ''; renderJob(); },
-  }, icon('refresh', { size: 14 }), 'Dump something else here');
+  }, icon('refresh', { size: 14 }), t('Dump something else here'));
 }

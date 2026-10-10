@@ -390,7 +390,7 @@ export function toast(message, kind = 'info', { title, action } = {}) {
     }));
   }
   node.append(el('button', {
-    class: 'btn btn-sm btn-icon btn-ghost', 'aria-label': 'Dismiss',
+    class: 'btn btn-sm btn-icon btn-ghost', 'aria-label': t('Dismiss'),
     onclick: dismiss,
   }, icon('close', { size: 14 })));
 
@@ -420,7 +420,7 @@ export function toast(message, kind = 'info', { title, action } = {}) {
 // The default title is the fallback for the two callers that pass none. It
 // matches the "Could not X" family every other call site uses, and it says the
 // one thing the user needs before reading the detail: the action did not happen.
-export const toastError = (error, title = 'Could not finish that') => {
+export const toastError = (error, title = t('Could not finish that')) => {
   const message = error?.message ?? String(error);
   return toast(error?.detail ? `${message}\n${error.detail}` : message, 'error', { title });
 };
@@ -540,7 +540,7 @@ export function busyWhile(node, promise) {
  * original text reads as "not allowed"; one that says "Saving…" reads as
  * "working", and those are opposite messages.
  */
-export function busyButton(button, label = 'Working…') {
+export function busyButton(button, label = t('Working…')) {
   if (!button) return () => {};
   const wasDisabled = button.disabled;
   const before = button.innerHTML;
@@ -612,8 +612,8 @@ export function modal({ title, subtitle, body, actions = [], width, onOpen }) {
         el('h2', { class: 'modal-title', text: title }),
         subtitle ? el('p', { class: 'modal-sub', text: subtitle }) : null),
       el('button', {
-        class: 'btn btn-icon btn-ghost', 'aria-label': 'Close',
-        'data-tip': 'Close · Esc', onclick: close,
+        class: 'btn btn-icon btn-ghost', 'aria-label': t('Close'),
+        'data-tip': t('Close · Esc'), onclick: close,
       }, icon('close', { size: 16 }))),
     el('div', { class: 'modal-body' }, body),
   );

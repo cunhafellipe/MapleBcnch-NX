@@ -409,7 +409,7 @@ export class Inspector {
 
     clear(table.factBar);
     table.factBar.append(...[
-      ['all', 'All'], ['cash', 'Cash'], ['free', 'Not cash'],
+      ['all', t('All')], ['cash', t('Cash')], ['free', t('Not cash')],
     ].map(([value, label]) => el('button', {
       class: 'cat-tab cash-tab',
       'aria-pressed': this.cashFilter === value ? 'true' : 'false',
@@ -423,7 +423,7 @@ export class Inspector {
         this.buildFactBar();
         this.updateRows();
       },
-    }, t(label), el('span', { class: 'cat-count', text: fmt.format(counts[value]) }))));
+    }, label, el('span', { class: 'cat-count', text: fmt.format(counts[value]) }))));
   }
 
   /** Clicking a header cycles that column between ascending and descending. */

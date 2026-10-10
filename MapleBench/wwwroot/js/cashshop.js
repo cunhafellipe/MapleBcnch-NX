@@ -93,10 +93,15 @@ export class CashShop {
       this.render();
 
       if (this.duplicateSerials.length) {
-        toast(
-          `${this.duplicateSerials.length} serial number${this.duplicateSerials.length === 1 ? ' is' : 's are'} used by more than one item: ` +
-          `${this.duplicateSerials.slice(0, 6).join(', ')}${this.duplicateSerials.length > 6 ? '…' : ''}. ` +
-          'Duplicate SNs make items unbuyable in-game.',
+        // Chinese has no plural and no verb agreement, so the count is a
+        // {n} the translation fills in rather than a fragment spliced into
+        // the sentence; both counts get a whole key for the ternary to pick.
+        const list = `${this.duplicateSerials.slice(0, 6).join(', ')}${this.duplicateSerials.length > 6 ? '…' : ''}`;
+        toast(this.duplicateSerials.length === 1
+          ? t('{n} serial number is used by more than one item: {list}. Duplicate SNs make items unbuyable in-game.', {
+              n: this.duplicateSerials.length, list })
+          : t('{n} serial numbers are used by more than one item: {list}. Duplicate SNs make items unbuyable in-game.', {
+              n: this.duplicateSerials.length, list }),
           'warning', { title: t('Duplicate serial numbers') });
       }
     } catch (error) {
@@ -105,7 +110,7 @@ export class CashShop {
       this.host.append(emptyState(
         'cart', t('No cash shop data here'),
         error.message,
-        el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() }, icon('folderOpen', { size: 15 }), 'Open Etc.wz')));
+        el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() }, icon('folderOpen', { size: 15 }), t('Open Etc.wz'))));
     }
   }
 
@@ -139,8 +144,8 @@ export class CashShop {
     if (this.loading && !this.items.length) {
       this.host.append(busyPanel({
         title: t('Reading the cash shop…'),
-        note: 'Commodity.img plus the item names out of String.wz — a second or two, '
-            + 'and instant afterwards.',
+        note: t('Commodity.img plus the item names out of String.wz — a second or two, '
+            + 'and instant afterwards.'),
       }));
       return;
     }
@@ -180,18 +185,19 @@ export class CashShop {
 
     const panel = el('div', { class: 'shop-panel' });
     panel.append(el('div', { class: 'shop-result-head' },
-      el('span', { text: `${fmt.format(results.length)} item${results.length === 1 ? '' : 's'}` +
-                          (this.onSaleOnly ? ' on sale' : '') }),
-      el('span', { text: `Page ${this.page} of ${pages}` })));
+      el('span', { text: results.length === 1
+        ? t(this.onSaleOnly ? '1 item on sale' : '1 item')
+        : t(this.onSaleOnly ? '{n} items on sale' : '{n} items', { n: fmt.format(results.length) }) }),
+      el('span', { text: t('Page {page} of {pages}', { page: this.page, pages }) })));
 
     if (!results.length) {
       panel.append(emptyState(
         'search',
-        this.query ? `No items match "${this.query}"` : 'Nothing in this category',
-        this.query ? 'Try an item ID, a serial number, or part of a name.' : 'Add an item to get started.',
+        this.query ? t('No items match "{query}"', { query: this.query }) : t('Nothing in this category'),
+        this.query ? t('Try an item ID, a serial number, or part of a name.') : t('Add an item to get started.'),
         this.query
           ? el('button', { class: 'btn', text: t('Clear search'), onclick: () => { this.query = ''; this.render(); } })
-          : el('button', { class: 'btn btn-primary', onclick: () => this.openItemDialog() }, icon('plus', { size: 15 }), 'Add item')));
+          : el('button', { class: 'btn btn-primary', onclick: () => this.openItemDialog() }, icon('plus', { size: 15 }), t('Add item'))));
     } else {
       panel.append(this.view === 'grid' ? this.buildGrid(slice) : this.buildTable(slice));
       if (pages > 1) panel.append(this.buildPager(pages));
@@ -206,9 +212,9 @@ export class CashShop {
       // The total earns a box even at zero -- a Commodity.img with nothing in
       // it is the answer, not the absence of one. "On sale 0" and a mean price
       // of nothing are not: they are boxes reporting that nothing happened.
-      statChip('Total items', s.total ?? null, { drop: false }),
-      statChip('On sale', s.onSale ?? null, { tone: 'green' }),
-      statChip('Avg price', s.averagePrice ?? null, { tone: 'purple',
+      statChip(t('Total items'), s.total ?? null, { drop: false }),
+      statChip(t('On sale'), s.onSale ?? null, { tone: 'green' }),
+      statChip(t('Avg price'), s.averagePrice ?? null, { tone: 'purple',
         text: s.averagePrice ? `${fmt.format(s.averagePrice)} NX` : undefined }),
     ]);
   }
@@ -229,7 +235,7 @@ export class CashShop {
       class: 'cat-tab', 'aria-pressed': active ? 'true' : 'false', onclick,
     }, name, count != null ? el('span', { class: 'cat-count', text: fmt.format(count) }) : null);
 
-    tabs.append(makeTab('All items', this.items.length, this.category === 'All', () => {
+    tabs.append(makeTab(t('All items'), this.items.length, this.category === 'All', () => {
       this.category = 'All'; this.subCategory = null; this.page = 1; this.render();
     }));
 
@@ -264,7 +270,7 @@ export class CashShop {
     const search = el('input', {
       type: 'search', value: this.query,
       placeholder: t('Search by item ID, serial, or name…'),
-      'aria-label': 'Search items',
+      'aria-label': t('Search items'),
     });
     // Only the results are re-rendered, never the toolbar holding this input.
     // Re-creating it destroyed the caret position, dropped IME composition
@@ -291,9 +297,10 @@ export class CashShop {
           'aria-pressed': this.onSaleOnly ? 'true' : 'false',
           onclick: () => { this.onSaleOnly = !this.onSaleOnly; this.page = 1; this.render(); },
         }),
-        el('div', { class: 'view-toggle' }, viewButton('grid', 'grid', 'Grid view'), viewButton('list', 'list', 'List view')),
-        el('button', { class: 'btn btn-primary', onclick: () => this.openItemDialog() }, icon('plus', { size: 15 }), 'Add item'),
-        el('button', { class: 'btn', onclick: () => this.openBulkDialog() }, icon('list', { size: 15 }), 'Bulk add')));
+        el('div', { class: 'view-toggle' },
+          viewButton('grid', 'grid', t('Grid view')), viewButton('list', 'list', t('List view'))),
+        el('button', { class: 'btn btn-primary', onclick: () => this.openItemDialog() }, icon('plus', { size: 15 }), t('Add item')),
+        el('button', { class: 'btn', onclick: () => this.openBulkDialog() }, icon('list', { size: 15 }), t('Bulk add'))));
   }
 
   buildGrid(items) {
@@ -323,22 +330,22 @@ export class CashShop {
       thumb,
       el('div', { class: 'item-head' },
         el('div', {},
-          el('div', { class: 'item-title', text: item.itemName || `Item ${item.itemId}` }),
+          el('div', { class: 'item-title', text: item.itemName || t('Item {id}', { id: item.itemId }) }),
           el('div', { class: 'item-sub', text: `ID ${item.itemId} · SN ${item.sn}` })),
-        el('span', { class: `pill ${item.onSale ? 'pill-sale' : 'pill-off'}`, text: item.onSale ? 'On sale' : 'Off' })),
+        el('span', { class: `pill ${item.onSale ? 'pill-sale' : 'pill-off'}`, text: t(item.onSale ? 'On sale' : 'Off') })),
       el('div', { class: 'item-row' }, el('span', { class: 'k', text: '$' }),
         el('span', { class: 'v', text: `${fmt.format(item.price)} NX` })),
       el('div', { class: 'item-row' }, el('span', { class: 'k', text: t('Count') }),
         el('span', { class: 'v', text: fmt.format(item.count) })),
       item.period > 0
-        ? el('div', { class: 'item-row', 'data-tone': 'warn' }, `${item.period} days only`)
+        ? el('div', { class: 'item-row', 'data-tone': 'warn' }, t('{n} days only', { n: item.period }))
         : el('div', { class: 'item-row' }, el('span', { class: 'k', text: t('Duration') }),
             el('span', { class: 'v', text: t('Permanent') })),
       el('div', { class: 'item-actions' },
         el('button', { class: 'btn btn-sm', style: 'flex:1', onclick: () => this.openItemDialog(item) },
-          icon('edit', { size: 14 }), 'Edit'),
+          icon('edit', { size: 14 }), t('Edit')),
         el('button', {
-          class: 'btn btn-sm btn-icon', 'data-tip': 'More',
+          class: 'btn btn-sm btn-icon', 'data-tip': t('More'),
           onclick: (event) => {
             event.stopPropagation();
             const rect = event.currentTarget.getBoundingClientRect();
@@ -378,7 +385,7 @@ export class CashShop {
         return big;
       })()),
       el('div', { style: 'margin-top:8px;text-align:center' },
-        el('div', { style: 'font-weight:700;font-size:var(--fs-13)', text: item.itemName || `Item ${item.itemId}` }),
+        el('div', { style: 'font-weight:700;font-size:var(--fs-13)', text: item.itemName || t('Item {id}', { id: item.itemId }) }),
         el('div', { style: 'font-size:var(--fs-11);color:var(--text-3)',
           text: `${item.itemId} · ${item.category}${item.subCategory ? ' › ' + item.subCategory : ''}` })));
 
@@ -410,18 +417,21 @@ export class CashShop {
         el('td', { text: item.period || '∞' }),
         el('td', {}, el('span', {
           class: `pill ${item.onSale ? 'pill-sale' : 'pill-off'}`,
-          text: item.onSale ? 'Yes' : 'No',
+          text: t(item.onSale ? 'Yes' : 'No'),
         })),
         el('td', {},
-          el('button', { class: 'btn btn-sm btn-ghost', onclick: () => this.openItemDialog(item) }, icon('edit', { size: 14 }), 'Edit'),
-          el('button', { class: 'btn btn-sm btn-icon btn-danger-ghost', 'data-tip': 'Delete',
+          el('button', { class: 'btn btn-sm btn-ghost', onclick: () => this.openItemDialog(item) }, icon('edit', { size: 14 }), t('Edit')),
+          el('button', { class: 'btn btn-sm btn-icon btn-danger-ghost', 'data-tip': t('Delete'),
             onclick: () => this.remove(item) }, icon('trash', { size: 14 })))));
     }
 
     return el('div', { style: 'overflow-x:auto' },
       el('table', { class: 'item-table' },
         el('thead', {}, el('tr', {},
-          ['SN', 'Item ID', 'Name', 'Price', 'Count', 'Period', 'On sale', ''].map((h) => el('th', { text: h })))),
+          ['SN', 'Item ID', 'Name', 'Price', 'Count', 'Period', 'On sale', '']
+            // '#' and the trailing '' are layout, not words: left alone so t()
+            // is never asked for a key that is a symbol or an empty string.
+            .map((h) => el('th', { text: /^\p{L}/u.test(h) ? t(h) : h })))),
         body));
   }
 
@@ -455,11 +465,11 @@ export class CashShop {
     return this.guard(`clone:${item.key}`, async () => {
       try {
         const created = await api.shopClone(this.fileId, item.key, null);
-        toast(`Copied as SN ${created.sn}.`, 'success');
+        toast(t('Copied as SN {sn}.', { sn: created.sn }), 'success');
         this.app.markDirty();
         await this.load();
       } catch (error) {
-        toastError(error, 'Could not duplicate that item');
+        toastError(error, t('Could not duplicate that item'));
       }
     });
   }
@@ -468,15 +478,15 @@ export class CashShop {
     return this.guard(`remove:${item.key}`, async () => {
       const ok = await confirmDialog({
         title: t('Delete this cash shop item?'),
-        message: `Item ${item.itemId} (SN ${item.sn}) will be removed from Commodity.img. ` +
-                 'Nothing is written to disk until you save, and you can undo this.',
+        message: t('Item {id} (SN {sn}) will be removed from Commodity.img. Nothing is written to disk until you save, and you can undo this.',
+          { id: item.itemId, sn: item.sn }),
         confirmLabel: t('Delete item'),
       });
       if (!ok) return;
 
       try {
         await api.shopDelete(this.fileId, [item.key]);
-        toast('Item deleted.', 'success', {
+        toast(t('Item deleted.'), 'success', {
           // The undo restores the entry server-side; without the reload the grid
           // kept showing it as gone.
           action: { label: t('Undo'), run: async () => { await this.app.undo(); await this.load(); } },
@@ -484,7 +494,7 @@ export class CashShop {
         this.app.markDirty();
         await this.load();
       } catch (error) {
-        toastError(error, 'Could not delete that item');
+        toastError(error, t('Could not delete that item'));
       }
     });
   }
@@ -520,24 +530,24 @@ export class CashShop {
     };
 
     const genderSelect = el('select', { name: 'gender' },
-      GENDERS.map(([v, label]) => el('option', { value: v, text: label, selected: (existing?.gender ?? 2) === v })));
+      GENDERS.map(([v, label]) => el('option', { value: v, text: t(label), selected: (existing?.gender ?? 2) === v })));
 
     const form = el('form', { id: 'shop-item-form' },
       el('div', { class: 'form-grid' },
-        field('itemId', 'Item ID *', existing?.itemId, { type: 'number', placeholder: t('e.g. 5000000') }),
-        field('sn', 'Serial (SN) *', defaultSn, { type: 'number', placeholder: t('e.g. 10000001') }),
-        field('price', 'Price (NX)', existing?.price ?? 0, { type: 'number' }),
-        field('count', 'Count', existing?.count ?? 1, { type: 'number' }),
-        field('period', 'Period (days)', existing?.period ?? 0, { type: 'number', hint: '0 = permanent' }),
-        field('bonus', 'Bonus', existing?.bonus ?? 0, { type: 'number' }),
-        field('priority', 'Priority', existing?.priority ?? 0, { type: 'number' }),
+        field('itemId', t('Item ID *'), existing?.itemId, { type: 'number', placeholder: t('e.g. 5000000') }),
+        field('sn', t('Serial (SN) *'), defaultSn, { type: 'number', placeholder: t('e.g. 10000001') }),
+        field('price', t('Price (NX)'), existing?.price ?? 0, { type: 'number' }),
+        field('count', t('Count'), existing?.count ?? 1, { type: 'number' }),
+        field('period', t('Period (days)'), existing?.period ?? 0, { type: 'number', hint: t('0 = permanent') }),
+        field('bonus', t('Bonus'), existing?.bonus ?? 0, { type: 'number' }),
+        field('priority', t('Priority'), existing?.priority ?? 0, { type: 'number' }),
         el('div', { class: 'field' }, el('label', { text: t('Gender') }), genderSelect)),
 
       el('div', { style: 'display:flex;gap:20px;margin:14px 0' },
         el('label', { class: 'check-row' },
-          el('input', { type: 'checkbox', name: 'onSale', checked: existing ? existing.onSale : true }), 'On sale'),
+          el('input', { type: 'checkbox', name: 'onSale', checked: existing ? existing.onSale : true }), t('On sale')),
         el('label', { class: 'check-row' },
-          el('input', { type: 'checkbox', name: 'pbGift', checked: (existing?.pbGift ?? 0) !== 0 }), 'Giftable')),
+          el('input', { type: 'checkbox', name: 'pbGift', checked: (existing?.pbGift ?? 0) !== 0 }), t('Giftable'))),
 
       el('details', {},
         el('summary', {
@@ -545,21 +555,21 @@ export class CashShop {
           text: t('Advanced settings'),
         }),
         el('div', { class: 'form-grid' },
-          field('reqPop', 'Required fame', existing?.reqPop ?? 0, { type: 'number' }),
-          field('reqLev', 'Required level', existing?.reqLev ?? 0, { type: 'number' }),
-          field('class', 'Class', existing?.class ?? 0, { type: 'number' }),
-          field('limit', 'Purchase limit', existing?.limit ?? 0, { type: 'number' }),
+          field('reqPop', t('Required fame'), existing?.reqPop ?? 0, { type: 'number' }),
+          field('reqLev', t('Required level'), existing?.reqLev ?? 0, { type: 'number' }),
+          field('class', t('Class'), existing?.class ?? 0, { type: 'number' }),
+          field('limit', t('Purchase limit'), existing?.limit ?? 0, { type: 'number' }),
           field('pbCash', 'PbCash', existing?.pbCash ?? 0, { type: 'number' }),
           field('pbPoint', 'PbPoint', existing?.pbPoint ?? 0, { type: 'number' }))));
 
     modal({
-      title: editing ? `Edit item ${existing.itemId}` : 'Add new item',
+      title: editing ? t('Edit item {id}', { id: existing.itemId }) : t('Add new item'),
       width: '520px',
       body: form,
       actions: [
         { label: t('Cancel') },
         {
-          label: editing ? 'Save item' : 'Add item',
+          label: editing ? t('Save item') : t('Add item'),
           class: 'btn-primary',
           run: (close) => { this.submitItem(form, existing, close); return false; },
         },
@@ -583,7 +593,7 @@ export class CashShop {
     const itemId = num('itemId');
     const sn = num('sn');
     if (!itemId || !sn) {
-      toast('Item ID and Serial are both required.', 'warning');
+      toast(t('Item ID and Serial are both required.'), 'warning');
       return;
     }
 
@@ -592,8 +602,8 @@ export class CashShop {
     if (clash) {
       const ok = await confirmDialog({
         title: t('That serial number is already used'),
-        message: `SN ${sn} already belongs to item ${clash.itemId}. Two entries sharing a serial ` +
-                 'usually makes both unbuyable in-game. Use it anyway?',
+        message: t('SN {sn} already belongs to item {id}. Two entries sharing a serial '
+          + 'usually makes both unbuyable in-game. Use it anyway?', { sn, id: clash.itemId }),
         confirmLabel: t('Use it anyway'),
       });
       if (!ok) return;
@@ -623,11 +633,11 @@ export class CashShop {
         pbGift: data.get('pbGift') === 'on' ? (existing?.pbGift || 1) : 0,
       });
       close();
-      toast(existing ? 'Item updated.' : `Item ${itemId} added.`, 'success');
+      toast(existing ? t('Item updated.') : t('Item {id} added.', { id: itemId }), 'success');
       this.app.markDirty();
       await this.load();
     } catch (error) {
-      toastError(error, 'Could not save that item');
+      toastError(error, t('Could not save that item'));
     }
   }
 
@@ -652,7 +662,7 @@ export class CashShop {
     const table = el('table', { class: 'bulk-table' },
       el('thead', {}, el('tr', {},
         ['#', 'Item ID *', 'Serial *', 'Price', 'Count', 'Period', 'Bonus', 'Priority', 'Gender', 'On sale', '']
-          .map((h) => el('th', { text: h })))),
+          .map((h) => el('th', { text: /^\p{L}/u.test(h) ? t(h) : h })))),
       body);
 
     const addRow = (seed = {}, after = null) => {
@@ -660,7 +670,7 @@ export class CashShop {
         el('input', {
           type: 'number', name, value: value ?? '', style: width ? `width:${width}` : '',
           'data-required': name === 'itemId' || name === 'sn' ? 'true' : null,
-          placeholder: name === 'itemId' || name === 'sn' ? 'Required' : '',
+          placeholder: name === 'itemId' || name === 'sn' ? t('Required') : '',
         }));
 
       const row = el('tr', {},
@@ -673,11 +683,11 @@ export class CashShop {
         cell('bonus', seed.bonus ?? 0, '62px'),
         cell('priority', seed.priority ?? 0, '62px'),
         el('td', {}, el('select', { name: 'gender' },
-          GENDERS.map(([v, label]) => el('option', { value: v, text: label, selected: v === 2 })))),
+          GENDERS.map(([v, label]) => el('option', { value: v, text: t(label), selected: v === 2 })))),
         el('td', { style: 'text-align:center' }, el('input', { type: 'checkbox', name: 'onSale', checked: true })),
         el('td', {},
           el('button', {
-            class: 'btn btn-sm btn-icon', type: 'button', 'data-tip': 'Duplicate this row',
+            class: 'btn btn-sm btn-icon', type: 'button', 'data-tip': t('Duplicate this row'),
             onclick: () => {
               const values = readRow(row);
               values.sn = takeSn();
@@ -685,7 +695,7 @@ export class CashShop {
             },
           }),
           el('button', {
-            class: 'btn btn-sm btn-icon btn-danger-ghost', type: 'button', 'data-tip': 'Remove this row',
+            class: 'btn btn-sm btn-icon btn-danger-ghost', type: 'button', 'data-tip': t('Remove this row'),
             onclick: () => { row.remove(); renumber(); },
           })));
 
@@ -744,14 +754,14 @@ export class CashShop {
       .map((row) => ({ fileId: this.fileId, ...row }));
 
     if (!items.length) {
-      toast('Nothing to add — fill in at least one Item ID and Serial.', 'warning');
+      toast(t('Nothing to add — fill in at least one Item ID and Serial.'), 'warning');
       return;
     }
 
     const serials = items.map((i) => i.sn);
     const duplicates = serials.filter((sn, i) => serials.indexOf(sn) !== i);
     if (duplicates.length) {
-      toast(`These serials are repeated in your rows: ${[...new Set(duplicates)].join(', ')}`, 'warning');
+      toast(t('These serials are repeated in your rows: {list}', { list: [...new Set(duplicates)].join(', ') }), 'warning');
       return;
     }
 
@@ -761,9 +771,12 @@ export class CashShop {
     const taken = items.filter((row) => this.items.some((existing) => existing.sn === row.sn));
     if (taken.length) {
       const ok = await confirmDialog({
-        title: `${taken.length} serial${taken.length === 1 ? ' is' : 's are'} already in use`,
-        message: `${taken.map((r) => r.sn).slice(0, 8).join(', ')} already belong to items in this shop. ` +
-                 'Two entries sharing a serial usually makes both unbuyable in-game. Add them anyway?',
+        title: taken.length === 1
+          ? t('1 serial is already in use')
+          : t('{n} serials are already in use', { n: taken.length }),
+        message: t('{list} already belong to items in this shop. '
+          + 'Two entries sharing a serial usually makes both unbuyable in-game. Add them anyway?',
+          { list: taken.map((r) => r.sn).slice(0, 8).join(', ') }),
         confirmLabel: t('Add them anyway'),
       });
       if (!ok) return;
@@ -772,11 +785,13 @@ export class CashShop {
     try {
       const created = await api.shopBulk(this.fileId, items);
       close();
-      toast(`Added ${created.length} item${created.length === 1 ? '' : 's'}.`, 'success');
+      toast(created.length === 1
+        ? t('Added 1 item.')
+        : t('Added {n} items.', { n: created.length }), 'success');
       this.app.markDirty();
       await this.load();
     } catch (error) {
-      toastError(error, 'Could not add those items');
+      toastError(error, t('Could not add those items'));
     }
   }
 }
@@ -829,6 +844,8 @@ function wirePaste(input, addRow) {
       previous = row;
       row = row.nextElementSibling;
     }
-    toast(`Pasted ${lines.length} row${lines.length === 1 ? '' : 's'}.`, 'info');
+    toast(lines.length === 1
+      ? t('Pasted 1 row.')
+      : t('Pasted {n} rows.', { n: lines.length }), 'info');
   });
 }

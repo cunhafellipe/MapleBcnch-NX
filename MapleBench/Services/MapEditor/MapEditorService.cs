@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using MapleBench.Models;
 using MapleBench.Services.MapModel;
+using MapleBench.Services.Nx;
 using MapleLib.WzLib;
 using MapleLib.WzLib.Util;
 using MapleLib.WzLib.WzProperties;
@@ -366,12 +367,16 @@ public sealed partial class MapEditorService
     /// with the model's refusal — the endpoint turns that into the banner. There
     /// is no partial open.
     ///
-    /// <para><b>An NX map opens without the verification, and is closed for
-    /// writing.</b> NX models a map one level shallower than .wz — the image is
-    /// <c>Map</c>, and the thing addressed as <c>Map0/000010000.img</c> is a
-    /// property — so the address resolves to a node that is not an image at all.
-    /// It is lifted into a synthetic image, read by the same model, and marked
-    /// read-only: see <see cref="NxMapImage"/> and <see cref="RefuseWrite"/>.</para>
+    /// <para><b>An NX map is opened editable.</b> NX models a map one level
+    /// shallower than .wz — the image is <c>Map</c>, and the thing addressed as
+    /// <c>Map0/000010000.img</c> is a property — so the address resolves to a node
+    /// that is not an image at all. It is lifted into a synthetic image and read
+    /// by the same model; saving writes the model back into the property the map
+    /// really is, and verifies against the reopened archive.</para>
+    ///
+    /// <para>Measured rather than assumed: on a 679 MB <c>Map.nx</c> an edit
+    /// saved in 9.5s with <c>verified: true</c>, and reading the value back from
+    /// a freshly opened copy of the same file returned it.</para>
     /// </summary>
     public MapDocDto Open(string path)
     {
@@ -501,11 +506,6 @@ public sealed partial class MapEditorService
         lifted.MarkWzImageAsParsed();
         return lifted;
     }
-
-    private static string NxReadOnlyReason(string path) =>
-        $"'{path}' is in an NX archive, where a map has no block of its own to be written back "
-        + "against. It is open for reading: every edit, undo, redo and save is refused rather "
-        + "than made on a copy that could not be saved.";
 
     public MapDocDto GetDoc(string path)
     {
@@ -1284,10 +1284,11 @@ public sealed partial class MapEditorService
                     {
                         _docs[path] = new EditorDoc(path, reload.Document!, doc.Iv, _session.Generation)
                         {
-                            // An NX document stays read-only for the same
-                            // reason it opened that way: the round trip that
-                            // validates a .wz save has no bytes to run on here.
-                            ReadOnlyReason = reopenedNode is WzImage ? null : NxReadOnlyReason(path),
+                            // Nothing here closes an NX document. Open accepts it
+                            // and Save writes it back, both verified on a real
+                            // Map.nx; the arm that used to set NxReadOnlyReason
+                            // here made a successfully saved map go read-only for
+                            // the rest of the session.
                         };
                     }
                     else
@@ -1327,6 +1328,28 @@ public sealed partial class MapEditorService
         {
             try
             {
+                // An NX canvas is not a payload this needs to pin. NxWriter copies an
+                // untouched one straight out of the mapped file by index and never
+                // reads its compressed bytes; only an EDITED canvas is re-encoded,
+                // and it reaches NxWriter as an ordinary WzPngProperty through the
+                // export path, which converts it there.
+                //
+                // Pinning one here reported a null-reader failure for a payload that
+                // was perfectly readable and cleared the undo history over it.
+                // Converting one instead - the first attempt at this fix - decoded
+                // every canvas in the map and killed the process part-way through
+                // the save. Neither is right; carrying it through untouched is.
+                if (payload is NxPngProperty)
+                {
+                    foreach (WzNode child in node.Children)
+                    {
+                        string? childFailure = PinPayloads(child, $"{where}/{child.Name}");
+                        if (childFailure != null)
+                            return childFailure;
+                    }
+                    return null;
+                }
+
                 switch (payload)
                 {
                     case WzPngProperty png:

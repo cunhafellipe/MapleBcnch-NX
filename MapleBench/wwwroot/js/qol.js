@@ -403,7 +403,7 @@ export function openFindReplace(app, scopePath) {
                  'font-size:var(--fs-11);line-height:1.5;color:var(--text-2)',
         },
           el('b', { text: t('There are more than {limit} matches.', { limit: fmt.format(LIMIT) }) }),
-          el('span', {}, t(' Replacing now changes the first {shown} and leaves the rest exactly as they are. '
+          el('span', {}, ' ' + t('Replacing now changes the first {shown} and leaves the rest exactly as they are. '
             + 'Narrow the scope to one archive or one branch and run it again, or run this repeatedly until '
             + 'the count comes back under the ceiling.', { shown: fmt.format(data.changed.length) }))));
       }
