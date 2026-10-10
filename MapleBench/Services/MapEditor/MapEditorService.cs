@@ -75,7 +75,7 @@ public sealed partial class MapEditorService
         MapEditCapabilitiesDto dto = new();
         lock (_session.Gate)
         {
-            foreach ((OpenFile file, WzDirectory _, string _) in MapDirectories())
+            foreach ((OpenFile file, WzObject _, string _) in MapRoots())
             {
                 if (!dto.MapArchives.Contains(file.Name))
                     dto.MapArchives.Add(file.Name);
@@ -119,20 +119,23 @@ public sealed partial class MapEditorService
         HashSet<int> seen = new();
         string? q = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
 
-        foreach ((OpenFile file, WzDirectory mapRoot, string rootPath) in MapDirectories())
+        foreach ((OpenFile file, WzObject mapRoot, string rootPath) in MapRoots())
         {
-            foreach (WzDirectory sub in mapRoot.WzDirectories)
+            foreach (WzObject sub in ChildrenOf(mapRoot))
             {
                 // Map0..Map9; anything else at this level is not a map folder.
-                if (sub.Name.Length != 4 || !sub.Name.StartsWith("Map", StringComparison.Ordinal)
-                    || sub.Name[3] is < '0' or > '9')
+                if (sub.Name is not { Length: 4 } subName
+                    || !subName.StartsWith("Map", StringComparison.Ordinal)
+                    || subName[3] is < '0' or > '9')
                     continue;
 
-                string subPath = WzPath.Child(rootPath, sub.Name);
-                foreach (WzImage image in sub.WzImages)
+                string subPath = WzPath.Child(rootPath, subName);
+                foreach (WzObject image in ChildrenOf(sub))
                 {
-                    string stem = image.Name.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
-                        ? image.Name[..^4] : image.Name;
+                    if (image.Name is not { } imageName)
+                        continue;
+                    string stem = imageName.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
+                        ? imageName[..^4] : imageName;
                     if (!int.TryParse(stem, NumberStyles.None, CultureInfo.InvariantCulture, out int id))
                         continue;
                     if (!seen.Add(id))
@@ -149,7 +152,7 @@ public sealed partial class MapEditorService
                     {
                         Id = id,
                         Name = name,
-                        Path = WzPath.Child(subPath, image.Name),
+                        Path = WzPath.Child(subPath, imageName),
                         Source = file.Name,
                     });
                 }
@@ -227,16 +230,16 @@ public sealed partial class MapEditorService
     /// order — the same union-not-pick rule <see cref="MapAssetService"/> was
     /// fixed to follow, because half a library looks exactly like a small client.
     /// </summary>
-    private IEnumerable<(OpenFile File, WzDirectory Directory, string Path)> MapDirectories()
+    private IEnumerable<(OpenFile File, WzObject Root, string Path)> MapRoots()
     {
         List<OpenFile> selected = Ordered(_session.SelectRoleSources("Map")).ToList();
         bool found = false;
         foreach (OpenFile file in selected)
         {
-            foreach ((WzDirectory directory, string path) in MapDirectories(file))
+            foreach ((WzObject root, string path) in MapRoots(file))
             {
                 found = true;
-                yield return (file, directory, path);
+                yield return (file, root, path);
             }
         }
         if (found)
@@ -254,11 +257,11 @@ public sealed partial class MapEditorService
         if (fallback == null)
             yield break;
 
-        foreach ((WzDirectory directory, string path) in MapDirectories(fallback))
-            yield return (fallback, directory, path);
+        foreach ((WzObject root, string path) in MapRoots(fallback))
+            yield return (fallback, root, path);
     }
 
-    private IEnumerable<(WzDirectory Directory, string Path)> MapDirectories(OpenFile file)
+    private IEnumerable<(WzObject Root, string Path)> MapRoots(OpenFile file)
     {
         WzDirectory? root = _session.RoleRoot(file, "Map");
         if (root == null)
@@ -268,13 +271,13 @@ public sealed partial class MapEditorService
         // Map9 directly); others preserve the Map.wz wrapper (Map/Map0..).
         // Detect the shape from the children instead of guessing from the
         // selected folder's name.
-        if (root.WzDirectories.Any(IsMapIdDirectory))
+        if (ChildrenOf(root).Any(IsMapIdDirectory))
         {
             yield return (root, _session.RoleRootPath(file, "Map"));
             yield break;
         }
         string rolePath = _session.RoleRootPath(file, "Map");
-        foreach (WzDirectory match in root.WzDirectories)
+        foreach (WzObject match in ChildrenOf(root))
         {
             if (string.Equals(match.Name, "Map", StringComparison.OrdinalIgnoreCase))
             {
@@ -283,10 +286,30 @@ public sealed partial class MapEditorService
         }
     }
 
-    private static bool IsMapIdDirectory(WzDirectory directory) =>
-        directory.Name.Length == 4
-        && directory.Name.StartsWith("Map", StringComparison.Ordinal)
-        && directory.Name[3] is >= '0' and <= '9';
+    private static bool IsMapIdDirectory(WzObject child) =>
+        child.Name is { Length: 4 } name
+        && name.StartsWith("Map", StringComparison.Ordinal)
+        && name[3] is >= '0' and <= '9';
+
+    /// <summary>
+    /// The logical children of any container, whatever MapleLib class holds them.
+    ///
+    /// <para>A .wz puts map buckets in directories and map images beside them:
+    /// <c>Map/Map0/000000000.img</c> is <c>WzDirectory</c> → <c>WzDirectory</c> →
+    /// <c>WzImage</c>. An NX archive has no directory type at all — every node is a
+    /// property — so the same map is <c>WzImage</c> → <c>WzImageProperty</c> →
+    /// <c>WzImageProperty</c>, and both <c>WzDirectory.WzDirectories</c> and
+    /// <c>WzDirectory.WzImages</c> are empty at every level. A caller that reaches
+    /// for those two collections sees an NX archive with no maps in it at all.</para>
+    ///
+    /// <para>It goes through <see cref="WzSessionService.EnumerateChildren"/>,
+    /// which already carries this rule for the tree endpoints, rather than
+    /// restating the kind switch here. That is deliberate: a second copy would be
+    /// free to drift from the first, and the drift would show up as a picker that
+    /// lists a map and a tree that cannot open it.</para>
+    /// </summary>
+    private IEnumerable<WzObject> ChildrenOf(WzObject container)
+        => _session.EnumerateChildren(container);
 
     private static IEnumerable<OpenFile> Ordered(IEnumerable<OpenFile> files)
         => files

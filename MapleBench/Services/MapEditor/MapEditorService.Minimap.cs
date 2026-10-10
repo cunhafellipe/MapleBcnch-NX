@@ -123,53 +123,86 @@ public sealed partial class MapEditorService
 
         lock (_session.Gate)
         {
-            foreach ((OpenFile _, WzDirectory mapRoot, string rootPath) in MapDirectories())
+            foreach ((OpenFile _, WzObject mapRoot, string rootPath) in MapRoots())
             {
                 scanned = true;
-                foreach (WzDirectory sub in mapRoot.WzDirectories)
+                foreach (WzObject sub in ChildrenOf(mapRoot))
                 {
-                    if (sub.Name.Length != 4 || !sub.Name.StartsWith("Map", StringComparison.Ordinal))
+                    if (sub.Name is not { Length: 4 } subName
+                        || !subName.StartsWith("Map", StringComparison.Ordinal))
                         continue;
-                    foreach (WzImage image in sub.WzImages)
+                    foreach (WzObject child in ChildrenOf(sub))
                     {
-                        string imagePath = WzPath.Child(WzPath.Child(rootPath, sub.Name), image.Name);
+                        if (child.Name is not { } imageName)
+                            continue;
+                        string imagePath = WzPath.Child(WzPath.Child(rootPath, subName), imageName);
                         if (string.Equals(imagePath, selfPath, StringComparison.Ordinal))
                             continue;
 
-                        bool wasParsed = image.Parsed;
+                        bool wasParsed = child is WzImage { Parsed: true };
+                        string? link;
                         try
                         {
-                            if (!image.ParseImage())
-                                continue;
-                            if (image.GetFromPath("miniMap/canvas") is not WzCanvasProperty canvas)
-                                continue;
-                            if (canvas["_outlink"] is not WzStringProperty outlink
-                                || outlink.Value == null
-                                || !outlink.Value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                                continue;
-
-                            count++;
-                            if (sharers.Count < 25)
-                            {
-                                string stem = image.Name.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
-                                    ? image.Name[..^4] : image.Name;
-                                string? name = int.TryParse(stem, out int sharerId)
-                                    ? _strings.GetMapName(sharerId) : null;
-                                sharers.Add(name != null ? $"{stem} ({name})" : stem);
-                            }
+                            link = MinimapCanvasOutlink(child);
                         }
                         finally
                         {
                             // Leave the session as found: unparse only what this
                             // scan parsed, and never an image holding edits.
-                            if (!wasParsed && !image.Changed)
-                                image.UnparseImage();
+                            if (!wasParsed && child is WzImage { Changed: false } stillUnparsed)
+                                stillUnparsed.UnparseImage();
+                        }
+                        if (link is null
+                            || !link.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        count++;
+                        if (sharers.Count < 25)
+                        {
+                            string stem = imageName.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
+                                ? imageName[..^4] : imageName;
+                            string? name = int.TryParse(stem, out int sharerId)
+                                ? _strings.GetMapName(sharerId) : null;
+                            sharers.Add(name != null ? $"{stem} ({name})" : stem);
                         }
                     }
                 }
             }
         }
         return sharers;
+    }
+
+    /// <summary>
+    /// <c>miniMap/canvas/_outlink</c> of a map image, or null when it has none.
+    ///
+    /// <para>The two formats spell the same map differently and the caller must
+    /// not have to care. A .wz map image is a <see cref="WzImage"/> whose
+    /// properties are already parsed once it has been walked; an NX one is a
+    /// <see cref="WzImageProperty"/> three levels down, because NX has no
+    /// directory type and carries its structure as properties. Reading the
+    /// <c>WzImage</c> arm through <c>GetFromPath</c> and the property arm by hand
+    /// keeps one rule — "the outlink string under miniMap/canvas" — rather than
+    /// two that can disagree.</para>
+    ///
+    /// <para>Parsing is the caller's to undo: this runs inside the scan that
+    /// already restores what it parsed.</para>
+    /// </summary>
+    private static string? MinimapCanvasOutlink(WzObject mapImage)
+    {
+        if (mapImage is WzImage image)
+        {
+            if (image.ParseImage() && image.GetFromPath("miniMap/canvas") is WzCanvasProperty canvas
+                && canvas["_outlink"] is WzStringProperty outlink)
+                return outlink.Value;
+            return null;
+        }
+
+        return mapImage is WzImageProperty property
+            && property.WzProperties?.FindByName("miniMap") is WzImageProperty miniMap
+            && miniMap.WzProperties?.FindByName("canvas") is WzImageProperty nxCanvas
+            && nxCanvas.WzProperties?.FindByName("_outlink") is WzStringProperty link
+            ? link.Value
+            : null;
     }
 
     #endregion

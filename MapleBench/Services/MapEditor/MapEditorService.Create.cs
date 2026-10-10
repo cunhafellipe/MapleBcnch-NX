@@ -36,12 +36,16 @@ public sealed partial class MapEditorService
         {
             // Collision check across ALL Map archives — an id that exists
             // anywhere is taken, whichever archive would win the mount race.
-            foreach ((OpenFile file, WzDirectory mapRoot, string rootPath) in MapDirectories())
+            foreach ((OpenFile file, WzObject mapRoot, string rootPath) in MapRoots())
             {
-                foreach (WzDirectory sub in mapRoot.WzDirectories)
+                foreach (WzObject sub in ChildrenOf(mapRoot))
                 {
-                    if (sub.GetImageByName(imageName) != null)
+                    if (!IsMapIdDirectory(sub))
+                        continue;
+                    foreach (WzObject child in ChildrenOf(sub))
                     {
+                        if (!string.Equals(child.Name, imageName, StringComparison.Ordinal))
+                            continue;
                         string existing = WzPath.Child(WzPath.Child(rootPath, sub.Name), imageName);
                         string? name = _strings.GetMapName(id);
                         throw new InvalidOperationException(
@@ -55,25 +59,42 @@ public sealed partial class MapEditorService
             // Land where the client keeps its maps: the mount-order-first archive
             // whose Map/ holds the right Map<digit> folder, else the first that
             // holds any map folder at all.
+            //
+            // Writable means a WzDirectory, and it has to. A .wz and an IMG-folder
+            // mount both store the map in one, and an NX archive stores it as
+            // properties — writing a map into one would mean a second, incompatible
+            // idea of what the file contains, in a format whose whole point is that
+            // it has no directories. NX is refused further down, where the refusal
+            // can say so in a sentence that names the reason.
             (OpenFile File, WzDirectory MapRoot, string RootPath, WzDirectory? Sub)? target = null;
-            foreach ((OpenFile file, WzDirectory mapRoot, string rootPath) in MapDirectories())
+            bool sawNonDirectoryRoot = false;
+            foreach ((OpenFile file, WzObject mapRoot, string rootPath) in MapRoots())
             {
-                WzDirectory? sub = mapRoot.WzDirectories.FirstOrDefault(
-                    d => string.Equals(d.Name, subDirName, StringComparison.OrdinalIgnoreCase));
+                if (mapRoot is not WzDirectory writableRoot)
+                {
+                    sawNonDirectoryRoot = true;
+                    continue;
+                }
+                WzDirectory? sub = ChildrenOf(mapRoot)
+                    .OfType<WzDirectory>()
+                    .FirstOrDefault(d => string.Equals(d.Name, subDirName,
+                        StringComparison.OrdinalIgnoreCase));
                 if (sub != null)
                 {
-                    target = (file, mapRoot, rootPath, sub);
+                    target = (file, writableRoot, rootPath, sub);
                     break;
                 }
-                target ??= mapRoot.WzDirectories.Any(
-                        d => d.Name.Length == 4 && d.Name.StartsWith("Map", StringComparison.Ordinal))
-                    ? (file, mapRoot, rootPath, null)
+                target ??= ChildrenOf(mapRoot).Any(IsMapIdDirectory)
+                    ? (file, writableRoot, rootPath, null)
                     : target;
             }
             if (target == null)
             {
-                throw new InvalidOperationException(
-                    "No open archive holds map images (Map/Map0..Map9). Open the client's Map "
+                // Two different answers, because they have two different fixes.
+                throw new InvalidOperationException(sawNonDirectoryRoot
+                    ? "The only open Map archives are NX, which stores its maps as properties and has "
+                    + "no directory to put a new one in. Open a .wz or an IMG-folder mount to create one."
+                    : "No open archive holds map images (Map/Map0..Map9). Open the client's Map "
                     + "family — copies, never the live client — before creating a map.");
             }
 
