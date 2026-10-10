@@ -15,6 +15,19 @@ public sealed class SweepReportDto
     public int ElapsedMs { get; set; }
     public bool Ran { get; set; }
     public string? Reason { get; set; }
+
+    /// <summary>
+    /// Decoded NX canvas pixels this sweep gave back, in MB.
+    /// </summary>
+    /// <remarks>
+    /// Reported apart from <see cref="ReclaimedMB"/> because it is not the same
+    /// thing: the working set moves for reasons a sweep does not control, and an
+    /// NX session where this is non-zero while ReclaimedMB is zero still
+    /// succeeded. Without it, the only honest-looking answer for an NX session
+    /// was "swept 0, nothing happened", which is what the sweep used to say no
+    /// matter how many pictures had been looked at.
+    /// </remarks>
+    public int NxPixelsFreedMB { get; set; }
 }
 
 /// <summary>
@@ -327,6 +340,20 @@ public sealed class ImageMemoryService
             // arriving during them waited for all three (a cached /api/mob/list
             // took 5.4s to answer).
             GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+
+            // The other half of what a sweep can reclaim. A .wz image is
+            // released whole; an NX image cannot be -- it has no block to be
+            // re-read from, which is the guard in IsReleasable and is not
+            // something to weaken -- so an NX session reported "swept 0" no
+            // matter how much it was holding. What it can release is decoded
+            // canvas pixels, which is derived data sitting in a field and can
+            // be decoded again from the mapping on the next view.
+            long pixelsFreed = Nx.NxPngProperty.ReleaseAllCachedPixels();
+            report.NxPixelsFreedMB = (int)(pixelsFreed / (1024 * 1024));
+            if (pixelsFreed > 0)
+            {
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            }
 
             report.WorkingSetAfterMB = WorkingSetBytes / (1024 * 1024);
             report.ReclaimedMB = Math.Max(0, report.WorkingSetBeforeMB - report.WorkingSetAfterMB);

@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using MapleLib.WzLib;
 using MapleLib.WzLib.WzProperties;
@@ -40,6 +40,19 @@ namespace MapleBench.Services.Nx;
 /// </remarks>
 public sealed class NxPngProperty : WzPngProperty
 {
+    /// <summary>
+    /// Every NX canvas that has decoded pixels, weakly.
+    ///
+    /// The sweep needs to find these without walking the tree: a full NX archive
+    /// is millions of properties and a sweep that visited them all would cost more
+    /// than the memory it reclaimed. Weak references, so a canvas that has been
+    /// closed or collected simply drops out and the list is pruned as it is walked.
+    ///
+    /// Only canvases somebody actually looked at are here, which is the set worth
+    /// reclaiming -- an NX archive's cost is the tree, not the pixels.
+    /// </summary>
+    private static readonly List<WeakReference<NxPngProperty>> Cached = [];
+
     private readonly NxCanvas _canvas;
     private byte[]? _pixels;
 
@@ -58,10 +71,34 @@ public sealed class NxPngProperty : WzPngProperty
     /// <summary>The NX canvas this payload stands for.</summary>
     public NxCanvas Canvas => _canvas;
 
+    /// <summary>Decoded pixels currently held, or 0 when none are.</summary>
+    public int CachedPixelBytes => _pixels?.Length ?? 0;
+
+    /// <summary>
+    /// Drops the decoded pixels, keeping the payload. Returns how many bytes went.
+    /// </summary>
+    /// <remarks>
+    /// Derived data, not the user's work. The bytes came out of the mapped archive
+    /// and go straight back into it; a canvas nobody has edited is identical before
+    /// and after, which is what makes this safe where unparsing a .wz image is not.
+    /// </remarks>
+    internal int ReleaseCachedPixels()
+    {
+        byte[]? pixels = _pixels;
+        if (pixels is null) return 0;
+        _pixels = null;
+        return pixels.Length;
+    }
+
     /// <inheritdoc/>
     public override Bitmap GetBitmap()
     {
-        byte[] pixels = _pixels ??= NxCanvasDecoder.Decode(_canvas);
+        if (_pixels is null)
+        {
+            _pixels = NxCanvasDecoder.Decode(_canvas);
+            lock (Cached) Cached.Add(new WeakReference<NxPngProperty>(this));
+        }
+        byte[] pixels = _pixels;
 
         if (pixels.Length == 0)
         {
@@ -197,6 +234,55 @@ public sealed class NxPngProperty : WzPngProperty
     /// </remarks>
     internal const System.Drawing.Imaging.PixelFormat PixelFormatMode =
         System.Drawing.Imaging.PixelFormat.Format32bppArgb;
+
+    /// <summary>
+    /// Drops every cached NX canvas's pixels. Returns the bytes reclaimed.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to <see cref="ImageMemoryService"/> releasing .wz images,
+    /// which it cannot do for NX at all: an NX image has no block on disk to be
+    /// re-read from, so the sweep's whole-image release is refused by design and
+    /// an NX archive reported "swept 0" forever. What it can release is the decoded
+    /// pixels, and on a canvas-heavy archive that is the part a user notices.
+    /// </remarks>
+    public static long ReleaseAllCachedPixels()
+    {
+        long freed = 0;
+        lock (Cached)
+        {
+            for (int i = Cached.Count - 1; i >= 0; i--)
+            {
+                if (Cached[i].TryGetTarget(out NxPngProperty? canvas))
+                {
+                    freed += canvas.ReleaseCachedPixels();
+                }
+                else
+                {
+                    // Collected: the archive it belonged to is gone.
+                    Cached.RemoveAt(i);
+                }
+            }
+        }
+        return freed;
+    }
+
+    /// <summary>Bytes currently held by every cached NX canvas.</summary>
+    public static long TotalCachedPixelBytes
+    {
+        get
+        {
+            long total = 0;
+            lock (Cached)
+            {
+                foreach (WeakReference<NxPngProperty> entry in Cached)
+                {
+                    if (entry.TryGetTarget(out NxPngProperty? canvas))
+                        total += canvas.CachedPixelBytes;
+                }
+            }
+            return total;
+        }
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static bool TryResolve(object? payload, out Bitmap bitmap)
