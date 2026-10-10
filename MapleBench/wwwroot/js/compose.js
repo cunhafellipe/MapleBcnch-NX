@@ -24,6 +24,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
@@ -125,7 +126,8 @@ export class ComposeSection {
   fromManifest(json) {
     const read = JSON.parse(json);
     if (read.schema !== 'maplebench/composition@1') {
-      throw new Error(`'${read.schema ?? '(no schema)'}' is not a composition manifest this screen understands.`);
+      throw new Error(t('\'{schema}\' is not a composition manifest this screen understands.',
+        { schema: read.schema ?? '(no schema)' }));
     }
     this.m.name = read.name ?? '';
     this.m.base = {
@@ -163,7 +165,7 @@ export class ComposeSection {
       if (assign) assign(info);
       this.save();
     } catch (error) {
-      toastError(error, 'Could not read that folder');
+      toastError(error, t('Could not read that folder'));
     }
     this.render();
   }
@@ -171,7 +173,7 @@ export class ComposeSection {
   async build() {
     const problems = this.problems();
     if (problems.length) {
-      toast(problems[0], 'warn', { title: 'Not built' });
+      toast(problems[0], 'warn', { title: t('Not built') });
       this.render();
       return;
     }
@@ -187,7 +189,7 @@ export class ComposeSection {
       this.poll();
     } catch (error) {
       // A 409 is another build already running — its message says so.
-      toastError(error, 'Could not start the build');
+      toastError(error, t('Could not start the build'));
     }
     this.render();
   }
@@ -240,24 +242,24 @@ export class ComposeSection {
   problems() {
     const problems = [];
     const m = this.m;
-    if (!m.base.folder) problems.push('The base client folder is empty.');
-    if (!m.base.archives.length) problems.push('The base lists no archives, so there is nothing to build from.');
-    if (!m.takes.length) problems.push('There are no takes. A build with nothing to take is a copy, not a composition.');
+    if (!m.base.folder) problems.push(t('The base client folder is empty.'));
+    if (!m.base.archives.length) problems.push(t('The base lists no archives, so there is nothing to build from.'));
+    if (!m.takes.length) problems.push(t('There are no takes. A build with nothing to take is a copy, not a composition.'));
     for (const [i, take] of m.takes.entries()) {
-      if (!take.from) problems.push(`Take ${i + 1} does not say which source it comes from.`);
-      if (!take.kind) problems.push(`Take ${i + 1} has no kind.`);
-      if (!take.into) problems.push(`Take ${i + 1} does not say which archive it lands in.`);
-      if (!(take.paths || '').trim()) problems.push(`Take ${i + 1} lists nothing to take.`);
+      if (!take.from) problems.push(t('Take {n} does not say which source it comes from.', { n: i + 1 }));
+      if (!take.kind) problems.push(t('Take {n} has no kind.', { n: i + 1 }));
+      if (!take.into) problems.push(t('Take {n} does not say which archive it lands in.', { n: i + 1 }));
+      if (!(take.paths || '').trim()) problems.push(t('Take {n} lists nothing to take.', { n: i + 1 }));
     }
     if (!m.output) {
-      problems.push('The output folder is empty. It is never defaulted: a build writes a whole client there.');
+      problems.push(t('The output folder is empty. It is never defaulted: a build writes a whole client there.'));
     }
     const same = (a, b) => a && b && a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase();
     if (same(m.output, m.base.folder)) {
-      problems.push('The output folder is the base itself. The base must stay pristine — pick an empty folder.');
+      problems.push(t('The output folder is the base itself. The base must stay pristine — pick an empty folder.'));
     }
     for (const source of m.sources) {
-      if (same(m.output, source.folder)) problems.push(`The output folder is source '${source.id}' itself.`);
+      if (same(m.output, source.folder)) problems.push(t("The output folder is source '{id}' itself.", { id: source.id }));
     }
     return problems;
   }
@@ -292,12 +294,12 @@ export class ComposeSection {
   head() {
     return el('div', { class: 'compose-head' },
       el('div', {},
-        el('h2', { text: 'Compose a client' }),
+        el('h2', { text: t('Compose a client') }),
         el('p', {
           class: 'compose-sub',
-          text: 'A pristine base plus an ordered list of takes from other versions, built into a NEW '
+          text: t('A pristine base plus an ordered list of takes from other versions, built into a NEW '
               + 'folder with a ledger of what came from where. Re-running rebuilds from the base — it '
-              + 'never layers — and the base and every source are opened read-only.',
+              + 'never layers — and the base and every source are opened read-only.'),
         })));
   }
 
@@ -308,10 +310,10 @@ export class ComposeSection {
     const info = this.folders.get(m.base.folder);
 
     return el('div', { class: 'compose-card' },
-      el('h3', { text: '1 · The base client' }),
+      el('h3', { text: t('1 · The base client') }),
       el('p', {
         class: 'compose-sub',
-        text: 'Every build starts from a byte copy of these archives. The folder is read, never written.',
+        text: t('Every build starts from a byte copy of these archives. The folder is read, never written.'),
       }),
       el('div', { class: 'compose-controls' },
         el('input', {
@@ -326,14 +328,20 @@ export class ComposeSection {
         el('button', {
           class: 'btn',
           onclick: () => this.readBase(),
-          'data-tip': 'List the .wz archives in this folder. Opens nothing.',
-        }, icon('folderOpen', { size: 15 }), 'Read folder')),
+          'data-tip': t('List the .wz archives in this folder. Opens nothing.'),
+        }, icon('folderOpen', { size: 15 }), t('Read folder'))),
       info ? this.archivePicker(info, m.base.archives, (names) => { m.base.archives = names; this.save(); }) : null,
       info?.hasLedger
-        ? el('p', { class: 'compose-note', text: 'This folder carries a composition ledger — it is itself a built output.' })
+        ? el('p', { class: 'compose-note', text: t('This folder carries a composition ledger — it is itself a built output.') })
         : null,
       m.base.archives.length
-        ? el('p', { class: 'compose-dim', text: `${m.base.archives.length} archive${m.base.archives.length === 1 ? '' : 's'} in the base — these are what the output will contain.` })
+        ? el('p', {
+            class: 'compose-dim',
+            text: t(m.base.archives.length === 1
+              ? '{n} archive in the base — these are what the output will contain.'
+              : '{n} archives in the base — these are what the output will contain.',
+              { n: m.base.archives.length }),
+          })
         : null);
   }
 
@@ -360,7 +368,7 @@ export class ComposeSection {
         el('code', { text: archive.name }),
         el('span', { class: 'compose-dim', text: gb(archive.bytes) }))),
       info.archives.length === 0
-        ? el('p', { class: 'compose-dim', text: 'No .wz archives in this folder.' })
+        ? el('p', { class: 'compose-dim', text: t('No .wz archives in this folder.') })
         : null);
   }
 
@@ -370,10 +378,10 @@ export class ComposeSection {
     const m = this.m;
 
     return el('div', { class: 'compose-card' },
-      el('h3', { text: '2 · The donors' }),
+      el('h3', { text: t('2 · The donors') }),
       el('p', {
         class: 'compose-sub',
-        text: 'The clients content is taken from. Each gets a short handle the takes name it by.',
+        text: t('The clients content is taken from. Each gets a short handle the takes name it by.'),
       }),
       ...m.sources.map((source, index) => this.sourceRow(source, index)),
       el('button', {
@@ -383,7 +391,7 @@ export class ComposeSection {
           this.save();
           this.render();
         },
-      }, icon('plus', { size: 15 }), 'Add a donor'));
+      }, icon('plus', { size: 15 }), t('Add a donor')));
   }
 
   sourceRow(source, index) {
@@ -393,11 +401,11 @@ export class ComposeSection {
       el('div', { class: 'compose-controls' },
         el('input', {
           class: 'input compose-id', type: 'text', value: source.id, placeholder: 'v233',
-          'data-tip': 'The handle takes use. Unique within the manifest.',
+          'data-tip': t('The handle takes use. Unique within the manifest.'),
           oninput: (event) => { source.id = event.target.value.trim(); this.save(); },
         }),
         el('input', {
-          class: 'input compose-label', type: 'text', value: source.label, placeholder: 'label (optional)',
+          class: 'input compose-label', type: 'text', value: source.label, placeholder: t('label (optional)'),
           oninput: (event) => { source.label = event.target.value; this.save(); },
         }),
         el('input', {
@@ -407,9 +415,9 @@ export class ComposeSection {
           onkeydown: (event) => { if (event.key === 'Enter') this.readSource(source); },
         }),
         el('button', { class: 'btn', onclick: () => this.readSource(source) },
-          icon('folderOpen', { size: 15 }), 'Read'),
+          icon('folderOpen', { size: 15 }), t('Read')),
         el('button', {
-          class: 'btn', 'data-tip': 'Remove this donor from the manifest.',
+          class: 'btn', 'data-tip': t('Remove this donor from the manifest.'),
           onclick: () => { this.m.sources.splice(index, 1); this.save(); this.render(); },
         }, icon('trash', { size: 15 }))),
       info ? this.archivePicker(info, source.archives, (names) => { source.archives = names; this.save(); }) : null);
@@ -427,11 +435,11 @@ export class ComposeSection {
     const m = this.m;
 
     return el('div', { class: 'compose-card' },
-      el('h3', { text: '3 · The takes, in order' }),
+      el('h3', { text: t('3 · The takes, in order') }),
       el('p', {
         class: 'compose-sub',
-        text: 'One contribution each: what to take, from which donor, into which archive. Order is '
-            + 'meaningful — a later take may overwrite an earlier one, and the ledger records that it did.',
+        text: t('One contribution each: what to take, from which donor, into which archive. Order is '
+            + 'meaningful — a later take may overwrite an earlier one, and the ledger records that it did.'),
       }),
       el('datalist', { id: 'compose-kinds' }, ...KINDS.map((kind) => el('option', { value: kind }))),
       ...m.takes.map((take, index) => this.takeRow(take, index)),
@@ -445,7 +453,7 @@ export class ComposeSection {
           this.save();
           this.render();
         },
-      }, icon('plus', { size: 15 }), 'Add a take'));
+      }, icon('plus', { size: 15 }), t('Add a take')));
   }
 
   takeRow(take, index) {
@@ -461,39 +469,39 @@ export class ComposeSection {
       el('div', { class: 'compose-take-head' },
         el('span', { class: 'compose-take-n', text: `#${index + 1}` }),
         select(take.from,
-          [['', '(source…)'], ...this.m.sources.map((source) => [source.id, source.id])],
+          [['', t('(source…)')], ...this.m.sources.map((source) => [source.id, source.id])],
           (event) => { take.from = event.target.value; this.save(); this.renderProblems(); },
-          'Which donor this comes from'),
+          t('Which donor this comes from')),
         el('input', {
-          class: 'input compose-kind', type: 'text', value: take.kind, placeholder: 'kind (mob, map…)',
+          class: 'input compose-kind', type: 'text', value: take.kind, placeholder: t('kind (mob, map…)'),
           list: 'compose-kinds',
           oninput: (event) => { take.kind = event.target.value.trim(); this.save(); this.renderProblems(); },
         }),
-        el('span', { class: 'compose-dim', text: 'into' }),
+        el('span', { class: 'compose-dim', text: t('into') }),
         select(take.into,
-          [['', '(archive…)'], ...this.m.base.archives.map((name) => [name, name])],
+          [['', t('(archive…)')], ...this.m.base.archives.map((name) => [name, name])],
           (event) => { take.into = event.target.value; this.save(); this.renderProblems(); },
-          'The output archive this lands in'),
-        el('label', { class: 'compose-flag', 'data-tip': 'Replace what the target already holds under these names. Off, the target\'s own content wins and the refusal is recorded.' },
+          t('The output archive this lands in')),
+        el('label', { class: 'compose-flag', 'data-tip': t('Replace what the target already holds under these names. Off, the target\'s own content wins and the refusal is recorded.') },
           el('input', {
             type: 'checkbox', checked: take.overwrite ? 'checked' : undefined,
             onchange: (event) => { take.overwrite = event.target.checked; this.save(); },
           }),
-          el('span', { text: 'overwrite' })),
+          el('span', { text: t('overwrite') })),
         el('button', {
-          class: 'btn', 'data-tip': 'Remove this take. Rebuilding without it IS the undo.',
+          class: 'btn', 'data-tip': t('Remove this take. Rebuilding without it IS the undo.'),
           onclick: () => { this.m.takes.splice(index, 1); this.save(); this.render(); },
         }, icon('trash', { size: 15 }))),
       el('textarea', {
         class: 'input compose-paths',
         rows: Math.max(2, (take.paths || '').split('\n').length),
-        placeholder: 'Archive-relative paths, one per line:\nMob.wz/8800100.img',
+        placeholder: t('Archive-relative paths, one per line:\nMob.wz/8800100.img'),
         spellcheck: 'false',
         oninput: (event) => { take.paths = event.target.value; this.save(); this.renderProblems(); },
       }, take.paths || ''),
       el('input', {
         class: 'input compose-note-input', type: 'text', value: take.note,
-        placeholder: 'why this take exists (carried into the ledger)',
+        placeholder: t('why this take exists (carried into the ledger)'),
         oninput: (event) => { take.note = event.target.value; this.save(); },
       }));
   }
@@ -504,7 +512,7 @@ export class ComposeSection {
     if (!this.showJson) {
       return el('div', { class: 'compose-card compose-muted' },
         el('button', { class: 'btn', onclick: () => { this.showJson = true; this.render(); } },
-          icon('file', { size: 15 }), 'Show the manifest as JSON'));
+          icon('file', { size: 15 }), t('Show the manifest as JSON')));
     }
 
     const area = el('textarea', {
@@ -512,26 +520,26 @@ export class ComposeSection {
     }, JSON.stringify(this.manifest(), null, 2));
 
     return el('div', { class: 'compose-card compose-muted' },
-      el('h3', { text: 'The manifest, as the document it is' }),
+      el('h3', { text: t('The manifest, as the document it is') }),
       el('p', {
         class: 'compose-sub',
-        text: 'Editable. "Use this JSON" replaces the form above with what is pasted here — the manifest '
-            + 'is the source of truth, the form is a view of it.',
+        text: t('Editable. "Use this JSON" replaces the form above with what is pasted here — the manifest '
+            + 'is the source of truth, the form is a view of it.'),
       }),
       area,
       el('div', { class: 'compose-controls' },
         el('button', {
           class: 'btn',
           onclick: () => {
-            try { this.fromManifest(area.value); toast('Manifest loaded'); this.render(); }
-            catch (error) { toastError(error, 'Not a manifest this screen can read'); }
+            try { this.fromManifest(area.value); toast(t('Manifest loaded')); this.render(); }
+            catch (error) { toastError(error, t('Not a manifest this screen can read')); }
           },
-        }, 'Use this JSON'),
+        }, t('Use this JSON')),
         el('button', {
           class: 'btn',
-          onclick: () => { navigator.clipboard?.writeText(area.value); toast('Manifest copied'); },
-        }, 'Copy'),
-        el('button', { class: 'btn', onclick: () => { this.showJson = false; this.render(); } }, 'Hide')));
+          onclick: () => { navigator.clipboard?.writeText(area.value); toast(t('Manifest copied')); },
+        }, t('Copy')),
+        el('button', { class: 'btn', onclick: () => { this.showJson = false; this.render(); } }, t('Hide'))));
   }
 
   /* ---- output + build -------------------------------------------------- */
@@ -546,33 +554,33 @@ export class ComposeSection {
     this.renderProblems();
 
     return el('div', { class: 'compose-card' },
-      el('h3', { text: '4 · Build' }),
+      el('h3', { text: t('4 · Build') }),
       el('p', {
         class: 'compose-sub',
-        text: 'The output folder gets a full copy of every base archive with the takes applied, plus '
+        text: t('The output folder gets a full copy of every base archive with the takes applied, plus '
             + 'composition-ledger.json saying what came from where. It must be empty, or a folder this '
-            + 'tool built before. It is deliberately never defaulted.',
+            + 'tool built before. It is deliberately never defaulted.'),
       }),
       el('div', { class: 'compose-controls' },
         el('input', {
           class: 'input compose-folder',
           type: 'text',
           value: this.m.output,
-          placeholder: 'an empty folder for the composed client',
+          placeholder: t('an empty folder for the composed client'),
           spellcheck: 'false',
           oninput: (event) => { this.m.output = event.target.value.trim(); this.save(); this.renderProblems(); },
         }),
-        el('label', { class: 'compose-flag', 'data-tip': 'Record a content hash for every node that lands. A second full parse of everything that moved — slower, stronger ledger.' },
+        el('label', { class: 'compose-flag', 'data-tip': t('Record a content hash for every node that lands. A second full parse of everything that moved — slower, stronger ledger.') },
           el('input', {
             type: 'checkbox', checked: this.m.hashParts ? 'checked' : undefined,
             onchange: (event) => { this.m.hashParts = event.target.checked; this.save(); },
           }),
-          el('span', { text: 'hash parts' })),
+          el('span', { text: t('hash parts') })),
         el('button', {
           class: 'btn btn-primary',
-          'data-tip': 'Copies the base, applies the takes, saves, then verifies the saved files. Refuses with the reason when the manifest is not ready.',
+          'data-tip': t('Copies the base, applies the takes, saves, then verifies the saved files. Refuses with the reason when the manifest is not ready.'),
           onclick: () => this.build(),
-        }, icon('play', { size: 15 }), 'Build')),
+        }, icon('play', { size: 15 }), t('Build'))),
       this.problemsHost);
   }
 
@@ -594,25 +602,26 @@ export class ComposeSection {
       el('div', { class: 'compose-bar' }, el('div', { class: 'compose-bar-fill', style: `width:${share}%` })),
       el('p', {
         class: 'compose-sub',
-        text: `${p.takesDone} of ${p.takesTotal} takes · ${p.seconds.toFixed(0)}s · building into ${p.output ?? ''}`,
+        text: t('{done} of {total} takes · {s}s · building into {output}',
+            { done: p.takesDone, total: p.takesTotal, s: p.seconds.toFixed(0), output: p.output ?? '' }),
       }),
       el('button', {
         class: 'btn',
         onclick: () => this.cancel(),
-        'data-tip': 'Stops the build and discards the half-built output. The base and sources are untouched.',
-      }, 'Stop'));
+        'data-tip': t('Stops the build and discards the half-built output. The base and sources are untouched.'),
+      }, t('Stop')));
   }
 
   failure() {
     return el('div', { class: 'compose-card compose-failed' },
-      el('h3', { text: 'The build stopped' }),
-      el('p', { class: 'compose-sub', text: this.progress.error ?? 'No reason was reported.' }));
+      el('h3', { text: t('The build stopped') }),
+      el('p', { class: 'compose-sub', text: this.progress.error ?? t('No reason was reported.') }));
   }
 
   cancelled() {
     return el('div', { class: 'compose-card compose-muted' },
-      el('h3', { text: 'Cancelled' }),
-      el('p', { class: 'compose-sub', text: this.progress.detail ?? 'The build was stopped.' }));
+      el('h3', { text: t('Cancelled') }),
+      el('p', { class: 'compose-sub', text: this.progress.detail ?? t('The build was stopped.') }));
   }
 
   /* ---- the finished build ---------------------------------------------- */
@@ -629,16 +638,17 @@ export class ComposeSection {
     },
       el('h3', {
         text: outcome === 'Complete'
-          ? `Complete — ${result.outputFolder}`
+          ? t('Complete — {folder}', { folder: result.outputFolder })
           : outcome === 'Refused'
-            ? 'Refused — nothing was written'
-            : `Partial — ${result.outputFolder} is missing a contribution`,
+            ? t('Refused — nothing was written')
+            : t('Partial — {folder} is missing a contribution', { folder: result.outputFolder }),
       }),
       outcome === 'Refused'
         ? el('pre', { class: 'compose-refusal' }, el('code', { text: result.refusal ?? '' }))
         : el('p', {
             class: 'compose-sub',
-            text: `${(ledger.takes ?? []).length} takes · ledger digest ${shortHash(result.digest)} · ${result.seconds.toFixed(1)}s`,
+            text: t('{n} takes · ledger digest {digest} · {s}s',
+                { n: (ledger.takes ?? []).length, digest: shortHash(result.digest), s: result.seconds.toFixed(1) }),
           }));
 
     if (outcome === 'Refused') return [banner];
@@ -646,15 +656,15 @@ export class ComposeSection {
     const archives = el('div', { class: 'compose-card' },
       el('h3', {
         text: verification.ran
-          ? 'Verified on the saved files, read back off disk'
-          : 'NOT verified — treat the output as unproven',
+          ? t('Verified on the saved files, read back off disk')
+          : t('NOT verified — treat the output as unproven'),
       }),
       el('table', { class: 'table compose-table' },
         el('thead', {}, el('tr', {},
-          el('th', { text: 'Archive' }), el('th', { text: 'SHA-256' }),
-          el('th', { class: 'num', text: 'Bytes' }),
-          el('th', { class: 'num', text: 'Landings checked' }),
-          el('th', { class: 'num', text: 'Missing' }))),
+          el('th', { text: t('Archive') }), el('th', { text: 'SHA-256' }),
+          el('th', { class: 'num', text: t('Bytes') }),
+          el('th', { class: 'num', text: t('Landings checked') }),
+          el('th', { class: 'num', text: t('Missing') }))),
         el('tbody', {}, ...(verification.archives ?? []).map((archive) => el('tr', {},
           el('td', {}, el('code', { text: archive.name })),
           el('td', {}, el('code', { 'data-tip': archive.sha256, text: shortHash(archive.sha256) })),
@@ -669,7 +679,7 @@ export class ComposeSection {
 
     const notes = (ledger.notes ?? []).length
       ? el('div', { class: 'compose-card compose-muted' },
-          el('h3', { text: 'Notes on the whole build' }),
+          el('h3', { text: t('Notes on the whole build') }),
           el('ul', {}, ...ledger.notes.map((note) => el('li', { text: note }))))
       : null;
 
@@ -684,12 +694,16 @@ export class ComposeSection {
 
     return el('div', { class: 'compose-card compose-muted' },
       el('h3', {
-        text: `Take ${take.sequence} · ${take.kind} from ${take.source?.label ?? take.source?.id ?? '?'} `
-            + `into ${take.into} — ${take.written} written, ${take.failed} failed, ${take.skipped} skipped`,
+        text: t('Take {n} · {kind} from {source} into {archive} — {written} written, {failed} failed, '
+            + '{skipped} skipped',
+            { n: take.sequence, kind: take.kind, source: take.source?.label ?? take.source?.id ?? '?',
+              archive: take.into, written: take.written, failed: take.failed, skipped: take.skipped }),
       }),
       took.length
         ? el('details', {},
-            el('summary', { text: `${took.length} part${took.length === 1 ? '' : 's'} landed` }),
+            el('summary', { text: took.length === 1
+                ? t('{n} part landed', { n: took.length })
+                : t('{n} parts landed', { n: took.length }) }),
             el('ul', { class: 'compose-parts' },
               ...took.slice(0, cap).map((part) => el('li', {},
                 el('code', { text: part.from ?? '' }),
@@ -697,24 +711,24 @@ export class ComposeSection {
                 el('code', { text: part.to ?? '' }),
                 part.contentHash ? el('span', { class: 'compose-dim', text: ` ${shortHash(part.contentHash)}` }) : null)),
               took.length > cap
-                ? el('li', { class: 'compose-dim', text: `…and ${took.length - cap} more. The full list is in composition-ledger.json beside the output.` })
+                ? el('li', { class: 'compose-dim', text: t('…and {n} more. The full list is in composition-ledger.json beside the output.', { n: took.length - cap }) })
                 : null))
-        : el('p', { class: 'compose-dim', text: 'Nothing landed — everything this take wanted was already there.' }),
+        : el('p', { class: 'compose-dim', text: t('Nothing landed — everything this take wanted was already there.') }),
       renamed.length
         ? el('details', {},
-            el('summary', { text: `${renamed.length} landed under a different name` }),
+            el('summary', { text: t('{n} landed under a different name', { n: renamed.length }) }),
             el('ul', { class: 'compose-parts' }, ...renamed.map((rename) => el('li', {},
               el('code', { text: rename.from }), el('span', { text: ' → ' }),
               el('code', { text: rename.to }), el('span', { class: 'compose-dim', text: ` — ${rename.why}` })))))
         : null,
       refused.length
         ? el('details', {},
-            el('summary', { text: `${refused.length} not carried, each with its reason` }),
+            el('summary', { text: t('{n} not carried, each with its reason', { n: refused.length }) }),
             el('ul', { class: 'compose-parts' }, ...refused.slice(0, cap).map((refusal) => el('li', {},
               el('span', { class: 'compose-refclass', text: refusal.class }),
               el('code', { text: ` ${refusal.what}` }),
               el('span', { class: 'compose-dim', text: ` — ${refusal.why}` }))),
-              refused.length > cap ? el('li', { class: 'compose-dim', text: `…and ${refused.length - cap} more, in the ledger file.` }) : null))
+              refused.length > cap ? el('li', { class: 'compose-dim', text: t('…and {n} more, in the ledger file.', { n: refused.length - cap }) }) : null))
         : null);
   }
 
@@ -736,31 +750,33 @@ export class ComposeSection {
     return el('div', { class: 'compose-card compose-compare', 'data-same': allSame ? 'true' : 'false' },
       el('h3', {
         text: allSame
-          ? 'Built twice, byte-identical'
-          : 'The last two builds DIFFER',
+          ? t('Built twice, byte-identical')
+          : t('The last two builds DIFFER'),
       }),
       el('p', {
         class: 'compose-sub',
         text: allSame
-          ? `The last two completed builds (${a.output} · ${b.output}) produced archives with identical `
-            + 'SHA-256s and ledgers with the same digest. Same inputs, same bytes — the reproducibility claim, held.'
-          : 'A rebuild that differs means something read a clock, a hash seed or a dictionary order into the '
-            + 'file — or the inputs changed. The rows below say which archives moved.',
+          ? t('The last two completed builds ({a} · {b}) produced archives with identical '
+            + 'SHA-256s and ledgers with the same digest. Same inputs, same bytes — the reproducibility claim, held.',
+            { a: a.output, b: b.output })
+          : t('A rebuild that differs means something read a clock, a hash seed or a dictionary order into the '
+            + 'file — or the inputs changed. The rows below say which archives moved.'),
       }),
       el('table', { class: 'table compose-table' },
         el('thead', {}, el('tr', {},
-          el('th', { text: 'Archive' }),
-          el('th', { text: `build @ ${a.when}` }),
-          el('th', { text: `build @ ${b.when}` }),
-          el('th', { text: 'Same bytes' }))),
+          el('th', { text: t('Archive') }),
+          el('th', { text: t('build @ {when}', { when: a.when }) }),
+          el('th', { text: t('build @ {when}', { when: b.when }) }),
+          el('th', { text: t('Same bytes') }))),
         el('tbody', {}, ...rows.map((row) => el('tr', {},
           el('td', {}, el('code', { text: row.name })),
-          el('td', {}, el('code', { 'data-tip': row.left?.sha256, text: shortHash(row.left?.sha256) || '(absent)' })),
-          el('td', {}, el('code', { 'data-tip': row.right?.sha256, text: shortHash(row.right?.sha256) || '(absent)' })),
-          el('td', { class: row.same ? 'compose-good' : 'compose-bad', text: row.same ? 'identical' : 'DIFFERENT' }))))),
+          el('td', {}, el('code', { 'data-tip': row.left?.sha256, text: shortHash(row.left?.sha256) || t('(absent)') })),
+          el('td', {}, el('code', { 'data-tip': row.right?.sha256, text: shortHash(row.right?.sha256) || t('(absent)') })),
+          el('td', { class: row.same ? 'compose-good' : 'compose-bad', text: row.same ? t('identical') : t('DIFFERENT') }))))),
       el('p', {
         class: 'compose-dim',
-        text: `Ledger digests: ${shortHash(a.digest)} vs ${shortHash(b.digest)} — ${ledgersMatch ? 'equal' : 'NOT equal'}.`,
+        text: t('Ledger digests: {a} vs {b} — {verdict}.',
+            { a: shortHash(a.digest), b: shortHash(b.digest), verdict: ledgersMatch ? t('equal') : t('NOT equal') }),
       }));
   }
 }

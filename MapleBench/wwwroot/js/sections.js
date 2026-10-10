@@ -14,6 +14,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, busyPanel, replayMotion } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
@@ -102,13 +103,13 @@ export class Sections {
      */
     this.stages = new Map(REAL.map((id) => [id, el('div', { class: 'stage-body' })]));
 
-    this.listHost = el('nav', { class: 'sec-list', 'aria-label': 'Editors' });
+    this.listHost = el('nav', { class: 'sec-list', 'aria-label': t('Editors') });
     this.stageHost = el('div', { class: 'sec-main' }, ...this.stages.values());
     this.overview = el('div', { class: 'editors-empty' }, emptyState(
-      'folderOpen', 'Open a client to use Editors',
-      'Editors become available from the archives in the client you open.',
+      'folderOpen', t('Open a client to use Editors'),
+      t('Editors become available from the archives in the client you open.'),
       el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
-        icon('folderOpen', { size: 15 }), 'Open client')));
+        icon('folderOpen', { size: 15 }), t('Open client'))));
     this.stageHost.prepend(this.overview);
     this.entries = new Map();
     this.foldButton = null;
@@ -142,7 +143,8 @@ export class Sections {
     // the section the user was in, rather than leaving the workspace on screen
     // with nothing mounted in it.
     if (section?.soon) {
-      toast(`${section.label} is not built yet — ${section.blurb}`, 'info', { title: 'Coming soon' });
+      toast(t('{section} is not built yet — {what}', { section: t(section.label), what: t(section.blurb) }),
+        'info', { title: t('Coming soon') });
       section = SECTIONS.find((s) => s.id === this.active);
     }
 
@@ -191,22 +193,22 @@ export class Sections {
         onclick: () => this.toggleNavigation(),
       }, icon('chevronRight', { size: 15 }));
       this.listHost.append(el('div', { class: 'sec-list-head' },
-        el('div', { class: 'sec-list-title', text: 'Editors' }),
+        el('div', { class: 'sec-list-title', text: t('Editors') }),
         this.foldButton));
 
       for (const section of SECTIONS) {
         const state = el('span', { class: 'sec-state' });
         const entry = el('button', {
           class: 'sec-item',
-          'aria-label': section.label,
+          'aria-label': t(section.label),
           'data-tip-placement': 'right',
           onclick: section.soon ? null : () => this.open(section.id),
         },
           el('span', { class: 'sec-glyph' }, icon(section.icon, { size: 16 })),
           el('span', { class: 'sec-body' },
             el('span', { class: 'sec-head' },
-              el('span', { class: 'sec-label', text: section.label }),
-              section.soon ? el('span', { class: 'sec-chip', text: 'Coming soon' }) : null,
+              el('span', { class: 'sec-label', text: t(section.label) }),
+              section.soon ? el('span', { class: 'sec-chip', text: t('Coming soon') }) : null,
               state)));
         this.entries.set(section.id, { entry, state });
         this.listHost.append(entry);
@@ -238,8 +240,8 @@ export class Sections {
       refs.entry.dataset.active = active ? 'true' : 'false';
       refs.entry.setAttribute('aria-current', active ? 'true' : 'false');
       refs.entry.setAttribute('data-tip', [
-        section.blurb,
-        hasClient ? this.noteFor(section, status) : `Requires ${section.archive}`,
+        t(section.blurb),
+        hasClient ? this.noteFor(section, status) : t('Requires {archive}', { archive: section.archive }),
       ].filter(Boolean).join(' · '));
       refs.entry.disabled = !!section.soon;
       clear(refs.state);
@@ -247,9 +249,10 @@ export class Sections {
       else if (status.state === 'error') refs.state.append(el('span', { class: 'sec-dot', 'data-state': 'error' }));
     }
 
-    this.foldButton.setAttribute('aria-label', this.navCollapsed ? 'Expand Editors navigation' : 'Collapse Editors navigation');
+    this.foldButton.setAttribute('aria-label',
+      this.navCollapsed ? t('Expand Editors navigation') : t('Collapse Editors navigation'));
     this.foldButton.setAttribute('aria-expanded', this.navCollapsed ? 'false' : 'true');
-    this.foldButton.setAttribute('data-tip', this.navCollapsed ? 'Expand Editors' : 'Collapse Editors');
+    this.foldButton.setAttribute('data-tip', this.navCollapsed ? t('Expand Editors') : t('Collapse Editors'));
   }
   toggleNavigation() {
     this.navCollapsed = !this.navCollapsed;
@@ -260,12 +263,12 @@ export class Sections {
 
   /** The one line under a section saying which archive it needs and whether it is open. */
   noteFor(section, status) {
-    if (section.soon) return `will need ${section.archive}`;
+    if (section.soon) return t('will need {archive}', { archive: section.archive });
     switch (status.state) {
-      case 'ready': return status.note ?? `${section.archive} open`;
-      case 'missing': return status.note ?? `needs ${section.archive} — not open`;
-      case 'error': return `could not check — ${status.note}`;
-      default: return `needs ${section.archive} — checking…`;
+      case 'ready': return status.note ?? t('{archive} open', { archive: section.archive });
+      case 'missing': return status.note ?? t('needs {archive} — not open', { archive: section.archive });
+      case 'error': return t('could not check — {what}', { what: status.note });
+      default: return t('needs {archive} — checking…', { archive: section.archive });
     }
   }
 
@@ -295,17 +298,19 @@ export class Sections {
       const named = this.openArchive(/^mob/i);
       set('mobs', mobs.value.available ? 'ready' : 'missing',
         mobs.value.available
-          ? `${named} open${mobs.value.names ? '' : ' · String.wz is not, so mobs have no names'}`
+          ? t('{archive} open', { archive: named })
+            + (mobs.value.names ? '' : t(' · String.wz is not, so mobs have no names'))
           : undefined);
     } else {
-      set('mobs', 'error', mobs.reason?.message ?? 'no answer');
+      set('mobs', 'error', mobs.reason?.message ?? t('no answer'));
     }
 
     if (database.status === 'fulfilled') {
       set('database', database.value.available ? 'ready' : 'missing',
-        database.value.available ? `${this.openArchive(/^string/i)} open` : undefined);
+        database.value.available
+          ? t('{archive} open', { archive: this.openArchive(/^string/i) }) : undefined);
     } else {
-      set('database', 'error', database.reason?.message ?? 'no answer');
+      set('database', 'error', database.reason?.message ?? t('no answer'));
     }
 
     // Each of these answers exactly "can this section work right now?", so the
@@ -313,36 +318,37 @@ export class Sections {
     // asks for -- a split String001.wz should not be reported as "String.wz".
     const capability = (id, settled, pattern, extra) => {
       if (settled.status !== 'fulfilled') {
-        set(id, 'error', settled.reason?.message ?? 'no answer');
+        set(id, 'error', settled.reason?.message ?? t('no answer'));
         return;
       }
       const available = settled.value?.available === true;
       const source = id === 'mapedit' && settled.value?.mapArchives?.length
         ? (settled.value.mapArchives.length === 1
           ? settled.value.mapArchives[0]
-          : `${settled.value.mapArchives.length} archives`)
+          : t('{n} archives', { n: settled.value.mapArchives.length }))
         : this.openArchive(pattern);
       set(id, available ? 'ready' : 'missing',
-        available ? `${source} open${extra?.(settled.value) ?? ''}` : undefined);
+        available ? t('{archive} open', { archive: source }) + (extra?.(settled.value) ?? '') : undefined);
     };
 
     capability('skills', skills, /^skill/i,
       // Skill names live in String.wz, so a skill list without it is numbers.
-      (value) => (value.names ? '' : ' · String.wz is not, so skills have no names'));
+      (value) => (value.names ? '' : t(' · String.wz is not, so skills have no names')));
     capability('npcs', npcs, /^npc/i,
-      (value) => (value.names ? '' : ' · String.wz is not, so NPCs have no names'));
+      (value) => (value.names ? '' : t(' · String.wz is not, so NPCs have no names')));
     capability('strings', strings, /^string/i);
     capability('mapedit', mapedit, /^map/i,
       // Map names live in String.wz; the map picker shows bare ids without it.
-      (value) => (value.names ? '' : ' · String.wz is not, so maps have no names'));
+      (value) => (value.names ? '' : t(' · String.wz is not, so maps have no names')));
 
     if (shop.status === 'fulfilled') {
       this.cashShopSourceId = shop.value.source?.id ?? null;
       const source = this.cashShopFile();
-      set('cashshop', source ? 'ready' : 'missing', source ? `${source.name} open` : undefined);
+      set('cashshop', source ? 'ready' : 'missing',
+        source ? t('{archive} open', { archive: source.name }) : undefined);
     } else {
       this.cashShopSourceId = null;
-      set('cashshop', 'error', shop.reason?.message ?? 'no answer');
+      set('cashshop', 'error', shop.reason?.message ?? t('no answer'));
     }
 
     this.paintList();
@@ -357,8 +363,10 @@ export class Sections {
    */
   openArchive(pattern) {
     const matches = this.app.files.filter((file) => pattern.test(file.name));
-    if (!matches.length) return 'it';
-    return matches.length === 1 ? matches[0].name : `${matches.length} archives`;
+    if (!matches.length) return t('it');
+    return matches.length === 1
+      ? matches[0].name
+      : t('{n} archives', { n: matches.length });
   }
 
   /** The archive Cash Shop mode would read, by the same test the mode uses. */
@@ -405,8 +413,8 @@ export class Sections {
         stage.className = 'stage-body';
         stage.setAttribute('aria-busy', 'true');
         stage.append(busyPanel({
-          title: 'Opening Map Editor',
-          note: 'Preparing the canvas and asset catalog.',
+          title: t('Opening Map Editor'),
+          note: t('Preparing the canvas and asset catalog.'),
           rows: 4,
         }));
       }
@@ -419,10 +427,10 @@ export class Sections {
         clear(stage);
         stage.className = 'stage-body';
         stage.append(emptyState(
-          'alert', 'Map Editor did not load',
-          error?.message ?? 'The editor files could not be read.',
+          'alert', t('Map Editor did not load'),
+          error?.message ?? t('The editor files could not be read.'),
           el('button', { class: 'btn btn-primary', onclick: () => this.open('mapedit') },
-            icon('refresh', { size: 15 }), 'Try again')));
+            icon('refresh', { size: 15 }), t('Try again'))));
       }
       return;
     }
@@ -434,10 +442,10 @@ export class Sections {
         clear(stage);
         stage.className = 'stage-body';
         stage.append(emptyState(
-          'cart', 'Open Etc.wz first',
-          'Cash shop editing reads Commodity.img from Etc.wz. You can also open Commodity.img on its own.',
+          'cart', t('Open Etc.wz first'),
+          t('Cash shop editing reads Commodity.img from Etc.wz. You can also open Commodity.img on its own.'),
           el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
-            icon('folderOpen', { size: 15 }), 'Open a file')));
+            icon('folderOpen', { size: 15 }), t('Open a file'))));
         return;
       }
       await this.app.shop.open(candidate.id);
@@ -463,10 +471,10 @@ export class Sections {
     return [
       ...REAL.map((id) => ({
         icon: SECTIONS.find((s) => s.id === id).icon,
-        label: `Open ${SECTIONS.find((s) => s.id === id).label}`,
+        label: t('Open {section}', { section: t(SECTIONS.find((s) => s.id === id).label) }),
         run: () => this.open(id),
       })),
-      { icon: 'refresh', label: 'Check which archives are open', run: () => this.refreshStatus() },
+      { icon: 'refresh', label: t('Check which archives are open'), run: () => this.refreshStatus() },
     ];
   }
 }
@@ -475,4 +483,7 @@ export class Sections {
 export const SECTION_IDS = REAL;
 
 /** Label lookup, for palette entries built outside this module. */
-export const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label ?? id;
+export const sectionLabel = (id) => {
+  const section = SECTIONS.find((s) => s.id === id);
+  return section ? t(section.label) : id;
+};

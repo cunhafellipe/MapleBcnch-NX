@@ -6,6 +6,7 @@
  */
 
 import { api, ApiError, q } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, confirmDialog, sortNodes, SORT_MODES, debounce, scalePixelArt, withoutFileId } from './ui.js';
 import { AnimationPlayer } from './animation.js';
 import { thumbUrl, canvasUrl, lazySprite, releaseSprite } from './media.js';
@@ -217,7 +218,7 @@ export class Inspector {
       if (isAbort(error) || this.path !== path) return;
       clear(this.childHost);
       this.table = null;
-      this.childHost.append(emptyState('alert', 'Could not open this node', error.message));
+      this.childHost.append(emptyState('alert', t('Could not open this node'), error.message));
       toastError(error);
     }
   }
@@ -280,12 +281,12 @@ export class Inspector {
     if (!this.children.length) {
       this.childHost.append(emptyState(
         'layers',
-        'This node is empty',
+        t('This node is empty'),
         this.node?.kind === 'Directory'
-          ? 'Add an image or a folder to get started.'
-          : 'Add a property to get started.',
+          ? t('Add an image or a folder to get started.')
+          : t('Add a property to get started.'),
         el('button', {
-          class: 'btn btn-primary', text: 'Add child',
+          class: 'btn btn-primary', text: t('Add child'),
           onclick: () => this.app.promptAddChild(this.path),
         }),
       ));
@@ -295,8 +296,8 @@ export class Inspector {
     const countLabel = el('span', { class: 'muted num', style: 'font-size:var(--fs-12)' });
     const filterInput = el('input', {
       class: 'field-input', type: 'search', value: this.childFilter,
-      placeholder: `Filter this folder (${fmt.format(this.children.length)})\u2026`,
-      'aria-label': 'Filter this folder',
+      placeholder: t('Filter this folder ({n})\u2026', { n: fmt.format(this.children.length) }),
+      'aria-label': t('Filter this folder'),
     });
     // The toolbar outlives a filter change now, so the caret stays where the
     // user left it rather than being restored by hand afterwards.
@@ -313,7 +314,7 @@ export class Inspector {
 
     // Drives the column widths: see .child-card[data-kind="Directory"].
     const card = el('div', {
-      class: 'card child-card', role: 'table', 'aria-label': 'Children',
+      class: 'card child-card', role: 'table', 'aria-label': t('Children'),
       'data-kind': this.node?.kind || '',
     },
       this.buildTableToolbar(countLabel, filterInput, factBar),
@@ -413,8 +414,8 @@ export class Inspector {
       class: 'cat-tab cash-tab',
       'aria-pressed': this.cashFilter === value ? 'true' : 'false',
       'data-tip': value === 'cash'
-        ? 'Only children whose info/cash is set'
-        : value === 'free' ? 'Only children whose info/cash is not set' : 'Every child',
+        ? t('Only children whose info/cash is set')
+        : value === 'free' ? t('Only children whose info/cash is not set') : t('Every child'),
       onclick: () => {
         this.cashFilter = value;
         // Rebuilt rather than toggled: the counts move with the text filter
@@ -422,7 +423,7 @@ export class Inspector {
         this.buildFactBar();
         this.updateRows();
       },
-    }, label, el('span', { class: 'cat-count', text: fmt.format(counts[value]) }))));
+    }, t(label), el('span', { class: 'cat-count', text: fmt.format(counts[value]) }))));
   }
 
   /** Clicking a header cycles that column between ascending and descending. */
@@ -432,10 +433,10 @@ export class Inspector {
       return el('div', {
         class: 'child-cell child-th', role: 'columnheader',
         'data-sorted': active ? 'true' : null,
-        'data-tip': `Sort by ${label.toLowerCase()}`,
+        'data-tip': label === 'Name' ? t('Sort by name') : t('Sort by type'),
         onclick: () => this.setSort(this.sortMode === mode && altMode ? altMode : mode),
       },
-        el('span', { text: label }),
+        el('span', { text: t(label) }),
         active
           ? el('span', {
               style: 'margin-left:5px;font-size:9px',
@@ -447,18 +448,18 @@ export class Inspector {
     return el('div', { class: 'child-row child-head', role: 'row' },
       header('Name', 'name', 'name-desc'),
       header('Type', 'type', null),
-      el('div', { class: 'child-cell child-th', role: 'columnheader', text: 'Value' }),
-      el('div', { class: 'child-cell child-th', role: 'columnheader', 'aria-label': 'Actions' }));
+      el('div', { class: 'child-cell child-th', role: 'columnheader', text: t('Value') }),
+      el('div', { class: 'child-cell child-th', role: 'columnheader', 'aria-label': t('Actions') }));
   }
 
   /** Filter box, result count, cash pills and sort picker above the child table. */
   buildTableToolbar(countLabel, filterInput, factBar) {
     const sort = el('select', {
       class: 'field-input', style: 'width:auto;padding-left:10px',
-      'data-tip': 'Change the order of this list',
+      'data-tip': t('Change the order of this list'),
       onchange: (event) => this.setSort(event.target.value),
     }, SORT_MODES.map(([value, label]) =>
-      el('option', { value, text: label, selected: value === this.sortMode })));
+      el('option', { value, text: t(label), selected: value === this.sortMode })));
 
     return el('div', { class: 'table-toolbar' },
       el('div', { class: 'input-wrap', style: 'flex:1;max-width:340px' },
@@ -509,8 +510,8 @@ export class Inspector {
     this.rows = sortNodes(matched, this.sortMode);
 
     table.countLabel.textContent = matched.length === this.children.length
-      ? `${fmt.format(matched.length)} item${matched.length === 1 ? '' : 's'}`
-      : `${fmt.format(matched.length)} of ${fmt.format(this.children.length)}`;
+      ? t('{n} item', { n: fmt.format(matched.length) })
+      : t('{shown} of {total}', { shown: fmt.format(matched.length), total: fmt.format(this.children.length) });
 
     const height = this.rows.length * ROW_H;
     table.sizer.style.height = `${height}px`;
@@ -528,14 +529,14 @@ export class Inspector {
       table.nomatch.append(emptyState(
         'search',
         byPill
-          ? (wanted === 'cash' ? 'Nothing here is a cash item' : 'Everything here is a cash item')
-          : `Nothing here matches "${this.childFilter}"`,
+          ? (wanted === 'cash' ? t('Nothing here is a cash item') : t('Everything here is a cash item'))
+          : t('Nothing here matches "{filter}"', { filter: this.childFilter }),
         byPill
-          ? 'The marker comes from each child’s info/cash property.'
-          : 'The filter looks at names, resolved names, types and values.',
+          ? t('The marker comes from each child’s info/cash property.')
+          : t('The filter looks at names, resolved names, types and values.'),
         el('button', {
           class: 'btn',
-          text: byPill ? 'Show all children' : 'Clear filter',
+          text: byPill ? t('Show all children') : t('Clear filter'),
           onclick: () => {
             if (byPill) { this.cashFilter = 'all'; this.buildFactBar(); this.updateRows(); }
             else this.setFilter('');
@@ -668,23 +669,23 @@ export class Inspector {
       // name the way a currency symbol belongs to a number, and a fifth column
       // would cost 3,331 rows of width to be blank on most of them. Empty
       // until the facts arrive, and hidden by :empty while it is.
-      el('span', { class: 'cn-cash', 'data-tip': 'Cash item — its info/cash is set' }),
+      el('span', { class: 'cn-cash', 'data-tip': t('Cash item — its info/cash is set') }),
       el('span', { class: 'cn-alias' }));
     name.addEventListener('click', () => {
       if (row.dataset.path) this.app.navigate(row.dataset.path);
     });
 
     const more = el('button', {
-      class: 'btn btn-sm btn-icon btn-ghost', 'data-tip': 'Row actions',
+      class: 'btn btn-sm btn-icon btn-ghost', 'data-tip': t('Row actions'),
     }, templateIcon('more', 15));
     more.addEventListener('click', (event) => {
       const path = row.dataset.path;
       if (!path) return;
       const rect = event.currentTarget.getBoundingClientRect();
       this.app.showMenu([
-        { icon: 'copy', label: 'Duplicate', run: () => this.app.duplicate([path]) },
-        { icon: 'copy', label: 'Copy path', run: () => this.app.copyPath(path) },
-        { icon: 'trash', label: 'Delete', danger: true, run: () => this.app.deleteNodes([path]) },
+        { icon: 'copy', label: t('Duplicate'), run: () => this.app.duplicate([path]) },
+        { icon: 'copy', label: t('Copy path'), run: () => this.app.copyPath(path) },
+        { icon: 'trash', label: t('Delete'), danger: true, run: () => this.app.deleteNodes([path]) },
       ], rect.left, rect.bottom + 4);
     });
 
@@ -716,8 +717,8 @@ export class Inspector {
     const [thumb, label, cash, alias] = nameButton.children;
     const [image, glyph] = thumb.children;
 
-    nameButton.dataset.tip = child.hasChildren ? 'Open this node' : 'Select this node';
-    label.textContent = child.name || '(unnamed)';
+    nameButton.dataset.tip = child.hasChildren ? t('Open this node') : t('Select this node');
+    label.textContent = child.name || t('(unnamed)');
     // Mono with tabular figures for an id, prose for a property name; see
     // ID_NAME. A data attribute rather than a class so the two are exclusive
     // and a recycled row cannot end up wearing both.
@@ -770,7 +771,7 @@ export class Inspector {
       // here" and starts reading as a column of content. Left blank, the only
       // marks in the column are the folder counts, which is what it is for.
       const count = child.childCount < 0 ? ''
-        : `${fmt.format(child.childCount)} item${child.childCount === 1 ? '' : 's'}`;
+        : t('{n} item', { n: fmt.format(child.childCount) });
       return el('span', { style: 'color:var(--text-3);font-size:var(--fs-12)', text: count });
     }
 
@@ -804,7 +805,7 @@ export class Inspector {
       value: child.value ?? '',
       spellcheck: 'false',
       'data-path': child.path,
-      'aria-label': `${child.name} value`,
+      'aria-label': t('{name} value', { name: child.name }),
     });
     let committed = child.value ?? '';
 
@@ -839,7 +840,7 @@ export class Inspector {
         input.value = committed;             // optimistic edit rolled back
         input.dataset.invalid = 'true';
         replay(input, 'flash-bad');
-        toastError(error, 'Could not set that value');
+        toastError(error, t('Could not set that value'));
       }
     };
 
@@ -890,9 +891,9 @@ export class Inspector {
         nodeIcon(node, 16),
         el('span', { class: 'type-badge', 'data-type': node.type || node.kind, text: badgeText(node) }),
         node.dirty
-          ? el('span', { class: 'dirty-chip', 'data-visible': 'true', style: 'height:22px;font-size:10px', text: 'unsaved' })
+          ? el('span', { class: 'dirty-chip', 'data-visible': 'true', style: 'height:22px;font-size:10px', text: t('unsaved') })
           : null),
-      el('div', { class: 'insp-name', text: node.name || '(unnamed)' }),
+      el('div', { class: 'insp-name', text: node.name || t('(unnamed)') }),
       // Same rule as the child table: decoration under the real name, never a
       // replacement for it. For an archive root the decoration is the folder
       // that tells two same-named archives apart -- this panel is where the
@@ -907,13 +908,13 @@ export class Inspector {
 
     // --- name ---
     const nameField = el('div', { class: 'field' },
-      el('label', { text: 'Name' }),
+      el('label', { text: t('Name') }),
       el('input', {
         value: node.name || '',
         onchange: async (event) => {
           try {
             const updated = await api.rename(node.path, event.target.value);
-            toast(`Renamed to ${updated.name}`, 'success');
+            toast(t('Renamed to {name}', { name: updated.name }), 'success');
             // Refresh the PARENT and follow the node to its new path. Refreshing
             // the old path 404s, turning a rename that worked into an error.
             const parent = node.path.slice(0, node.path.lastIndexOf('/'));
@@ -921,7 +922,7 @@ export class Inspector {
             this.app.navigate(updated.path);
           } catch (error) {
             event.target.value = node.name || '';
-            toastError(error, 'Could not rename');
+            toastError(error, t('Could not rename'));
           }
         },
       }));
@@ -970,9 +971,9 @@ export class Inspector {
 
     // --- metadata ---
     const meta = el('dl', { class: 'meta-grid' });
-    meta.append(el('dt', { text: 'Kind' }), el('dd', { text: node.kind }));
-    if (node.type) meta.append(el('dt', { text: 'Type' }), el('dd', { text: node.type }));
-    if (node.childCount >= 0) meta.append(el('dt', { text: 'Children' }), el('dd', { text: fmt.format(node.childCount) }));
+    meta.append(el('dt', { text: t('Kind') }), el('dd', { text: node.kind }));
+    if (node.type) meta.append(el('dt', { text: t('Type') }), el('dd', { text: node.type }));
+    if (node.childCount >= 0) meta.append(el('dt', { text: t('Children') }), el('dd', { text: fmt.format(node.childCount) }));
     for (const [key, value] of Object.entries(node.extra || {})) {
       if (value === null || value === undefined || value === '') continue;
       meta.append(el('dt', { text: key }), el('dd', { text: String(value) }));
@@ -990,12 +991,12 @@ export class Inspector {
       ? [archive.name, withoutFileId(node.path)].filter(Boolean).join('/')
       : decodeURIComponent(node.path);
     meta.append(
-      el('dt', { text: 'Path' }),
+      el('dt', { text: t('Path') }),
       el('dd', { style: 'word-break:break-all', title: node.path, text: readable }));
 
     this.inspectorHost.append(
       el('details', { class: 'insp-section', open: true },
-        el('summary', { text: 'Details' }), meta));
+        el('summary', { text: t('Details') }), meta));
 
     // --- actions ---
     // One primary, one secondary, everything else behind the overflow --
@@ -1005,31 +1006,31 @@ export class Inspector {
         el('button', {
           class: 'btn btn-primary', style: 'flex:1',
           onclick: () => this.app.promptAddChild(node.path),
-        }, icon('plus', { size: 14 }), 'Add child'),
+        }, icon('plus', { size: 14 }), t('Add child')),
         el('button', { class: 'btn', onclick: () => this.app.duplicate([node.path]) },
-          icon('copy', { size: 14 }), 'Duplicate'),
+          icon('copy', { size: 14 }), t('Duplicate')),
         el('button', {
-          class: 'btn btn-icon', 'data-tip': 'More actions',
+          class: 'btn btn-icon', 'data-tip': t('More actions'),
           onclick: (event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             this.app.showMenu([
               {
                 icon: 'star',
-                label: this.app.pins?.has(node.path) ? 'Unpin' : 'Pin',
+                label: this.app.pins?.has(node.path) ? t('Unpin') : t('Pin'),
                 shortcut: 'Ctrl D',
                 run: () => this.app.togglePin(node.path),
               },
-              { icon: 'copy', label: 'Copy path', shortcut: 'Alt C', run: () => this.app.copyPath(node.path) },
+              { icon: 'copy', label: t('Copy path'), shortcut: 'Alt C', run: () => this.app.copyPath(node.path) },
               node.hasChildren
-                ? { icon: 'download', label: 'Export images (ZIP)', run: () => this.app.download(api.exportImagesUrl(node.path)) }
+                ? { icon: 'download', label: t('Export images (ZIP)'), run: () => this.app.download(api.exportImagesUrl(node.path)) }
                 : null,
               node.hasChildren
-                ? { icon: 'download', label: 'Export as JSON', run: () => this.app.download(api.exportJsonUrl(node.path)) }
+                ? { icon: 'download', label: t('Export as JSON'), run: () => this.app.download(api.exportJsonUrl(node.path)) }
                 : null,
               node.hasChildren
-                ? { icon: 'replace', label: 'Find and replace here…', run: () => this.app.openFindReplace(node.path) }
+                ? { icon: 'replace', label: t('Find and replace here…'), run: () => this.app.openFindReplace(node.path) }
                 : null,
-              { icon: 'trash', label: 'Delete', shortcut: 'Del', danger: true, run: () => this.app.deleteNodes([node.path]) },
+              { icon: 'trash', label: t('Delete'), shortcut: 'Del', danger: true, run: () => this.app.deleteNodes([node.path]) },
             ], rect.right - 210, rect.bottom + 4);
           },
         }, icon('more', { size: 16 }))));
@@ -1037,7 +1038,7 @@ export class Inspector {
 
   buildInspectorValue(node) {
     const wrap = el('div', { class: 'field' });
-    const label = el('label', { text: 'Value' });
+    const label = el('label', { text: t('Value') });
 
     const isLongText = node.type === 'String' && (node.value?.length ?? 0) > 60;
     const input = isLongText
@@ -1061,7 +1062,7 @@ export class Inspector {
         this.refreshChildValue(node.path, updated.value);
       } catch (ex) {
         input.value = node.value ?? '';
-        toastError(ex, 'Could not set that value');
+        toastError(ex, t('Could not set that value'));
       }
     };
 
@@ -1070,12 +1071,12 @@ export class Inspector {
     // Drag the label left/right to scrub numeric values.
     if (NUMERIC.has(node.type)) {
       label.dataset.scrub = 'true';
-      label.title = 'Drag to change  ·  Shift for ×10';
+      label.title = t('Drag to change  ·  Shift for ×10');
       attachScrub(label, input, node.type, commit);
     }
 
     wrap.append(label, input, error);
-    if (node.type === 'Vector') wrap.append(el('div', { class: 'field-hint', text: 'Format: x, y' }));
+    if (node.type === 'Vector') wrap.append(el('div', { class: 'field-hint', text: t('Format: x, y') }));
     return wrap;
   }
 
@@ -1138,7 +1139,7 @@ export class Inspector {
 
     this.inspectorHost.append(
       el('details', { class: 'insp-section', open: true },
-        el('summary', { text: `Images below this node · ${data.count}${data.count >= 60 ? '+' : ''}` }),
+        el('summary', { text: t('Images below this node · {n}{plus}', { n: data.count, plus: data.count >= 60 ? '+' : '' }) }),
         grid));
   }
 
@@ -1152,7 +1153,7 @@ export class Inspector {
     preview.addEventListener('load', () => {
       // The stage is a fixed frame; the sprite grows to fill it.
       const scale = scalePixelArt(preview, 320, 260);
-      scaleNote.textContent = scale > 1 ? `  \u00b7  shown at ${scale}x` : '';
+      scaleNote.textContent = scale > 1 ? t('  ·  shown at {scale}x', { scale }) : '';
     });
     // Revision-stamped rather than `&t=Date.now()`: this used to defeat the
     // cache on every single render, re-downloading a sprite that had not moved.
@@ -1160,7 +1161,7 @@ export class Inspector {
 
     const stage = el('div', {
       class: 'preview-stage',
-      'data-tip': 'Drop a picture here to replace it',
+      'data-tip': t('Drop a picture here to replace it'),
     }, preview);
 
     // Dropping an image straight onto the preview is the fastest path there is.
@@ -1178,7 +1179,7 @@ export class Inspector {
     });
 
     return el('details', { class: 'insp-section', open: true },
-      el('summary', { text: 'Image' }),
+      el('summary', { text: t('Image') }),
       stage,
       size
         ? el('div', { class: 'field-hint num', style: 'text-align:center' },
@@ -1187,38 +1188,38 @@ export class Inspector {
       el('div', { style: 'display:flex;gap:8px;margin-top:10px' },
         el('button', {
           class: 'btn btn-primary btn-sm', style: 'flex:1',
-          'data-tip': 'Replace these pixels with a picture from your computer',
+          'data-tip': t('Replace these pixels with a picture from your computer'),
           onclick: () => this.app.replaceCanvasFile(node.path),
-        }, icon('upload', { size: 14 }), 'Replace canvas image'),
+        }, icon('upload', { size: 14 }), t('Replace canvas image')),
         el('button', {
-          class: 'btn btn-sm', 'data-tip': 'Draw on this sprite',
+          class: 'btn btn-sm', 'data-tip': t('Draw on this sprite'),
           onclick: () => this.app.openPixelEditor(node),
-        }, icon('brush', { size: 14 }), 'Edit'),
+        }, icon('brush', { size: 14 }), t('Edit')),
         el('a', {
-          class: 'btn btn-sm btn-icon', 'data-tip': 'Download as PNG',
+          class: 'btn btn-sm btn-icon', 'data-tip': t('Download as PNG'),
           href: canvasUrl(node.path), download: `${node.name}.png`,
         }, icon('download', { size: 14 }))));
   }
 
   buildSoundSection(node) {
     return el('details', { class: 'insp-section', open: true },
-      el('summary', { text: 'Audio' }),
+      el('summary', { text: t('Audio') }),
       el('audio', { controls: true, src: api.audioUrl(node.path), style: 'width:100%' }),
       el('a', {
         class: 'btn btn-sm', style: 'margin-top:10px',
         href: api.rawUrl(node.path),
         download: `${node.name}${node.extra?.extension || '.mp3'}`,
-        text: 'Export audio',
+        text: t('Export audio'),
       }));
   }
 
   buildUolSection(node) {
     const target = node.extra?.link;
     return el('details', { class: 'insp-section', open: true },
-      el('summary', { text: 'Link' }),
-      el('div', { class: 'field-hint', style: 'margin-bottom:8px;word-break:break-all', text: target || '(empty)' }),
+      el('summary', { text: t('Link') }),
+      el('div', { class: 'field-hint', style: 'margin-bottom:8px;word-break:break-all', text: target || t('(empty)') }),
       el('button', {
-        class: 'btn btn-sm', text: 'Follow link',
+        class: 'btn btn-sm', text: t('Follow link'),
         onclick: () => this.app.followUol(node),
       }));
   }
@@ -1235,10 +1236,10 @@ function releaseRow(row) {
 }
 
 function badgeText(node) {
-  if (node.kind === 'Directory') return 'folder';
-  if (node.kind === 'Image') return 'img';
-  if (node.kind === 'File') return 'file';
-  return (node.type || 'node').replace('SubProperty', 'sub');
+  if (node.kind === 'Directory') return t('folder');
+  if (node.kind === 'Image') return t('img');
+  if (node.kind === 'File') return t('file');
+  return (node.type || t('node')).replace('SubProperty', 'sub');
 }
 
 /** Client-side pre-check; the server validates again and is the authority. */
@@ -1249,27 +1250,29 @@ function validate(type, value) {
     const text = value.trim();
     if (text === '') return null;
     const number = Number(text);
-    if (!Number.isFinite(number)) return `"${value}" is not a number.`;
+    if (!Number.isFinite(number)) return t('"{value}" is not a number.', { value });
     if (type !== 'Float' && type !== 'Double' && !Number.isInteger(number)) {
-      return `${type} values must be whole numbers.`;
+      return t('{type} values must be whole numbers.', { type });
     }
     const range = RANGES[type];
     if (range && (number < range[0] || number > range[1])) {
-      return `${type} must be between ${fmt.format(range[0])} and ${fmt.format(range[1])}.`;
+      return t('{type} must be between {min} and {max}.', {
+        type, min: fmt.format(range[0]), max: fmt.format(range[1]),
+      });
     }
   }
 
   if (type === 'Vector') {
     const parts = value.split(/[ ,;]+/).filter(Boolean);
     if (parts.length !== 2 || parts.some((p) => !Number.isInteger(Number(p)))) {
-      return 'A vector needs two whole numbers, like "12, -4".';
+      return t('A vector needs two whole numbers, like "12, -4".');
     }
   }
 
   // Guards a long-standing WZ writer bug at the compressed-length prefix
   // boundary, where a 127-character unicode string corrupts the image.
   if (type === 'String' && value.length === 127 && /[^\x00-\x7F]/.test(value)) {
-    return 'A non-ASCII string of exactly 127 characters can corrupt the image. Add or remove one character.';
+    return t('A non-ASCII string of exactly 127 characters can corrupt the image. Add or remove one character.');
   }
   return null;
 }

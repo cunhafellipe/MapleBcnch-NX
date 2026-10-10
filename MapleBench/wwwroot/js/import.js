@@ -16,6 +16,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal, confirmDialog, debounce, skeletonRows, busyBar } from './ui.js';
 import { icon } from './icons.js';
 import { lazySprite } from './media.js';
@@ -104,10 +105,10 @@ export function openImporter(app, startPath, { dual = false } = {}) {
   const body = el('div', { class: 'imp' });
 
   const { dialog } = modal({
-    title: dual ? 'Open Dual Client View' : 'Import from another client',
+    title: dual ? t('Open Dual Client View') : t('Import from another client'),
     subtitle: dual
-      ? 'Choose the second client folder. Open the complete client, or one archive when you only need that family.'
-      : 'Choose a source, select entries, then review every required dependency before importing.',
+      ? t('Choose the second client folder. Open the complete client, or one archive when you only need that family.')
+      : t('Choose a source, select entries, then review every required dependency before importing.'),
     width: 'min(92vw, 760px)',
     body,
     onOpen: () => queueMicrotask(() => sourceInput.focus()),
@@ -130,11 +131,11 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     sprites?.abort();
 
     body.append(el('div', { class: 'imp-field' },
-      el('label', { class: 'imp-label', text: 'Source client' }),
+      el('label', { class: 'imp-label', text: t('Source client') }),
       el('div', { class: 'imp-row' },
         sourceInput,
         el('button', { class: 'btn btn-sm', onclick: () => pickFolder() },
-          icon('folder', { size: 14 }), 'Browse'))));
+          icon('folder', { size: 14 }), t('Browse')))));
 
     const list = el('div', { class: 'picker-list', id: 'imp-archives' });
     body.append(bannerHost, list);
@@ -151,7 +152,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     const native = window.mapleBenchDesktop;
     if (native) {
       try {
-        const chosen = await native.pickFolder('Choose the client to take from, or its Data folder');
+        const chosen = await native.pickFolder(t('Choose the client to take from, or its Data folder'));
         if (!chosen) return undefined;         // cancelled; leave everything alone
         sourceInput.value = chosen;
         browsing = false;
@@ -160,7 +161,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
         // A failed native dialog is not a reason to lose the gesture -- fall
         // through to the in-dialog list rather than leaving the click with no
         // outcome at all.
-        toastError(error, 'The folder dialog could not be opened');
+        toastError(error, t('The folder dialog could not be opened'));
       }
     }
     return browse(sourceInput.value.trim() || null);
@@ -177,9 +178,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       const result = await api.browse(path);
       if (mine !== generation || closed) return;
       clear(list);
-      list.append(el('div', { class: 'imp-crumb', text: path || 'This computer' }));
+      list.append(el('div', { class: 'imp-crumb', text: path || t('This computer') }));
       if (path) {
-        list.append(folderRow('check', 'Use this folder', () => {
+        list.append(folderRow('check', t('Use this folder'), () => {
           sourceInput.value = path;
           browsing = false;
           detect();
@@ -235,17 +236,18 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       list.append(el('div', { class: 'imp-empty' },
         icon('info', { size: 15 }),
         el('span', { text: dual
-          ? 'Choose the second client. MapleBenchX recognizes ordinary .wz archives and modern '
-            + 'split Data\\ clients, and keeps this side read-only.'
-          : 'Choose a client folder. MapleBenchX recognizes ordinary .wz archives and modern split '
-            + 'Data\\ clients, then opens either layout through the same read-only import workflow.' })));
+          ? t('Choose the second client. MapleBenchX recognizes ordinary .wz archives and modern '
+            + 'split Data\\ clients, and keeps this side read-only.')
+          : t('Choose a client folder. MapleBenchX recognizes ordinary .wz archives and modern split '
+            + 'Data\\ clients, then opens either layout through the same read-only import workflow.') })));
       return;
     }
 
     if (layout.kind !== 'split' && layout.kind !== 'classic') {
       bannerHost.append(el('div', { class: 'notice anim-rise', 'data-tone': 'info' },
         icon('info', { size: 16 }),
-        el('span', { text: `${layout.summary} There is nothing here to import from.` })));
+        el('span', { text: t('{summary} There is nothing here to import from.',
+          { summary: layout.summary }) })));
       return;
     }
 
@@ -264,16 +266,17 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       class: 'picker-row imp-archive imp-client',
       disabled: !archives.length || opening !== null,
       'aria-busy': opening === WHOLE_CLIENT ? 'true' : null,
-      'data-tip': 'Open every archive from this folder read-only and show the whole client in the left pane.',
+      'data-tip': t('Open every archive from this folder read-only and show the whole client in the left pane.'),
       onclick: () => openClient(),
     },
       icon('folderOpen', { size: 17 }),
-      el('span', { class: 'name', text: 'Open entire client folder' }),
-      el('span', { class: 'imp-archive-meta', text:
-        `${fmt.format(archives.length)} archive${archives.length === 1 ? '' : 's'} · read-only` }),
+      el('span', { class: 'name', text: t('Open entire client folder') }),
+      el('span', { class: 'imp-archive-meta', text: archives.length === 1
+        ? t('{n} archive · read-only', { n: fmt.format(archives.length) })
+        : t('{n} archives · read-only', { n: fmt.format(archives.length) }) }),
       el('span', { class: 'size', text: bytes(totalBytes) }),
       el('span', { class: 'imp-archive-go', text:
-        opening === WHOLE_CLIENT ? 'Opening client…' : 'Open folder' }));
+        opening === WHOLE_CLIENT ? t('Opening client…') : t('Open folder') }));
   };
 
   const archiveRow = (archive, list) => {
@@ -284,12 +287,16 @@ export function openImporter(app, startPath, { dual = false } = {}) {
 
     const bits = [];
     if (layout.kind === 'split') {
-      if (archive.parts) bits.push(`${archive.parts} part${archive.parts === 1 ? '' : 's'}`);
-      if (archive.packs) bits.push(`${archive.packs} pack${archive.packs === 1 ? '' : 's'}`);
+      if (archive.parts) bits.push(archive.parts === 1
+        ? t('{n} part', { n: archive.parts })
+        : t('{n} parts', { n: archive.parts }));
+      if (archive.packs) bits.push(archive.packs === 1
+        ? t('{n} pack', { n: archive.packs })
+        : t('{n} packs', { n: archive.packs }));
       if (archive.subArchives?.length) bits.push(archive.subArchives.join(', '));
     } else {
-      bits.push('classic .wz');
-      if (familyOf(archive) !== archive.name) bits.push(`${familyOf(archive)} family`);
+      bits.push(t('classic .wz'));
+      if (familyOf(archive) !== archive.name) bits.push(t('{family} family', { family: familyOf(archive) }));
     }
 
     // The whole row is the button, and the action is Open. That is the change:
@@ -302,10 +309,12 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       'data-open': already ? 'true' : null,
       'data-tip': archive.supported
         ? (dual
-          ? `Open ${archive.name} read-only beside your current client.`
+          ? t('Open {archive} read-only beside your current client.', { archive: archive.name })
           : (layout.kind === 'split'
-            ? `Merge ${archive.name} in memory and add it here, read-only. Nothing is written to disk.`
-            : `Open ${archive.name}.wz as a read-only import source. Nothing is written to disk.`))
+            ? t('Merge {archive} in memory and add it here, read-only. Nothing is written to disk.',
+                { archive: archive.name })
+            : t('Open {archive}.wz as a read-only import source. Nothing is written to disk.',
+                { archive: archive.name })))
         : archive.reason,
       onclick: () => openArchive(archive),
     },
@@ -314,9 +323,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       el('span', { class: 'imp-archive-meta', text: bits.join(' · ') }),
       el('span', { class: 'size', text: bytes(archive.sourceBytes) }),
       el('span', { class: 'imp-archive-go' },
-        opening === archive.name ? 'Opening…'
-          : dual ? 'Open in Dual View'
-            : already ? 'Open again' : 'Open'));
+        opening === archive.name ? t('Opening…')
+          : dual ? t('Open in Dual View')
+            : already ? t('Open again') : t('Open')));
 
     if (opening === archive.name) row.setAttribute('aria-busy', 'true');
     void list;
@@ -375,7 +384,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       render();
       await loadEntries();
     } catch (error) {
-      toastError(error, `${archive.name} could not be opened`);
+      toastError(error, t('{archive} could not be opened', { archive: archive.name }));
     } finally {
       opening = null;
       if (stage === 'client') renderArchives();
@@ -386,7 +395,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
   const openClient = async () => {
     opening = WHOLE_CLIENT;
     renderArchives();
-    const busy = toast('Opening the source client read-only…', 'info');
+    const busy = toast(t('Opening the source client read-only…'), 'info');
 
     try {
       const result = await api.importOpenClient({
@@ -398,13 +407,15 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       if (result.failed?.length) {
         toast(result.failed.map((failure) => `${failure.name}: ${failure.message}`).join('\n'),
           'warning', {
-            title: `${fmt.format(result.failed.length)} archive${result.failed.length === 1 ? '' : 's'} could not be opened`,
+            title: result.failed.length === 1
+              ? t('{n} archive could not be opened', { n: fmt.format(result.failed.length) })
+              : t('{n} archives could not be opened', { n: fmt.format(result.failed.length) }),
           });
       }
 
       const first = result.opened?.find((file) => file.readOnly);
       if (!first) {
-        toast('No source archives were opened. The Dual View was not changed.', 'error');
+        toast(t('No source archives were opened. The Dual View was not changed.'), 'error');
         return;
       }
 
@@ -415,7 +426,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       dialog.close();
     } catch (error) {
       busy.remove();
-      toastError(error, 'The source client could not be opened');
+      toastError(error, t('The source client could not be opened'));
     } finally {
       opening = null;
       if (stage === 'client') renderArchives();
@@ -444,8 +455,8 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       } catch (error) {
         // Not fatal, and not silent. Without every String part some rows may
         // have no names, and the source checklist will keep reporting the gap.
-        toast(`${archive.name} could not be opened, so some names may be unavailable: ${error.message}`,
-              'warning');
+        toast(t('{archive} could not be opened, so some names may be unavailable: {message}',
+              { archive: archive.name, message: error.message }), 'warning');
       }
     }
   };
@@ -456,8 +467,8 @@ export function openImporter(app, startPath, { dual = false } = {}) {
 
   const searchInput = el('input', {
     type: 'search', class: 'field-input no-icon',
-    placeholder: 'Search by name or id — "Zakum", "8800000", "Cap"…',
-    'aria-label': 'Search this archive',
+    placeholder: t('Search by name or id — "Zakum", "8800000", "Cap"…'),
+    'aria-label': t('Search this archive'),
   });
   searchInput.addEventListener('input', debounce(() => {
     query = searchInput.value;
@@ -478,23 +489,23 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     body.append(el('div', { class: 'imp-head' },
       el('button', {
         class: 'btn btn-sm btn-ghost',
-        'data-tip': 'Back to the archive list. What is open stays open.',
+        'data-tip': t('Back to the archive list. What is open stays open.'),
         onclick: () => { stage = 'client'; render(); },
-      }, icon('arrowUp', { size: 13 }), 'Archives'),
+      }, icon('arrowUp', { size: 13 }), t('Archives')),
       el('div', { class: 'imp-head-text' },
         el('b', { text: source.name }),
         el('span', { class: 'imp-head-sub', text: subtitle() })),
       el('span', { class: 'imp-lock', 'data-tip':
-        'Source opened read-only. MapleBenchX will not edit or save it.' },
-        icon('lock', { size: 12 }), 'read-only')));
+        t('Source opened read-only. MapleBenchX will not edit or save it.') },
+        icon('lock', { size: 12 }), t('read-only'))));
 
     body.append(sourcesHost);
 
     body.append(el('div', { class: 'imp-toolbar' },
       el('div', { class: 'imp-search' }, icon('search', { size: 15 }), searchInput),
       el('div', { class: 'cat-tabs' },
-        tab('search', 'Search'),
-        tab('tree', 'Browse the tree'))));
+        tab('search', t('Search')),
+        tab('tree', t('Browse the tree')))));
 
     body.append(resultHost, trayHost);
     renderSources();
@@ -509,7 +520,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       bits.unshift(`${fmt.format(entries.total)} ${(entries.total === 1
         ? entries.label : entries.plural).toLowerCase()}`);
     }
-    return bits.join(' · ') || 'Ready to search';
+    return bits.join(' · ') || t('Ready to search');
   };
 
   const tab = (value, label) => el('button', {
@@ -564,12 +575,14 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     sourcesHost.append(el('div', { class: 'notice', 'data-tone': 'warn' },
       icon('alert', { size: 15 }),
       el('div', {},
-        el('div', { text: `${families} ${missing.length === 1 ? 'is' : 'are'} not open. MapleBenchX must `
-          + `inspect ${missing.length === 1 ? 'it' : 'them'} before importing the ${fmt.format(n)} selected `
-          + `${n === 1 ? 'entry' : 'entries'}, or it cannot know which dependencies they have.` }),
+        el('div', { text: missing.length === 1 && n === 1
+          ? t('{families} is not open. MapleBenchX must inspect it before importing the {n} selected entry, '
+            + 'or it cannot know which dependencies it has.', { families, n: fmt.format(n) })
+          : t('{families} are not open. MapleBenchX must inspect them before importing the {n} selected '
+            + 'entries, or it cannot know which dependencies they have.', { families, n: fmt.format(n) }) }),
         el('div', { class: 'imp-hint', text:
-          'Open them before importing. Only the names, sounds, set definitions, shop rows and effects '
-          + 'actually used by the selection will be copied.' })),
+          t('Open them before importing. Only the names, sounds, set definitions, shop rows and effects '
+            + 'actually used by the selection will be copied.') })),
       el('div', { class: 'imp-gap-actions' }, gapActions(missing))));
   };
 
@@ -606,11 +619,11 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       const total = allArchives.reduce((sum, archive) => sum + (archive.sourceBytes || 0), 0);
       buttons.push(el('button', {
         class: 'btn btn-sm btn-primary',
-        'data-tip': 'Opens all of them read-only, in one go: '
-                  + allArchives.map((archive) => archive.name).join(', ') + '.',
+        'data-tip': t('Opens all of them read-only, in one go: {archives}.',
+                  { archives: allArchives.map((archive) => archive.name).join(', ') }),
         onclick: () => openSatellites(allArchives),
       }, icon('folderOpen', { size: 13 }),
-        `Open all ${allArchives.length} · ${bytes(total)}`));
+        t('Open all {n} · {size}', { n: allArchives.length, size: bytes(total) })));
     }
 
     for (const { need, archives } of found) {
@@ -619,11 +632,14 @@ export function openImporter(app, startPath, { dual = false } = {}) {
         class: 'btn btn-sm',
         disabled: !archives.length,
         'data-tip': archives.length
-          ? `Open ${archives.map((archive) => archive.name).join(', ')} read-only — ${bytes(total)}.`
-          : `This client has no ${need.family} archive that can be opened.`,
+          ? t('Open {archives} read-only — {size}.',
+            { archives: archives.map((archive) => archive.name).join(', '), size: bytes(total) })
+          : t('This client has no {family} archive that can be opened.', { family: need.family }),
         onclick: () => openSatellites(archives),
       }, icon('folderOpen', { size: 13 }),
-        `Open ${need.family}${archives.length ? ` · ${bytes(total)}` : ''}`));
+        archives.length
+          ? t('Open {family} · {size}', { family: need.family, size: bytes(total) })
+          : t('Open {family}', { family: need.family })));
     }
     return buttons;
   };
@@ -636,8 +652,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     // assembling two split archives at once has them competing for the same
     // disk and the same memory, and the gate would queue them anyway.
     const busy = toast(list.length === 1
-      ? `Opening ${list[0].name} — ${bytes(list[0].sourceBytes)}…`
-      : `Opening ${list.length} archives — ${bytes(list.reduce((n, a) => n + (a.sourceBytes || 0), 0))}…`,
+      ? t('Opening {archive} — {size}…', { archive: list[0].name, size: bytes(list[0].sourceBytes) })
+      : t('Opening {n} archives — {size}…',
+        { n: list.length, size: bytes(list.reduce((n, a) => n + (a.sourceBytes || 0), 0)) }),
       'info');
 
     const opened = [];
@@ -650,7 +667,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
         });
         opened.push(archive.name);
       } catch (error) {
-        failed.push(`${archive.name}: ${error.message}`);
+        failed.push(t('{archive}: {message}', { archive: archive.name, message: error.message }));
       }
     }
 
@@ -662,7 +679,8 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     await loadEntries();
 
     if (opened.length) {
-      toast(`${opened.join(', ')} open, read-only. Those parts can travel now.`, 'success');
+      toast(t('{archives} open, read-only. Those parts can travel now.',
+        { archives: opened.join(', ') }), 'success');
     }
     // Named individually. "2 of 3 opened" tells nobody which one is still
     // missing, and the missing one is the part that will not travel.
@@ -729,8 +747,8 @@ export function openImporter(app, startPath, { dual = false } = {}) {
         icon('info', { size: 15 }),
         el('div', {},
           el('b', { text: entries.kind
-            ? `${entries.plural} cannot be imported as one archive`
-            : `${entries.archive} holds nothing this can carry` }),
+            ? t('{plural} cannot be imported as one archive', { plural: entries.plural })
+            : t('{archive} holds nothing this can carry', { archive: entries.archive }) }),
           el('p', { text: entries.reason || '' }))));
       return;
     }
@@ -738,38 +756,41 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     if (!entries.namesAvailable) {
       resultHost.append(el('div', { class: 'imp-note' },
         icon('info', { size: 14 }),
-        el('span', { text: 'No String archive is open for this client, so nothing here has a name and '
-                         + 'only ids and paths can be searched.' })));
+        el('span', { text: t('No String archive is open for this client, so nothing here has a name and '
+          + 'only ids and paths can be searched.') })));
     }
 
     resultHost.append(el('div', { class: 'imp-result-head' },
       el('span', { text: query.trim()
-        ? `${fmt.format(entries.matched)} match${entries.matched === 1 ? '' : 'es'}`
-          + (entries.truncated ? ` · showing the best ${fmt.format(entries.results.length)}` : '')
-        : `${fmt.format(entries.total)} ${entries.plural.toLowerCase()} in ${entries.archive}`
-          + (entries.truncated ? ` · showing the first ${fmt.format(entries.results.length)}` : '') }),
+        ? t('{n} match', { n: fmt.format(entries.matched) })
+          + (entries.truncated ? t(' · showing the best {n}', { n: fmt.format(entries.results.length) }) : '')
+        : t('{n} {plural} in {archive}',
+            { n: fmt.format(entries.total), plural: entries.plural.toLowerCase(), archive: entries.archive })
+          + (entries.truncated ? t(' · showing the first {n}', { n: fmt.format(entries.results.length) }) : '') }),
       el('button', {
         class: 'btn btn-sm btn-ghost',
-        'data-tip': `Select everything on screen, up to the ${fmt.format(entries.maxSelection ?? 60)} `
-                  + 'a selection import carries.',
+        'data-tip': t('Select everything on screen, up to the {n} a selection import carries.',
+                  { n: fmt.format(entries.maxSelection ?? 60) }),
         onclick: () => pickAllShown(),
-      }, icon('check', { size: 13 }), 'Select all shown'),
+      }, icon('check', { size: 13 }), t('Select all shown')),
       alreadyCount() ? el('button', {
         class: 'btn btn-sm btn-ghost', 'data-active': showExisting ? 'true' : null,
-        'data-tip': 'Ids are added between builds, not reused, so anything already in the '
-                  + 'target is the same entry you already have. Shown greyed out and not '
-                  + 'importable unless you turn this on.',
+        'data-tip': t('Ids are added between builds, not reused, so anything already in the '
+          + 'target is the same entry you already have. Shown greyed out and not '
+          + 'importable unless you turn this on.'),
         onclick: () => { showExisting = !showExisting; renderResults(); },
       }, icon('eye', { size: 13 }),
-         `${fmt.format(alreadyCount())} already yours`) : null));
+         t('{n} already yours', { n: fmt.format(alreadyCount()) })) : null));
 
     if (!entries.results.length) {
       resultHost.append(el('div', { class: 'imp-empty' },
         icon('search', { size: 15 }),
         el('span', { text: query.trim()
-          ? `Nothing in ${entries.archive} matches "${query.trim()}". Names come from this client's own `
-            + 'String archive, so anything it does not name can only be found by id or by path.'
-          : `${entries.archive} has no ${entries.plural.toLowerCase()} in it.` })));
+          ? t('Nothing in {archive} matches "{query}". Names come from this client\'s own '
+            + 'String archive, so anything it does not name can only be found by id or by path.',
+            { archive: entries.archive, query: query.trim() })
+          : t('{archive} has no {plural} in it.',
+            { archive: entries.archive, plural: entries.plural.toLowerCase() }) })));
       return;
     }
 
@@ -780,8 +801,8 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     if (entries.truncated) {
       resultHost.append(el('div', { class: 'imp-note' },
         icon('alert', { size: 14 }),
-        el('span', { text: `More than ${fmt.format(entries.results.length)} match this. Type more of the `
-                         + 'name to narrow it, or take the whole archive at the bottom.' })));
+        el('span', { text: t('More than {n} match this. Type more of the name to narrow it, or take '
+          + 'the whole archive at the bottom.', { n: fmt.format(entries.results.length) }) })));
     }
   };
 
@@ -801,7 +822,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     const box = el('input', {
       type: 'checkbox', class: 'imp-check', checked: picked.has(entry.path),
       disabled: already || null,
-      'aria-label': already ? `${label} is already in the target client` : `Include ${label}`,
+      'aria-label': already
+        ? t('{label} is already in the target client', { label })
+        : t('Include {label}', { label }),
     });
     box.addEventListener('change', () => {
       setPicked(entry.path, box.checked ? { id: entry.id, label } : null);
@@ -828,14 +851,14 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       class: 'imp-card', 'data-picked': picked.has(entry.path) ? 'true' : 'false',
       'data-already': already ? 'true' : null,
       'data-tip': already
-        ? `${entry.path} — the target client already has ${entry.id}`
+        ? t('{path} — the target client already has {id}', { path: entry.path, id: entry.id })
         : entry.path,
     },
       box, thumb,
       el('div', { class: 'imp-card-text' },
         el('div', { class: 'imp-card-name', text: label }),
         el('div', { class: 'imp-card-id', text: entry.relative || String(entry.id) })),
-      already ? el('span', { class: 'imp-have', text: 'have' }) : null);
+      already ? el('span', { class: 'imp-have', text: t('have') }) : null);
     return node;
   };
 
@@ -847,8 +870,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     // arming 200 paths the plan would refuse in one sentence at the end.
     const room = (entries.maxSelection ?? 60) - picked.size;
     if (room <= 0) {
-      toast(`A selection import carries ${fmt.format(entries.maxSelection ?? 60)} at a time, and that is `
-          + 'already selected. Take the whole archive instead, or import these first.', 'warning');
+      toast(t('A selection import carries {n} at a time, and that is already selected. Take the '
+        + 'whole archive instead, or import these first.', { n: fmt.format(entries.maxSelection ?? 60) }),
+      'warning');
       return;
     }
     const untickedBefore = entries.results.filter((e) => !picked.has(e.path)).length;
@@ -865,9 +889,10 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     // Said when it bit, and only then. "Ticked 60 of 200" over a screen where 60
     // was all there was would be the tool inventing a limitation it did not hit.
     if (added < untickedBefore) {
-      toast(`Selected ${fmt.format(added)} of ${fmt.format(untickedBefore)}. A selection import carries `
-          + `${fmt.format(entries.maxSelection ?? 60)} at a time — take the whole archive for more.`,
-            'info');
+      toast(t('Selected {added} of {total}. A selection import carries {n} at a time — take the '
+        + 'whole archive for more.',
+        { added: fmt.format(added), total: fmt.format(untickedBefore), n: fmt.format(entries.maxSelection ?? 60) }),
+      'info');
     }
     for (const path of picked.keys()) tree?.checked.add(path);
     renderResults();
@@ -897,9 +922,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
 
     resultHost.append(el('div', { class: 'imp-note' },
       icon('info', { size: 14 }),
-      el('span', { text: 'Every node in the archive, as it is really laid out. Select an entry — an image or '
-                       + 'a property whose name is its id — and it imports the same way a searched one '
-                       + 'does. Select a folder or image that opens to include every importable entry inside it.' })));
+      el('span', { text: t('Every node in the archive, as it is really laid out. Select an entry — an '
+        + 'image or a property whose name is its id — and it imports the same way a searched one '
+        + 'does. Select a folder or image that opens to include every importable entry inside it.') })));
 
     // Built once and re-appended, never rebuilt per tab switch. A TreeView
     // registers pointermove, pointerup and keydown on the window for its drag
@@ -915,7 +940,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       const scroll = el('div', { class: 'tree-scroll imp-tree' });
       const sizer = el('div', { class: 'tree-sizer' });
       const rows = el('div', {
-        class: 'tree-rows', role: 'tree', 'aria-label': 'The source archive',
+        class: 'tree-rows', role: 'tree', 'aria-label': t('The source archive'),
         'aria-multiselectable': 'true', tabindex: '0',
       });
       sizer.append(rows);
@@ -987,8 +1012,8 @@ export function openImporter(app, startPath, { dual = false } = {}) {
             if (take.length === 0) {
               // Already ticked is not a failure: the box just catches up.
               if (tree.checkedUnder(path).length > 0) { tree.checkAll([path]); return; }
-              toast(`There is nothing inside that this archive can import. ${node.name} holds `
-                  + 'art or settings rather than standalone entries.', 'info');
+              toast(t('There is nothing inside that this archive can import. {name} holds '
+                + 'art or settings rather than standalone entries.', { name: node.name }), 'info');
               return;
             }
 
@@ -1021,12 +1046,12 @@ export function openImporter(app, startPath, { dual = false } = {}) {
             // show: it counts what is selected, and past the cap that is
             // deliberately fewer than what is inside.
             if (total > max) {
-              toast(`Everything under ${node.name} is selected — ${fmt.format(total)} entries, which `
-                  + `is more than one selection import carries (${fmt.format(max)}). Pick a `
-                  + 'narrower row, or take the whole archive.', 'info');
+              toast(t('Everything under {name} is selected — {total} entries, which is more than one '
+                + 'selection import carries ({max}). Pick a narrower row, or take the whole archive.',
+              { name: node.name, total: fmt.format(total), max: fmt.format(max) }), 'info');
             }
           } catch (error) {
-            toastError(error, 'That could not be selected');
+            toastError(error, t('That could not be selected'));
           }
         },
         onCheck: (checked) => {
@@ -1073,23 +1098,25 @@ export function openImporter(app, startPath, { dual = false } = {}) {
     trayHost.append(el('div', { class: 'imp-tray-text' },
       picked.size
         ? el('span', {},
-            el('b', { text: `${fmt.format(picked.size)} selected` }),
-            el('span', { class: 'imp-hint', text: ` — ${names.join(', ')}`
-              + (picked.size > names.length ? ` and ${fmt.format(picked.size - names.length)} more` : '') }))
+            el('b', { text: t('{n} selected', { n: fmt.format(picked.size) }) }),
+            el('span', { class: 'imp-hint', text: t(' — {names}', { names: names.join(', ') })
+              + (picked.size > names.length
+                ? t(' and {n} more', { n: fmt.format(picked.size - names.length) })
+                : '') }))
         : el('span', { class: 'imp-hint', text:
-            'Nothing selected yet. MapleBenchX checks names, effects, sounds, set data, and referenced art '
-            + 'before the import can continue.' }),
+            t('Nothing selected yet. MapleBenchX checks names, effects, sounds, set data, and referenced '
+              + 'art before the import can continue.') }),
       picked.size
         ? el('button', { class: 'btn btn-sm btn-ghost', onclick: () => clearPicked() },
-            icon('close', { size: 13 }), 'Clear')
+            icon('close', { size: 13 }), t('Clear'))
         : null));
 
     if (over) {
       trayHost.append(el('div', { class: 'imp-note', 'data-tone': 'bad' },
         icon('alert', { size: 14 }),
-        el('span', { text: `${fmt.format(picked.size)} is more than one selection import carries `
-                         + `(${fmt.format(max)}). An import holds a full copy of every node in memory `
-                         + 'until you save. Select fewer entries, or take the whole archive.' })));
+        el('span', { text: t('{n} is more than one selection import carries ({max}). An import holds '
+          + 'a full copy of every node in memory until you save. Select fewer entries, or take the '
+          + 'whole archive.', { n: fmt.format(picked.size), max: fmt.format(max) }) })));
     }
 
     const canPort = entries.supported;
@@ -1099,13 +1126,16 @@ export function openImporter(app, startPath, { dual = false } = {}) {
         class: 'btn btn-primary',
         disabled: !canPort || picked.size === 0 || over,
         'data-tip': canPort
-          ? 'Review dependencies, then copy these into the target client.'
+          ? t('Review dependencies, then copy these into the target client.')
           : entries.reason,
         onclick: () => runImport('selection'),
       }, icon('arrowRight', { size: 15 }),
         picked.size
-          ? `Import ${fmt.format(picked.size)} ${picked.size === 1 ? entries.label.toLowerCase() : entries.plural.toLowerCase()}`
-          : 'Import'),
+          ? (picked.size === 1
+            ? t('Import {n} {label}', { n: fmt.format(picked.size), label: entries.label.toLowerCase() })
+            : t('Import {n} {plural}',
+                { n: fmt.format(picked.size), plural: entries.plural.toLowerCase() }))
+          : t('Import')),
 
       // The whole archive, at the far end of the same mechanism. Its own button
       // rather than a mode switch, and it says its size on its face: measured on
@@ -1120,17 +1150,17 @@ export function openImporter(app, startPath, { dual = false } = {}) {
             'data-tip': archiveTip(),
             onclick: () => runImport('archive'),
           }, icon('layers', { size: 15 }),
-            `Import every ${entries.label.toLowerCase()} · ${fmt.format(entries.total)}`
-            + (entries.totalBytes ? ` · ${bytes(entries.totalBytes)}` : ''))
+            t('Import every {label} · {n}', { label: entries.label.toLowerCase(), n: fmt.format(entries.total) })
+            + (entries.totalBytes ? t(' · {size}', { size: bytes(entries.totalBytes) }) : ''))
         : null));
 
     if (canPort && entries.totalBytes > (entries.maxArchiveBytes ?? Infinity)) {
       trayHost.append(el('div', { class: 'imp-note', 'data-tone': 'bad' },
         icon('alert', { size: 14 }),
-        el('span', { text: `Taking the whole archive would be ${bytes(entries.totalBytes)}, over the `
-                         + `${bytes(entries.maxArchiveBytes)} cap, and will be refused. The cap is memory: `
-                         + 'an import holds a full copy of every node it wrote until you save. Pick what '
-                         + 'you need instead.' })));
+        el('span', { text: t('Taking the whole archive would be {size}, over the {cap} cap, and will be '
+          + 'refused. The cap is memory: an import holds a full copy of every node it wrote until you '
+          + 'save. Pick what you need instead.',
+        { size: bytes(entries.totalBytes), cap: bytes(entries.maxArchiveBytes) }) })));
     } else if (canPort && !entries.totalBytes && entries.total > 0) {
       // An archive assembled from a split client reports no size at all. Its
       // images were merged in memory rather than read out of a .wz, so they carry
@@ -1141,31 +1171,31 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       // discovered when the process runs out of memory.
       trayHost.append(el('div', { class: 'imp-note', 'data-tone': 'bad' },
         icon('alert', { size: 14 }),
-        el('span', { text: `${entries.archive} was assembled in memory from the split client, so its `
-                         + 'entries carry no on-disk size and nothing can weigh this before it runs — '
-                         + `including the ${bytes(entries.maxArchiveBytes)} cap that would otherwise `
-                         + `refuse it. ${fmt.format(entries.total)} entries is a lot to hold at once. `
-                         + 'Preview it, read the counts, and prefer picking what you need.' })));
+        el('span', { text: t('{archive} was assembled in memory from the split client, so its entries '
+          + 'carry no on-disk size and nothing can weigh this before it runs — including the {cap} cap '
+          + 'that would otherwise refuse it. {n} entries is a lot to hold at once. Preview it, read the '
+          + 'counts, and prefer picking what you need.',
+        { archive: entries.archive, cap: bytes(entries.maxArchiveBytes), n: fmt.format(entries.total) }) })));
     }
   };
 
   const archiveTip = () => {
     const bits = [
-      `Every ${entries.label.toLowerCase()} in ${entries.archive}, with each one's name, sounds and `
-      + 'shop row.',
-      'You will get the preview first — at this size nothing is written until you have seen the counts.',
+      t('Every {label} in {archive}, with each one\'s name, sounds and shop row.',
+        { label: entries.label.toLowerCase(), archive: entries.archive }),
+      t('You will get the preview first — at this size nothing is written until you have seen the counts.'),
     ];
     // Said on the button, because it is the one thing about this scope that
     // differs from ticking things by hand, and finding it in the small print
     // afterwards is finding it too late.
-    bits.push('At this scale nothing is parsed to chase art links: everything of this kind is coming '
-            + 'anyway, but art an entry borrows from another ARCHIVE is not followed. Import a handful '
-            + 'the ordinary way if you want that checked.');
+    bits.push(t('At this scale nothing is parsed to chase art links: everything of this kind is coming '
+      + 'anyway, but art an entry borrows from another ARCHIVE is not followed. Import a handful '
+      + 'the ordinary way if you want that checked.'));
     if (entries.totalBytes > (entries.maxArchiveBytes ?? Infinity)) {
-      bits.push(`This one is ${bytes(entries.totalBytes)} against a ${bytes(entries.maxArchiveBytes)} `
-              + 'cap and will be refused.');
+      bits.push(t('This one is {size} against a {cap} cap and will be refused.',
+        { size: bytes(entries.totalBytes), cap: bytes(entries.maxArchiveBytes) }));
     } else if (!entries.totalBytes) {
-      bits.push('This archive was assembled in memory, so nothing can say what it weighs before it runs.');
+      bits.push(t('This archive was assembled in memory, so nothing can say what it weighs before it runs.'));
     }
     return bits.join(' ');
   };
@@ -1202,9 +1232,9 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       const found = missing.map((need) => ({ need, archives: archivesForNeed(need) }));
       const unavailable = found.filter(({ archives }) => !archives.length);
       if (unavailable.length) {
-        toast(`A complete import cannot be checked because this client has no openable `
-          + `${sentenceList(unavailable.map(({ need }) => need.family))} archive. Nothing was imported.`,
-        'warning');
+        toast(t('A complete import cannot be checked because this client has no openable {families} '
+          + 'archive. Nothing was imported.',
+        { families: sentenceList(unavailable.map(({ need }) => need.family)) }), 'warning');
         return;
       }
 
@@ -1212,18 +1242,19 @@ export function openImporter(app, startPath, { dual = false } = {}) {
       const total = archives.reduce((sum, archive) => sum + (archive.sourceBytes || 0), 0);
       const names = sentenceList(archives.map((archive) => archive.name));
       const proceed = await confirmDialog({
-        title: 'Open the selection\'s dependency archives?',
-        message: `${names} must be inspected before MapleBenchX can verify the selection's required `
-          + `dependencies. They open read-only and nothing on disk is changed.`
-          + (total ? ` Their source size is ${bytes(total)}.` : ''),
-        confirmLabel: `Open ${fmt.format(archives.length)} and continue`,
+        title: t('Open the selection\'s dependency archives?'),
+        message: t('{archives} must be inspected before MapleBenchX can verify the selection\'s '
+          + 'required dependencies. They open read-only and nothing on disk is changed.',
+        { archives: names })
+          + (total ? t(' Their source size is {size}.', { size: bytes(total) }) : ''),
+        confirmLabel: t('Open {n} and continue', { n: fmt.format(archives.length) }),
         danger: false,
       });
       if (!proceed) return;
 
       const outcome = await openSatellites(archives);
       if (outcome.failed.length || missingSourceNeeds().length) {
-        toast('The dependency set is still incomplete, so nothing was imported.', 'warning');
+        toast(t('The dependency set is still incomplete, so nothing was imported.'), 'warning');
         return;
       }
     }

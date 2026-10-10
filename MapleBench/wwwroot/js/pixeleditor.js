@@ -13,6 +13,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, modal, fmt } from './ui.js';
 import { bustThumb, canvasUrl } from './media.js';
 import { icon } from './icons.js';
@@ -103,8 +104,8 @@ export function openPixelEditor(node, app) {
             background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0`,
   }, view);
 
-  const swatch = el('input', { type: 'color', value: '#000000', title: 'Colour', style: 'width:38px;height:34px;padding:2px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-field)' });
-  const alpha = el('input', { type: 'range', min: '0', max: '255', value: '255', title: 'Opacity', style: 'width:80px' });
+  const swatch = el('input', { type: 'color', value: '#000000', title: t('Colour'), style: 'width:38px;height:34px;padding:2px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-field)' });
+  const alpha = el('input', { type: 'range', min: '0', max: '255', value: '255', title: t('Opacity'), style: 'width:80px' });
   const zoomLabel = el('span', { style: 'font-size:var(--fs-12);color:var(--text-3);min-width:44px;text-align:center', text: '800%' });
   const info = el('span', { style: 'font-size:var(--fs-12);color:var(--text-3);margin-left:auto;font-variant-numeric:tabular-nums' });
   const palette = el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin-top:10px' });
@@ -122,7 +123,7 @@ export function openPixelEditor(node, app) {
 
   for (const [id, iconName, label] of TOOLS) {
     const button = el('button', {
-      class: 'btn btn-icon', 'data-tip': label,
+      class: 'btn btn-icon', 'data-tip': t(label),
       onclick: () => setTool(id),
     }, icon(iconName, { size: 16 }));
     toolButtons.set(id, button);
@@ -132,7 +133,7 @@ export function openPixelEditor(node, app) {
   // The three view toggles carry aria-pressed so the toolbar says which of them
   // are on; the grid one used to look identical whether it was or not.
   const gridButton = el('button', {
-    class: 'btn btn-icon btn-ghost', 'aria-pressed': 'true', 'data-tip': 'Toggle the pixel grid',
+    class: 'btn btn-icon btn-ghost', 'aria-pressed': 'true', 'data-tip': t('Toggle the pixel grid'),
     onclick: () => {
       state.showGrid = !state.showGrid;
       gridButton.setAttribute('aria-pressed', state.showGrid ? 'true' : 'false');
@@ -142,7 +143,7 @@ export function openPixelEditor(node, app) {
 
   const diffButton = el('button', {
     class: 'btn btn-icon btn-ghost', 'aria-pressed': 'false',
-    'data-tip': 'Highlight what you changed · D  (hold \\ to see the original)',
+    'data-tip': t('Highlight what you changed · D  (hold \\ to see the original)'),
     onclick: () => setDiff(!state.showDiff),
   }, icon('eye', { size: 15 }));
 
@@ -153,33 +154,33 @@ export function openPixelEditor(node, app) {
     el('span', { style: 'width:1px;height:22px;background:var(--border)' }),
     swatch, alpha,
     el('span', { style: 'width:1px;height:22px;background:var(--border)' }),
-    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': 'Zoom out · −',
+    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': t('Zoom out · −'),
       onclick: () => setZoom(state.zoom / 2) }, icon('zoomOut', { size: 15 })),
     zoomLabel,
-    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': 'Zoom in · +',
+    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': t('Zoom in · +'),
       onclick: () => setZoom(state.zoom * 2) }, icon('zoomIn', { size: 15 })),
     gridButton,
     diffButton,
     el('span', { style: 'width:1px;height:22px;background:var(--border)' }),
-    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': 'Undo · Ctrl Z',
+    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': t('Undo · Ctrl Z'),
       onclick: undo }, icon('undo', { size: 15 })),
-    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': 'Redo · Ctrl Shift Z',
+    el('button', { class: 'btn btn-icon btn-ghost', 'data-tip': t('Redo · Ctrl Shift Z'),
       onclick: redo }, icon('redo', { size: 15 })),
     info);
 
   const body = el('div', {}, limitBar, toolbar, stage, palette,
     el('div', { style: 'margin-top:10px;font-size:var(--fs-12);color:var(--text-3)',
-      text: 'Left click draws, right click erases. Hold Space (or the middle button) and drag to pan; '
+      text: t('Left click draws, right click erases. Hold Space (or the middle button) and drag to pan; '
           + 'Ctrl and the wheel zoom around the pointer. D tints what you have changed, and holding \\ '
-          + 'shows the original underneath. Nothing is written to the WZ file until you press Apply.' }));
+          + 'shows the original underneath. Nothing is written to the WZ file until you press Apply.') }));
 
   const { dialog, close } = modal({
-    title: `Pixel editor — ${node.name}`,
+    title: t('Pixel editor — {name}', { name: node.name }),
     width: 'min(96vw, 1000px)',
     body,
     actions: [
-      { label: 'Cancel' },
-      { label: 'Apply to canvas', class: 'btn-primary', run: (done) => { apply(done); return false; } },
+      { label: t('Cancel') },
+      { label: t('Apply to canvas'), class: 'btn-primary', run: (done) => { apply(done); return false; } },
     ],
   });
 
@@ -216,7 +217,7 @@ export function openPixelEditor(node, app) {
   source.onerror = () => {
     clear(stage);
     stage.append(el('div', { style: 'padding:40px;color:var(--text-3);text-align:center',
-      text: 'This canvas has no image data to edit.' }));
+      text: t('This canvas has no image data to edit.') }));
   };
   source.src = canvasUrl(node.path);
 
@@ -283,7 +284,9 @@ export function openPixelEditor(node, app) {
     const parts = [`${state.width} × ${state.height}`];
     if (state.cursor) parts.push(`${state.cursor[0]}, ${state.cursor[1]}`);
     if (state.changed) {
-      parts.push(`${fmt.format(state.changed)} pixel${state.changed === 1 ? '' : 's'} changed`);
+      parts.push(state.changed === 1
+        ? t('{n} pixel changed', { n: fmt.format(state.changed) })
+        : t('{n} pixels changed', { n: fmt.format(state.changed) }));
     }
     info.textContent = parts.join('   •   ');
   }
@@ -388,14 +391,14 @@ export function openPixelEditor(node, app) {
     const notes = [];
 
     const limit = FORMAT_LIMITS[node.extra?.format];
-    if (limit) notes.push(limit);
+    if (limit) notes.push(t(limit));
 
     // A linked canvas stores a placeholder and is *drawn* from its link, so the
     // pixels on screen here are not the pixels Apply would overwrite.
     const link = node.extra?.inlink || node.extra?.outlink;
     if (link) {
-      notes.push(`These pixels come from "${link}". This canvas holds only a placeholder, `
-               + 'so applying an edit here changes nothing on screen.');
+      notes.push(t('These pixels come from "{link}". This canvas holds only a placeholder, '
+               + 'so applying an edit here changes nothing on screen.', { link }));
     }
 
     if (!notes.length) return;
@@ -460,7 +463,7 @@ export function openPixelEditor(node, app) {
     // no toggle at all.
     onionButton = el('button', {
       class: 'btn btn-icon btn-ghost', 'aria-pressed': 'false',
-      'data-tip': 'Onion skin — the frames either side of this one · O',
+      'data-tip': t('Onion skin — the frames either side of this one · O'),
       onclick: () => setOnion(!state.onion),
     }, icon('layers', { size: 15 }));
     toolbar.insertBefore(onionButton, info);
@@ -902,8 +905,8 @@ export function openPixelEditor(node, app) {
     syncBuffer().toBlob(async (blob) => {
       if (!blob) {
         finish();
-        toast('The browser could not encode this sprite as a PNG.', 'error',
-          { title: 'Could not apply the image' });
+        toast(t('The browser could not encode this sprite as a PNG.'), 'error',
+          { title: t('Could not apply the image') });
         return;
       }
       try {
@@ -912,12 +915,12 @@ export function openPixelEditor(node, app) {
         // cached for an hour; without the bump they keep the pre-edit bitmap.
         bustThumb(node.path);
         done();
-        toast('Canvas updated. Save the file to write it to disk.', 'success');
-        if (result?.warning) toast(result.warning, 'warning', { title: 'Image format changed' });
+        toast(t('Canvas updated. Save the file to write it to disk.'), 'success');
+        if (result?.warning) toast(result.warning, 'warning', { title: t('Image format changed') });
         app.markDirty();
         app.inspector.refresh();
       } catch (error) {
-        toastError(error, 'Could not apply the image');
+        toastError(error, t('Could not apply the image'));
       } finally {
         finish();
       }

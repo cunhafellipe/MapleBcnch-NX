@@ -13,6 +13,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toastError, fmt, debounce, runOnce, scalePixelArt } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
@@ -247,11 +248,11 @@ export class Database {
 
     if (this.error) {
       this.host.append(emptyState(
-        'alert', 'Could not reach the name index',
+        'alert', t('Could not reach the name index'),
         this.error.message,
         el('div', { class: 'db-empty-actions' },
           el('button', { class: 'btn btn-primary', onclick: () => this.load() },
-            icon('refresh', { size: 15 }), 'Try again'))));
+            icon('refresh', { size: 15 }), t('Try again')))));
       return;
     }
 
@@ -278,16 +279,16 @@ export class Database {
     const subject = sources.length === 1
       ? sources[0].name
       : sources.length > 1
-        ? `${sources.length} String archives`
-        : 'no String archive';
+        ? t('{n} String archives', { n: sources.length })
+        : t('no String archive');
 
     return el('div', { class: 'db-panel db-head' },
       el('div', { class: 'db-head-text' },
         el('div', { class: 'db-head-title', text: 'Game Data Search' }),
         el('div', { class: 'db-head-sub' },
-          el('span', { text: 'Names from ' }),
+          el('span', { text: t('Names from ') }),
           el('b', { text: subject }),
-          el('span', { text: this.available ? '' : ' · not readable' }))),
+          el('span', { text: this.available ? '' : t(' · not readable') }))),
       el('button', {
         class: 'btn btn-icon', 'data-tip': 'Check the open archives again',
         onclick: () => this.load(),
@@ -326,9 +327,9 @@ export class Database {
     const search = el('input', {
       type: 'search', value: this.query,
       placeholder: this.available
-        ? 'Search by name or id — "Blue Sword", "1302000", "01302"…'
-        : 'Open String.wz to search by name',
-      'aria-label': 'Search the client',
+        ? t('Search by name or id — "Blue Sword", "1302000", "01302"…')
+        : t('Open String.wz to search by name'),
+      'aria-label': t('Search the client'),
       disabled: !this.available && this.checked,
     });
     // Only the results are re-rendered, never the toolbar holding this input:
@@ -346,7 +347,7 @@ export class Database {
         class: 'cat-tab', 'aria-pressed': this.kind === value ? 'true' : 'false',
         disabled: !this.available && this.checked,
         onclick: () => this.setKind(value),
-      }, label, el('span', { class: 'cat-count' }));
+      }, t(label), el('span', { class: 'cat-count' }));
       this.chipButtons.set(value, button);
       chips.append(button);
     }
@@ -358,8 +359,9 @@ export class Database {
       this.truncated
         ? el('div', { class: 'notice', 'data-tone': 'warn' }, icon('alert', { size: 14 }),
             el('span', {
-              text: `More than ${fmt.format(LIMIT)} things match this. These are the best of them — ` +
-                    'type more of the name, or pick a kind, to see the rest.',
+              text: t('More than {n} things match this. These are the best of them — '
+                    + 'type more of the name, or pick a kind, to see the rest.',
+                    { n: fmt.format(LIMIT) }),
             }))
         : null);
   }
@@ -388,30 +390,30 @@ export class Database {
 
     if (this.checked && !this.available) {
       panel.append(emptyState(
-        'type', 'Open String.wz to search by name',
-        'Names come from your client\'s own String.wz. Open String.wz or the whole client folder to '
-        + 'enable Game Data Search.',
+        'type', t('Open String.wz to search by name'),
+        t('Names come from your client\'s own String.wz. Open String.wz or the whole client folder to '
+          + 'enable Game Data Search.'),
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
-          icon('folderOpen', { size: 15 }), 'Open String.wz')));
+          icon('folderOpen', { size: 15 }), t('Open String.wz'))));
       this.resultHost.append(panel);
       return;
     }
 
     if (this.searchError) {
       panel.append(emptyState(
-        'alert', 'That search did not finish',
+        'alert', t('That search did not finish'),
         this.searchError.message,
         el('button', { class: 'btn btn-primary', onclick: () => this.runSearch() },
-          icon('refresh', { size: 15 }), 'Try again')));
+          icon('refresh', { size: 15 }), t('Try again'))));
       this.resultHost.append(panel);
       return;
     }
 
     if (!this.query.trim()) {
       panel.append(emptyState(
-        'search', 'Search the client',
-        'Type a name or an id. Everything the client names is here: items, mobs, skills, NPCs and maps, ' +
-        'ranked together so the best answer is first.'));
+        'search', t('Search the client'),
+        t('Type a name or an id. Everything the client names is here: items, mobs, skills, NPCs and maps, '
+          + 'ranked together so the best answer is first.')));
       this.resultHost.append(panel);
       return;
     }
@@ -431,22 +433,24 @@ export class Database {
 
     panel.append(el('div', { class: 'db-result-head' },
       el('span', {
-        text: `${fmt.format(this.results.length)} result${this.results.length === 1 ? '' : 's'}` +
-              (this.truncated ? ' (the best ones)' : ''),
+        text: t(this.results.length === 1 ? '{n} result' : '{n} results',
+              { n: fmt.format(this.results.length) })
+              + (this.truncated ? t(' (the best ones)') : ''),
       }),
-      el('span', { text: `Page ${this.page} of ${pages}` })));
+      el('span', { text: t('Page {page} of {pages}', { page: this.page, pages }) })));
 
     if (!this.results.length) {
       panel.append(emptyState(
-        'search', `Nothing matches "${this.query.trim()}"`,
+        'search', t('Nothing matches "{query}"', { query: this.query.trim() }),
         this.kind === 'all'
-          ? 'Names come from your client, so anything it does not name cannot be found by name. ' +
-            'Try an id — leading zeros are fine — or part of a name.'
-          : `No ${KINDS.find(([v]) => v === this.kind)?.[1].toLowerCase()} match that. Try All.`,
+          ? t('Names come from your client, so anything it does not name cannot be found by name. '
+            + 'Try an id — leading zeros are fine — or part of a name.')
+          : t('No {kind} match that. Try All.', {
+              kind: t(KINDS.find(([v]) => v === this.kind)?.[1]).toLowerCase() }),
         this.kind === 'all'
-          ? el('button', { class: 'btn', text: 'Clear search',
+          ? el('button', { class: 'btn', text: t('Clear search'),
               onclick: () => { this.query = ''; this.render(); } })
-          : el('button', { class: 'btn', text: 'Search all categories',
+          : el('button', { class: 'btn', text: t('Search all categories'),
               onclick: () => this.setKind('all') })));
     } else {
       // Rendered in the order the server sent them. It ranks by score and
@@ -494,9 +498,11 @@ export class Database {
     const card = el('button', { class: 'db-card', 'data-kind': result.kind, 'data-id': result.id },
       thumb,
       el('div', { class: 'db-card-text' },
-        el('div', { class: 'db-name', text: result.name || `${KIND_LABEL[result.kind] ?? 'Entry'} ${result.id}` }),
+        el('div', { class: 'db-name',
+          text: result.name || `${t(KIND_LABEL[result.kind] ?? 'Entry')} ${result.id}` }),
         el('div', { class: 'db-id', text: String(result.id) })),
-      el('span', { class: 'db-badge', 'data-kind': result.kind, text: KIND_LABEL[result.kind] ?? result.kind }));
+      el('span', { class: 'db-badge', 'data-kind': result.kind,
+        text: KIND_LABEL[result.kind] ? t(KIND_LABEL[result.kind]) : result.kind }));
 
     card.addEventListener('click', () => this.openResult(result, card));
     return card;
@@ -508,7 +514,7 @@ export class Database {
     // left alone.
     const go = (page) => { this.page = page; this.renderResults(); this.host.scrollTo({ top: 0 }); };
 
-    pager.append(el('button', { text: '‹ Previous', disabled: this.page === 1, onclick: () => go(this.page - 1) }));
+    pager.append(el('button', { text: t('‹ Previous'), disabled: this.page === 1, onclick: () => go(this.page - 1) }));
 
     const numbers = new Set([1, pages, this.page, this.page - 1, this.page + 1]);
     let previous = 0;
@@ -520,7 +526,7 @@ export class Database {
       previous = page;
     }
 
-    pager.append(el('button', { text: 'Next ›', disabled: this.page === pages, onclick: () => go(this.page + 1) }));
+    pager.append(el('button', { text: t('Next ›'), disabled: this.page === pages, onclick: () => go(this.page + 1) }));
     return pager;
   }
 
@@ -550,24 +556,25 @@ export class Database {
     const label = result.name || String(result.id);
     this.app.showMenu([
       path
-        ? { icon: 'externalLink', label: 'Show in Explorer', run: () => {
+        ? { icon: 'externalLink', label: t('Show in Explorer'), run: () => {
             this.app.setMode('explorer');
             this.app.navigate(path);
           } }
         : null,
       result.kind === 'mob' && path
-        ? { icon: 'layers', label: 'Open in the Mobs section', run: async () => {
+        ? { icon: 'layers', label: t('Open in the Mobs section'), run: async () => {
             await this.app.openSection('mobs');
             this.app.mobs.openLinked(String(result.id));
           } }
         : null,
-      { icon: 'copy', label: `Copy id ${result.id}`, run: () => this.app.copyText(String(result.id)) },
-      result.name ? { icon: 'copy', label: 'Copy name', run: () => this.app.copyText(result.name) } : null,
+      { icon: 'copy', label: t('Copy id {id}', { id: result.id }), run: () => this.app.copyText(String(result.id)) },
+      result.name ? { icon: 'copy', label: t('Copy name'), run: () => this.app.copyText(result.name) } : null,
       // Said as an action rather than as a disabled row: the reason it cannot be
       // opened is always that the archive holding it is not in this session.
       path
         ? null
-        : { icon: 'folderOpen', label: `Open ${KIND_ARCHIVE[result.kind] ?? 'the archive'} to open ${label}`,
+        : { icon: 'folderOpen', label: t('Open {archive} to open {name}',
+            { archive: KIND_ARCHIVE[result.kind] ?? t('the archive'), name: label }),
             run: () => this.app.openFilePicker() },
     ].filter(Boolean), rect.left, rect.bottom + 4);
   }
@@ -621,11 +628,11 @@ export class Database {
   /** Right-click actions for the mode; shared with the app-wide context menu. */
   menuItems() {
     return [
-      { icon: 'search', label: 'Focus the search box', run: () => this.focusSearch() },
+      { icon: 'search', label: t('Focus the search box'), run: () => this.focusSearch() },
       this.query
-        ? { icon: 'close', label: 'Clear the search', run: () => { this.query = ''; this.render(); } }
+        ? { icon: 'close', label: t('Clear the search'), run: () => { this.query = ''; this.render(); } }
         : null,
-      { icon: 'refresh', label: 'Check the open archives again', run: () => this.load() },
+      { icon: 'refresh', label: t('Check the open archives again'), run: () => this.load() },
     ].filter(Boolean);
   }
 }

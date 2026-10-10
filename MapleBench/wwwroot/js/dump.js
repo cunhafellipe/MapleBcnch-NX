@@ -25,6 +25,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, modal, toast, toastError, fmt, skeletonRows, busyButton } from './ui.js';
 import { icon } from './icons.js';
 

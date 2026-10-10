@@ -29,6 +29,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, $, clear, toast, toastError, debounce, fmt, humanContext, withoutFileId } from './ui.js';
 import { emptyState } from './inspector.js';
 
@@ -215,20 +216,20 @@ export class ResultsPanel {
       // Kept on the instance: paintSelectionBar and the scroll handler both
       // re-enter render(), and clearing it here meant the second pass painted an
       // empty panel over the message explaining why it was empty.
-      this.host.append(emptyState('alert', 'Search failed', this.error));
+      this.host.append(emptyState('alert', t('Search failed'), this.error));
       return;
     }
 
     if (this.cancelled) {
-      this.host.append(emptyState('search', 'Search stopped',
-        'Nothing was changed. Press Enter to run it again, or narrow the query first.'));
+      this.host.append(emptyState('search', t('Search stopped'),
+        t('Nothing was changed. Press Enter to run it again, or narrow the query first.')));
       return;
     }
 
     if (!this.query.trim()) {
-      this.host.append(emptyState('search', 'Search every open archive',
-        'Try name:maxHP to match the property rather than every description that mentions it, ' +
-        'or name:maxHP >10000 to narrow it to the big ones.'));
+      this.host.append(emptyState('search', t('Search every open archive'),
+        t('Try name:maxHP to match the property rather than every description that mentions it, ' +
+          'or name:maxHP >10000 to narrow it to the big ones.')));
       return;
     }
 
@@ -251,9 +252,12 @@ export class ResultsPanel {
    * a static skeleton makes those two look identical.
    */
   buildRunning() {
+    const openCount = this.app.files?.length ?? 0;
     const scopeText = this.scope
-      ? withoutFileId(this.scope) || 'the selected node'
-      : `${this.app.files?.length ?? 0} open archive${(this.app.files?.length ?? 0) === 1 ? '' : 's'}`;
+      ? withoutFileId(this.scope) || t('the selected node')
+      : openCount === 1
+        ? t('{n} open archive', { n: openCount })
+        : t('{n} open archives', { n: openCount });
 
     const elapsed = el('span', { class: 'num', text: '0.0s' });
     const tick = setInterval(() => {
@@ -266,18 +270,18 @@ export class ResultsPanel {
       el('div', {
         style: 'display:flex;align-items:baseline;gap:8px;font-size:var(--fs-12);color:var(--text-2)',
       },
-        el('span', { text: `Searching ${scopeText}` }),
+        el('span', { text: t('Searching {scope}', { scope: scopeText }) }),
         elapsed,
         el('span', { style: 'flex:1' }),
         el('button', {
-          class: 'btn btn-sm', text: 'Stop',
-          title: 'Stop the search. Nothing is changed by searching.',
+          class: 'btn btn-sm', text: t('Stop'),
+          title: t('Stop the search. Nothing is changed by searching.'),
           onclick: () => this.cancel(),
         })),
       this.matchValues
         ? el('div', {
             style: 'margin-top:6px;font-size:var(--fs-11);color:var(--text-3)',
-            text: 'Values is on, so every image it visits has to be parsed. Turning it off answers name questions in milliseconds.',
+            text: t('Values is on, so every image it visits has to be parsed. Turning it off answers name questions in milliseconds.'),
           })
         : null,
       el('div', { style: 'margin-top:10px' },
@@ -293,13 +297,17 @@ export class ResultsPanel {
    */
   buildNoMatches() {
     const fixes = [];
-    if (!this.matchValues) fixes.push('Values is off, so only names were compared — turn it on to search inside properties.');
-    if (this.scope) fixes.push(`Only ${withoutFileId(this.scope) || 'one node'} was searched — clear the scope to search every open archive.`);
-    if (this.regex) fixes.push('Regex is on, so the text is read as a pattern and the name:/value: prefixes are ignored.');
-    if (!fixes.length) fixes.push(`${fmt.format(this.scanned)} nodes were examined and none matched. Check the spelling, or try a shorter fragment.`);
+    if (!this.matchValues) fixes.push(t('Values is off, so only names were compared — turn it on to search inside properties.'));
+    if (this.scope) {
+      const where = withoutFileId(this.scope) || t('one node');
+      fixes.push(t('Only {scope} was searched — clear the scope to search every open archive.', { scope: where }));
+    }
+    if (this.regex) fixes.push(t('Regex is on, so the text is read as a pattern and the name:/value: prefixes are ignored.'));
+    if (!fixes.length) fixes.push(t('{scanned} nodes were examined and none matched. Check the spelling, or try a shorter fragment.',
+      { scanned: fmt.format(this.scanned) }));
 
-    return emptyState('search', 'No matches',
-      `Nothing matches "${this.query}". ` + fixes.join(' '));
+    return emptyState('search', t('No matches'),
+      t('Nothing matches "{query}". ', { query: this.query }) + fixes.join(' '));
   }
 
   buildSearchBar() {
@@ -311,7 +319,7 @@ export class ResultsPanel {
       // The examples are in the placeholder and the empty state, not in a help
       // panel: the grammar is two prefixes, and anything that needs a manual to
       // explain two prefixes is the wrong grammar.
-      title: 'name:foo · value:foo · >N <N >=N =N !=N · plain text searches both, as before',
+      title: t('name:foo · value:foo · >N <N >=N =N !=N · plain text searches both, as before'),
       style: 'width:100%',
     });
     this.input = input;
@@ -332,7 +340,7 @@ export class ResultsPanel {
     });
 
     const scopeLabel = this.scope
-      ? decodeURIComponent(this.scope.split('/').slice(1).join('/')) || 'this archive'
+      ? decodeURIComponent(this.scope.split('/').slice(1).join('/')) || t('this archive')
       : null;
 
     const check = (labelText, field, tip) => {
@@ -347,17 +355,17 @@ export class ResultsPanel {
     return el('div', { style: 'padding:8px 10px;display:flex;flex-direction:column;gap:8px' },
       el('div', { class: 'input-wrap' }, input),
       el('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:var(--fs-11)' },
-        check('Values', 'matchValues', 'Also match property values. Slower: it has to parse every image it visits.'),
-        check('Regex', 'regex', 'Treat the text as a regular expression. Prefixes are off in this mode.')),
+        check(t('Values'), 'matchValues', t('Also match property values. Slower: it has to parse every image it visits.')),
+        check(t('Regex'), 'regex', t('Treat the text as a regular expression. Prefixes are off in this mode.'))),
       // Scope is shown only when it is not "everything", because a line that
       // always says the same thing is a line nobody reads.
       scopeLabel
         ? el('div', {
             style: 'display:flex;align-items:center;gap:6px;font-size:var(--fs-11);color:var(--text-3)',
           },
-            el('span', { text: `under ${scopeLabel}`, style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }),
+            el('span', { text: t('under {scope}', { scope: scopeLabel }), style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }),
             el('button', {
-              class: 'btn btn-sm btn-ghost', text: 'Clear',
+              class: 'btn btn-sm btn-ghost', text: t('Clear'),
               onclick: () => { this.scope = null; this.run(); },
             }))
         : null);
@@ -379,12 +387,14 @@ export class ResultsPanel {
    */
   buildSummary() {
     const line = el('div', { style: 'padding:2px 10px 4px;font-size:var(--fs-11);color:var(--text-3)' },
-      el('b', { style: 'color:var(--text-2);font-weight:600', text: `${fmt.format(this.hits.length)} result${this.hits.length === 1 ? '' : 's'}` }),
+      el('b', { style: 'color:var(--text-2);font-weight:600', text: this.hits.length === 1
+        ? t('{n} result', { n: fmt.format(this.hits.length) })
+        : t('{n} results', { n: fmt.format(this.hits.length) }) }),
       el('span', {
         // Only when it is a number worth reading. "in 0.0s" is noise, and it is
         // also the case where the elapsed time was never the question.
-        text: (this.lastRunMs >= 100 ? ` in ${(this.lastRunMs / 1000).toFixed(1)}s` : '') +
-              (this.scanned ? ` · ${fmt.format(this.scanned)} examined` : ''),
+        text: (this.lastRunMs >= 100 ? t(' in {s}s', { s: (this.lastRunMs / 1000).toFixed(1) }) : '') +
+              (this.scanned ? t(' · {n} examined', { n: fmt.format(this.scanned) }) : ''),
       }));
 
     if (!this.truncated) return line;
@@ -403,40 +413,44 @@ export class ResultsPanel {
              'border:1px solid var(--warn-border,var(--border));background:var(--warn-bg,var(--bg-subtle));' +
              'font-size:var(--fs-11);line-height:1.45;color:var(--text-2)',
     },
-      el('b', { text: `Stopped at the ${fmt.format(MAX_HITS)}-result cap.` }),
+      el('b', { text: t('Stopped at the {n}-result cap.', { n: fmt.format(MAX_HITS) }) }),
       ' ',
       missed.length
-        ? el('span', {}, 'These are all from ',
-            el('b', { text: [...reached].join(', ') || 'one archive' }),
-            `. ${missed.length === 1 ? 'This archive was' : `These ${missed.length} archives were`} never reached: `,
+        ? el('span', {}, t('These are all from '),
+            el('b', { text: [...reached].join(', ') || t('one archive') }),
+            '. ' + (missed.length === 1
+                ? t('This archive was never reached: ')
+                : t('These {n} archives were never reached: ', { n: missed.length })),
             el('b', { text: missed.join(', ') }),
             '.')
-        : el('span', { text: 'There are more matches than are shown.' }));
+        : el('span', { text: t('There are more matches than are shown.') }));
 
     // The actions that actually recover the missing archives, offered rather
     // than described -- but as compact chips, because this panel is ~270px wide
     // and five full-width buttons push the results themselves off the screen.
     const actions = el('div', { style: 'display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;align-items:center' });
     if (missed.length) {
-      actions.append(el('span', { style: 'font-size:var(--fs-10);color:var(--text-3)', text: 'Search only:' }));
+      actions.append(el('span', { style: 'font-size:var(--fs-10);color:var(--text-3)', text: t('Search only:') }));
       for (const name of missed.slice(0, 4)) {
         const file = (this.app.files ?? []).find((f) => f.name === name);
         actions.append(el('button', {
           class: 'btn btn-sm',
           style: 'padding:1px 7px;font-size:var(--fs-10)',
           text: name.replace(/\.wz$/i, ''),
-          title: `Run the same query with the scope set to ${name}, so the 2,000 are spent there.`,
+          title: t('Run the same query with the scope set to {name}, so the {n} are spent there.',
+            { name, n: fmt.format(MAX_HITS) }),
           onclick: () => { this.scope = file?.id ?? null; this.run(); },
         }));
       }
-      if (missed.length > 4) actions.append(el('span', { style: 'font-size:var(--fs-10);color:var(--text-3)', text: `+${missed.length - 4} more` }));
+      if (missed.length > 4) actions.append(el('span', { style: 'font-size:var(--fs-10);color:var(--text-3)',
+        text: t('+{n} more', { n: missed.length - 4 }) }));
     }
     if (this.matchValues) {
       actions.append(el('button', {
         class: 'btn btn-sm btn-ghost',
         style: 'padding:1px 7px;font-size:var(--fs-10)',
-        text: 'Names only',
-        title: 'Much faster, and usually what a truncated search was really asking.',
+        text: t('Names only'),
+        title: t('Much faster, and usually what a truncated search was really asking.'),
         onclick: () => { this.matchValues = false; this.run(); },
       }));
     }
@@ -458,26 +472,27 @@ export class ResultsPanel {
 
     const bulk = el('button', {
       class: 'btn btn-sm btn-primary',
-      text: 'Set value…',
+      text: t('Set value…'),
       // Ctrl E from the panel does the same thing; both routes go through
       // app.bulkEdit so there is one dialog and one code path to the write.
-      title: 'Apply one operation to every selected value · Ctrl E',
+      title: t('Apply one operation to every selected value · Ctrl E'),
       onclick: () => this.app.bulkEdit(this.selectedPaths()),
     });
 
     const copy = el('button', {
-      class: 'btn btn-sm', text: 'Copy paths',
+      class: 'btn btn-sm', text: t('Copy paths'),
       onclick: async () => {
         const text = this.selectedPaths().map(decodeURIComponent).join('\n');
         try {
           await navigator.clipboard.writeText(text);
-          toast(`Copied ${this.selected.size} path${this.selected.size === 1 ? '' : 's'}.`, 'success');
-        } catch (error) { toastError(error, 'Could not copy'); }
+          const n = this.selected.size;
+          toast(n === 1 ? t('Copied {n} path.', { n }) : t('Copied {n} paths.', { n }), 'success');
+        } catch (error) { toastError(error, t('Could not copy')); }
       },
     });
 
     const clearSel = el('button', {
-      class: 'btn btn-sm btn-ghost', text: 'Clear',
+      class: 'btn btn-sm btn-ghost', text: t('Clear'),
       onclick: () => this.selectAll(false),
     });
 
@@ -503,8 +518,10 @@ export class ResultsPanel {
         el('label', {
           class: 'check-row',
           style: 'font-size:var(--fs-11);gap:6px',
-          title: editable ? `Select all ${fmt.format(editable)} editable results` : 'No result here holds an editable value',
-        }, all, el('span', { text: 'All' })),
+          title: editable
+            ? t('Select all {n} editable results', { n: fmt.format(editable) })
+            : t('No result here holds an editable value'),
+        }, all, el('span', { text: t('All') })),
         count,
         el('span', { style: 'flex:1' }),
         hint),
@@ -516,7 +533,9 @@ export class ResultsPanel {
     const parts = this.selectionParts;
     if (!parts) return;
     const n = this.selected.size;
-    parts.count.textContent = n ? `${fmt.format(n)} selected` : `${fmt.format(parts.editable)} editable`;
+    parts.count.textContent = n
+      ? t('{n} selected', { n: fmt.format(n) })
+      : t('{n} editable', { n: fmt.format(parts.editable) });
     parts.all.checked = n > 0 && n === parts.editable;
     parts.all.indeterminate = n > 0 && n < parts.editable;
     for (const button of [parts.bulk, parts.copy, parts.clearSel]) button.disabled = n === 0;
@@ -526,13 +545,17 @@ export class ResultsPanel {
     // thing that enables it was an unlabelled tick box two inches to the left.
     // So the button says what it is waiting for instead.
     const reason = parts.editable === 0
-      ? 'Nothing here holds an editable value'
-      : 'Tick rows to act on them';
-    parts.bulk.textContent = n ? `Set value on ${fmt.format(n)}…` : 'Set value…';
+      ? t('Nothing here holds an editable value')
+      : t('Tick rows to act on them');
+    parts.bulk.textContent = n
+      ? t('Set value on {n}…', { n: fmt.format(n) })
+      : t('Set value…');
     parts.bulk.title = n
-      ? `Apply one operation to all ${fmt.format(n)} selected values · Ctrl E`
+      ? t('Apply one operation to all {n} selected values · Ctrl E', { n: fmt.format(n) })
       : reason;
-    parts.copy.title = n ? `Copy ${fmt.format(n)} paths to the clipboard` : reason;
+    parts.copy.title = n
+      ? t('Copy {n} paths to the clipboard', { n: fmt.format(n) })
+      : reason;
     parts.hint.textContent = n ? '' : reason;
     parts.hint.hidden = n > 0 || parts.editable === 0;
   }
@@ -668,7 +691,7 @@ export class ResultsPanel {
       box,
       el('button', {
         style: 'flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:0',
-        title: 'Show this node in the tree',
+        title: t('Show this node in the tree'),
         // Navigating no longer destroys the list, which is the entire point of
         // this file. The panel stays; the tree and inspector move.
         onclick: () => this.app.navigate(hit.path),
@@ -706,7 +729,7 @@ export class ResultsPanel {
     let committed = hit.value;
     const input = el('input', {
       value: hit.value,
-      title: `${hit.type ?? ''} · Enter to save, Escape to revert`,
+      title: `${hit.type ?? ''} · ${t('Enter to save, Escape to revert')}`,
       style: 'width:88px;flex:0 0 auto;height:24px;padding:0 6px;font-family:var(--font-mono);' +
              'font-size:var(--fs-11);border:1px solid var(--border);border-radius:var(--r-sm);' +
              'background:var(--bg-field);color:var(--text-1)',
@@ -728,7 +751,7 @@ export class ResultsPanel {
         if (this.app.currentPath === hit.path) this.app.inspector.refresh();
       } catch (error) {
         input.value = committed;
-        toastError(error, 'Could not set that value');
+        toastError(error, t('Could not set that value'));
       }
     };
 

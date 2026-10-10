@@ -16,6 +16,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, modal, toast, toastError, fmt, busyWhile } from './ui.js';
 import { icon } from './icons.js';
 
@@ -116,18 +117,20 @@ async function adopt(app, candidate, button) {
     await app.refreshFiles();
     await app.tree.expand(family.id);
     app.navigate(family.id);
-    toast(`${family.name} is now one tree. ${family.members.length} archives merged.`, 'success');
+    toast(t('{name} is now one tree. {n} archives merged.',
+      { name: family.name, n: family.members.length }), 'success');
     checkShadows(app, family.id);
     return true;
   } catch (error) {
     if (button) button.disabled = false;
-    toastError(error, `Could not merge ${candidate.name}`);
+    toastError(error, t('Could not merge {name}', { name: candidate.name }));
     return false;
   }
 }
 
-const MERGE_TIP = 'Show them as one tree. Nothing is copied, nothing is written, and each item '
-                + 'still says which file it is in.';
+/** A function, not a constant: t() at module scope would freeze the language. */
+const mergeTip = () => t('Show them as one tree. Nothing is copied, nothing is written, and each item '
+                       + 'still says which file it is in.');
 
 /**
  * The hint above the tree: ONE line, whatever the folder holds.
@@ -156,21 +159,23 @@ export async function offerMerge(app) {
   // Short enough to survive a 286px pane without an ellipsis eating the verb:
   // the line has to still be an offer at the width it is usually read at.
   const label = one
-    ? `${one.name} is ${one.files.length} files — browse as one tree`
-    : `${fresh.length} split archives — browse as one tree`;
+    ? t('{name} is {n} files — browse as one tree', { name: one.name, n: one.files.length })
+    : t('{n} split archives — browse as one tree', { n: fresh.length });
 
   host.append(el('div', { class: 'family-hint' },
     el('button', {
       class: 'family-hint-open',
-      'data-tip': one ? `${one.files.join(', ')}. ${MERGE_TIP}` : `${label}. ${MERGE_TIP}`,
+      'data-tip': one
+        ? t('{files}. {tip}', { files: one.files.join(', '), tip: mergeTip() })
+        : t('{label}. {tip}', { label, tip: mergeTip() }),
       onclick: (event) => {
         if (one) adopt(app, one, event.currentTarget);
         else openSplitSheet(app);
       },
     }, icon('layers', { size: 13 }), el('span', { class: 'family-hint-text', text: label })),
     el('button', {
-      class: 'family-hint-x', 'aria-label': 'Dismiss',
-      'data-tip': 'Stop offering this. Split archives stay reachable from the ••• menu.',
+      class: 'family-hint-x', 'aria-label': t('Dismiss'),
+      'data-tip': t('Stop offering this. Split archives stay reachable from the ••• menu.'),
       onclick: () => { dismissForever(fresh); offerMerge(app); },
     }, icon('close', { size: 12 }))));
 }
@@ -201,10 +206,10 @@ export async function openSplitSheet(app, candidates) {
         el('div', { style: 'flex:1;min-width:0' },
           el('div', { class: 'family-row-name' },
             el('strong', { text: candidate.name }),
-            stored ? el('span', { class: 'shadow-tag shadow-tag-mild', text: 'dismissed' }) : null),
+            stored ? el('span', { class: 'shadow-tag shadow-tag-mild', text: t('dismissed') }) : null),
           el('div', { class: 'family-row-files', text: candidate.files.join('  ·  ') })),
         el('button', {
-          class: 'btn btn-sm btn-primary', 'data-tip': MERGE_TIP,
+          class: 'btn btn-sm btn-primary', 'data-tip': mergeTip(),
           onclick: async (event) => {
             if (await adopt(app, candidate, event.currentTarget)) {
               // Merged families are no longer adoptable, so a sheet left open
@@ -212,32 +217,34 @@ export async function openSplitSheet(app, candidates) {
               sheet?.close();
             }
           },
-        }, 'Browse as one tree')));
+        }, t('Browse as one tree'))))
     }
   };
   draw();
 
   body.append(
     el('p', { class: 'family-lead',
-      text: 'These archives sit in the same folder and are one archive each, split across files. '
-          + 'Browsing a family as one tree copies nothing, writes nothing, and every item still '
-          + 'says which file it is in.' }),
+      text: t('These archives sit in the same folder and are one archive each, split across files. '
+            + 'Browsing a family as one tree copies nothing, writes nothing, and every item still '
+            + 'says which file it is in.') }),
     rows);
 
   sheet = modal({
-    title: 'Split archives',
-    subtitle: `${all.length} famil${all.length === 1 ? 'y' : 'ies'} in what is already open`,
+    title: t('Split archives'),
+    subtitle: all.length === 1
+      ? t('{n} family in what is already open', { n: all.length })
+      : t('{n} families in what is already open', { n: all.length }),
     width: '560px',
     body,
     actions: [
       live.length
-        ? { label: 'Don’t offer again', class: 'btn-ghost',
+        ? { label: t('Don’t offer again'), class: 'btn-ghost',
             run: () => { dismissForever(all); offerMerge(app); } }
-        : { label: 'Offer these again', class: 'btn-ghost',
+        : { label: t('Offer these again'), class: 'btn-ghost',
             run: () => { undismissAll(); offerMerge(app); } },
-      { label: 'Look in another folder…', class: 'btn-ghost',
+      { label: t('Look in another folder…'), class: 'btn-ghost',
         run: () => { setTimeout(() => openFamilyPicker(app), 0); } },
-      { label: 'Close' },
+      { label: t('Close') },
     ],
   });
 }
@@ -258,8 +265,10 @@ export async function checkShadows(app, familyId) {
   if (!report.total) return;
 
   toast(report.summary, 'warning', {
-    title: `${report.total} duplicate image name${report.total === 1 ? '' : 's'} in ${report.name}`,
-    action: { label: 'Show them', run: () => showShadows(app, familyId, report) },
+    title: report.total === 1
+      ? t('{n} duplicate image name in {name}', { n: report.total, name: report.name })
+      : t('{n} duplicate image names in {name}', { n: report.total, name: report.name }),
+    action: { label: t('Show them'), run: () => showShadows(app, familyId, report) },
   });
 }
 
@@ -271,7 +280,7 @@ export async function showShadows(app, familyId, preloaded) {
   let report = preloaded;
   if (!report) {
     try { report = await api.familyShadows(familyId, 200); }
-    catch (error) { toastError(error, 'Could not check for duplicates'); return; }
+    catch (error) { toastError(error, t('Could not check for duplicates')); return; }
   }
 
   // Declared before the buttons that use it: a <dialog> opened with showModal()
@@ -285,16 +294,16 @@ export async function showShadows(app, familyId, preloaded) {
 
   if (!report.total) {
     body.append(el('p', { class: 'field-hint',
-      text: 'Every image in this family has exactly one home, so the merged tree is showing all of it.' }));
+      text: t('Every image in this family has exactly one home, so the merged tree is showing all of it.') }));
   } else {
     body.append(el('p', { class: 'field-hint' },
-      el('span', { text: 'Only the copy marked ' }),
-      el('span', { class: 'shadow-wins', text: 'shown' }),
+      el('span', { text: t('Only the copy marked ') }),
+      el('span', { class: 'shadow-wins', text: t('shown') }),
       el('span', {
-        text: ' appears in the merged tree; the others are hidden behind it. Which one wins is decided '
-            + 'by mount order and nothing else — the archives do not record which the game loads — so '
-            + 'use "Let the last file win" on the family to see the other side, and open the copy you '
-            + 'actually mean to edit before you edit it.',
+        text: t(' appears in the merged tree; the others are hidden behind it. Which one wins is decided '
+              + 'by mount order and nothing else — the archives do not record which the game loads — so '
+              + 'use "Let the last file win" on the family to see the other side, and open the copy you '
+              + 'actually mean to edit before you edit it.'),
       })));
 
     const table = el('div', { class: 'shadow-table' });
@@ -304,20 +313,20 @@ export async function showShadows(app, familyId, preloaded) {
         icon(entry.differs ? 'alert' : 'copy', { size: 14 }),
         el('span', { text: entry.path }),
         entry.differs
-          ? el('span', { class: 'shadow-tag', text: 'different sizes' })
-          : el('span', { class: 'shadow-tag shadow-tag-mild', text: 'same size' })));
+          ? el('span', { class: 'shadow-tag', text: t('different sizes') })
+          : el('span', { class: 'shadow-tag shadow-tag-mild', text: t('same size') })));
 
       const copies = el('div', { class: 'shadow-copies' });
       for (const copy of entry.copies) {
         copies.append(el('button', {
           class: 'shadow-copy',
           'data-wins': copy.wins ? 'true' : 'false',
-          'data-tip': `Open ${copy.nodePath}`,
+          'data-tip': t('Open {path}', { path: copy.nodePath }),
           onclick: () => { sheet?.close(); app.navigate(copy.nodePath); },
         },
           el('span', { class: 'shadow-file', text: copy.file }),
           el('span', { class: 'shadow-bytes', text: bytes(copy.bytes) }),
-          copy.wins ? el('span', { class: 'shadow-wins', text: 'shown' }) : null));
+          copy.wins ? el('span', { class: 'shadow-wins', text: t('shown') }) : null));
       }
       row.append(copies);
       table.append(row);
@@ -326,21 +335,21 @@ export async function showShadows(app, familyId, preloaded) {
 
     if (report.truncated) {
       body.append(el('p', { class: 'field-hint',
-        text: `Showing the first ${report.entries.length} of ${report.total}.` }));
+        text: t('Showing the first {n} of {total}.', { n: report.entries.length, total: report.total }) }));
     }
   }
 
   body.append(el('p', { class: 'field-hint',
-    text: `${fmt.format(report.imagesScanned)} images checked across the family.` }));
+    text: t('{n} images checked across the family.', { n: fmt.format(report.imagesScanned) }) }));
 
   sheet = modal({
-    title: `Duplicate names in ${report.name}`,
+    title: t('Duplicate names in {name}', { name: report.name }),
     subtitle: report.total
-      ? 'Two files, one name. Only one of them is visible.'
-      : 'Nothing is hidden behind anything else.',
+      ? t('Two files, one name. Only one of them is visible.')
+      : t('Nothing is hidden behind anything else.'),
     width: '640px',
     body,
-    actions: [{ label: 'Close' }],
+    actions: [{ label: t('Close') }],
   });
 }
 
@@ -366,7 +375,7 @@ export function openFamilyPicker(app, startPath) {
     clear(results);
     const folder = input.value.trim();
     if (!folder) return;
-    results.append(el('p', { class: 'field-hint', text: 'Looking…' }));
+    results.append(el('p', { class: 'field-hint', text: t('Looking…') }));
     let found;
     try {
       found = await api.familyDetect(folder);
@@ -379,9 +388,9 @@ export function openFamilyPicker(app, startPath) {
     clear(results);
     if (!found.length) {
       results.append(el('p', { class: 'field-hint',
-        text: 'No split archive families here. A family is a base archive with at least one numbered '
-            + 'part beside it (Skill.wz with Skill001.wz), or a modern Data\\ folder whose archives '
-            + 'are directories.' }));
+        text: t('No split archive families here. A family is a base archive with at least one numbered '
+              + 'part beside it (Skill.wz with Skill001.wz), or a modern Data\\ folder whose archives '
+              + 'are directories.') }));
       return;
     }
 
@@ -399,43 +408,44 @@ export function openFamilyPicker(app, startPath) {
             await app.refreshFiles();
             await app.tree.expand(family.id);
             app.navigate(family.id);
-            toast(`${family.name} merged from ${family.members.length} archives.`, 'success');
+            toast(t('{name} merged from {n} archives.',
+              { name: family.name, n: family.members.length }), 'success');
             checkShadows(app, family.id);
           } catch (error) {
             button.disabled = false;
-            toastError(error, `Could not merge ${candidate.name}`);
+            toastError(error, t('Could not merge {name}', { name: candidate.name }));
           }
         },
-      }, candidate.openAs ? 'Already merged' : 'Browse as one tree');
+      }, candidate.openAs ? t('Already merged') : t('Browse as one tree'));
 
       results.append(el('div', { class: 'family-row' },
         el('div', { style: 'flex:1;min-width:0' },
           el('div', { class: 'family-row-name' },
             el('strong', { text: candidate.name }),
             candidate.kind === 'split-data'
-              ? el('span', { class: 'shadow-tag shadow-tag-mild', text: 'split Data' })
+              ? el('span', { class: 'shadow-tag shadow-tag-mild', text: t('split Data') })
               : null,
             candidate.bytes ? el('span', { class: 'family-row-size', text: bytes(candidate.bytes) }) : null),
           el('div', { class: 'family-row-files', text: candidate.files.join('  ·  ') }),
           candidate.kind === 'split-data'
             ? el('div', { class: 'field-hint',
-                text: 'This shape is merged by "Import from another client", which opens it read-only '
-                    + 'as a single archive.' })
+                text: t('This shape is merged by "Import from another client", which opens it read-only '
+                      + 'as a single archive.') })
             : null),
         open));
     }
   };
 
   sheet = modal({
-    title: 'Browse a split archive as one tree',
-    subtitle: 'Skill.wz, Skill001.wz, Skill002.wz and Skill003.wz are one archive in four files.',
+    title: t('Browse a split archive as one tree'),
+    subtitle: t('Skill.wz, Skill001.wz, Skill002.wz and Skill003.wz are one archive in four files.'),
     width: '620px',
     body: el('div', {},
       el('div', { style: 'display:flex;gap:8px;margin-bottom:12px' },
         input,
-        el('button', { class: 'btn', onclick: () => busyWhile(results, scan()) }, 'Look')),
+        el('button', { class: 'btn', onclick: () => busyWhile(results, scan()) }, t('Look'))),
       results),
-    actions: [{ label: 'Close' }],
+    actions: [{ label: t('Close') }],
     onOpen: () => { if (start) scan(); },
   });
 }
@@ -451,17 +461,19 @@ export function familyMenuItems(app, family) {
     : family.members[0]?.name;
 
   return [
-    { icon: 'chevronDown', label: app.tree.expanded.has(family.id) ? 'Collapse' : 'Expand',
+    { icon: 'chevronDown', label: app.tree.expanded.has(family.id) ? t('Collapse') : t('Expand'),
       run: () => app.tree.toggle(family.id) },
     { icon: 'alert',
       label: family.shadowedImages > 0
-        ? `Show ${family.shadowedImages} duplicate name${family.shadowedImages === 1 ? '' : 's'}…`
-        : 'Check for duplicate names…',
+        ? (family.shadowedImages === 1
+            ? t('Show {n} duplicate name…', { n: family.shadowedImages })
+            : t('Show {n} duplicate names…', { n: family.shadowedImages }))
+        : t('Check for duplicate names…'),
       run: () => showShadows(app, family.id) },
     { icon: 'refresh',
       label: family.lastWins
-        ? `Let the base file win duplicates (now ${winner})`
-        : `Let the last file win duplicates (now ${winner})`,
+        ? t('Let the base file win duplicates (now {name})', { name: winner })
+        : t('Let the last file win duplicates (now {name})', { name: winner }),
       run: async () => {
         try {
           const updated = await api.familyPrecedence(family.id, !family.lastWins);
@@ -473,32 +485,32 @@ export function familyMenuItems(app, family) {
           await app.tree.expand(family.id);
           toast(updated.summary, 'success');
         } catch (error) {
-          toastError(error, 'Could not change which file wins');
+          toastError(error, t('Could not change which file wins'));
         }
       } },
-    { icon: 'save', label: `Save all ${family.members.length} archives`,
+    { icon: 'save', label: t('Save all {n} archives', { n: family.members.length }),
       run: () => {
         const dirty = family.members
           .map((m) => app.files.find((f) => f.id === m.fileId))
           .filter((f) => f?.dirty);
-        if (!dirty.length) { toast('Nothing in this family has unsaved changes.', 'info'); return; }
+        if (!dirty.length) { toast(t('Nothing in this family has unsaved changes.'), 'info'); return; }
         app.runSave(dirty, true);
       } },
-    { icon: 'list', label: `Show the ${family.members.length} archives separately`,
+    { icon: 'list', label: t('Show the {n} archives separately', { n: family.members.length }),
       run: async () => {
         try {
           await api.familyUnmerge(family.id);
           stopOffering(family.folder, family.name);
           app.tree.invalidateAll();
           await app.refreshFiles();
-          toast(`${family.name} is back to ${family.members.length} separate archives. `
-              + 'Nothing was closed.', 'success');
+          toast(t('{name} is back to {n} separate archives. Nothing was closed.',
+            { name: family.name, n: family.members.length }), 'success');
         } catch (error) {
-          toastError(error, 'Could not unmerge');
+          toastError(error, t('Could not unmerge'));
         }
       } },
-    { icon: 'copy', label: 'Copy folder path', run: () => app.copyPath(family.folder) },
-    { icon: 'close', label: `Close all ${family.members.length} archives`, danger: true,
+    { icon: 'copy', label: t('Copy folder path'), run: () => app.copyPath(family.folder) },
+    { icon: 'close', label: t('Close all {n} archives', { n: family.members.length }), danger: true,
       // The batch close, not one call per member. Closing them one at a time
       // asked the same "discard?" question once per archive, so four archives
       // with unsaved work meant four identical dialogs in a row -- and answering

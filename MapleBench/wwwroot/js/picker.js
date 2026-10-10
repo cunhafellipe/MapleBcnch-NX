@@ -11,6 +11,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, modal, fmt } from './ui.js';
 import { icon } from './icons.js';
 
@@ -58,12 +59,12 @@ export function openPicker(app, startPath) {
   const openSelected = el('button', {
     class: 'btn btn-primary', disabled: true,
     onclick: () => commit(),
-  }, icon('folderOpen', { size: 15 }), el('span', { id: 'picker-open-label' }, 'Open selected'));
+  }, icon('folderOpen', { size: 15 }), el('span', { id: 'picker-open-label' }, t('Open selected')));
 
   const openImgFolder = el('button', {
     class: 'btn', hidden: true,
     onclick: () => commitImgFolder(),
-  }, icon('folderOpen', { size: 15 }), 'Open this IMG folder');
+  }, icon('folderOpen', { size: 15 }), t('Open this IMG folder'));
 
   /* ---------- rendering ---------- */
 
@@ -88,7 +89,7 @@ export function openPicker(app, startPath) {
         const drives = await api.browse(null);
         if (stale()) return;
         clear(list); clear(banner); clear(pathBar);
-        pathBar.append(icon('folder', { size: 14 }), el('span', { text: 'This computer' }));
+        pathBar.append(icon('folder', { size: 14 }), el('span', { text: t('This computer') }));
         for (const drive of drives.directories) {
           list.append(row('folder', drive.name, '', () => render(drive.path)));
         }
@@ -120,15 +121,15 @@ export function openPicker(app, startPath) {
         banner.append(el('div', { class: 'notice anim-rise', 'data-tone': 'good' },
           icon('check', { size: 16 }),
           el('span', {
-            text: `MapleStory client detected — ${scan.archiveCount} archives, ${bytes(scan.totalSize)}. ` +
-                  'All selected.',
+            text: t('MapleStory client detected — {archives} archives, {size}. ' +
+                  'All selected.', { archives: scan.archiveCount, size: bytes(scan.totalSize) }),
           })));
       }
 
       clear(list);
 
       if (scan.parent) {
-        list.append(row('arrowUp', '..', 'Up one folder', () => render(scan.parent)));
+        list.append(row('arrowUp', '..', t('Up one folder'), () => render(scan.parent)));
       }
       for (const dir of scan.subdirectories) {
         list.append(row('folder', dir.name, '', () => render(dir.path)));
@@ -140,7 +141,7 @@ export function openPicker(app, startPath) {
       if (!scan.groups.length && !scan.subdirectories.length) {
         list.append(el('div', {
           style: 'padding:28px;text-align:center;color:var(--text-3);font-size:var(--fs-13)',
-          text: 'No .wz, .ms, .nx or .img files or folders here.',
+          text: t('No .wz, .ms, .nx or .img files or folders here.'),
         }));
       }
     } catch (error) {
@@ -173,7 +174,7 @@ export function openPicker(app, startPath) {
     });
 
     const label = group.files.length > 1
-      ? `${group.family} (${group.files.length} parts)`
+      ? t('{family} ({n} parts)', { family: group.family, n: group.files.length })
       : group.files[0].name;
 
     const node = el('div', {
@@ -190,7 +191,7 @@ export function openPicker(app, startPath) {
       // NX rows say so. It opens read-only and is a different format from the classic
       // archives either side of it, so a row that gave no hint would be asking the user to
       // find out.
-      group.kind === 'nx' ? el('span', { class: 'size', text: 'NX · read-only' }) : null,
+      group.kind === 'nx' ? el('span', { class: 'size', text: t('NX · read-only') }) : null,
       el('span', { class: 'size', text: bytes(group.totalSize) }));
 
     return node;
@@ -214,21 +215,27 @@ export function openPicker(app, startPath) {
 
     openSelected.disabled = files === 0;
     $label(openSelected).textContent = files === 0
-      ? 'Open selected'
-      : `Open ${files} file${files === 1 ? '' : 's'}`;
+      ? t('Open selected')
+      : files === 1
+        ? t('Open {n} file', { n: files })
+        : t('Open {n} files', { n: files });
 
     summary.append(
       el('button', {
         class: 'btn btn-sm',
         onclick: () => { scan.groups.forEach((g) => selected.add(g.family)); refreshChecks(); },
-      }, 'Select all'),
+      }, t('Select all')),
       el('button', {
         class: 'btn btn-sm',
         onclick: () => { selected.clear(); refreshChecks(); },
-      }, 'Clear'),
+      }, t('Clear')),
       el('span', {
         style: 'margin-left:auto',
-        text: files ? `${files} file${files === 1 ? '' : 's'} · ${bytes(size)}` : 'Nothing selected',
+        text: files
+          ? files === 1
+            ? t('{n} file · {size}', { n: files, size: bytes(size) })
+            : t('{n} files · {size}', { n: files, size: bytes(size) })
+          : t('Nothing selected'),
       }));
 
     paintHeadroom(size);
@@ -267,12 +274,15 @@ export function openPicker(app, startPath) {
     headroom.hidden = false;
     headroom.dataset.tone = projected > COMFORTABLE_MB ? 'warn' : 'note';
     headroom.append(
-      el('b', { text: projected > COMFORTABLE_MB ? 'This is a lot to hold at once. ' : 'Getting large. ' }),
+      el('b', { text: projected > COMFORTABLE_MB
+        ? t('This is a lot to hold at once. ') : t('Getting large. ') }),
       el('span', {
-        text: `${Math.round(inUseMB).toLocaleString()} MB already in use, ` +
-              `${Math.round(selectedMB).toLocaleString()} MB selected. ` +
+        text: t('{inUse} MB already in use, {selected} MB selected. ' +
               'Archives are read lazily, so the real cost is lower — but if the tool starts refusing ' +
-              'operations, close an archive rather than restarting.',
+              'operations, close an archive rather than restarting.', {
+          inUse: Math.round(inUseMB).toLocaleString(),
+          selected: Math.round(selectedMB).toLocaleString(),
+        }),
       }));
   };
 
@@ -300,7 +310,9 @@ export function openPicker(app, startPath) {
     if (!paths.length) return;
     dialog.close();
 
-    const busy = toast(`Opening ${paths.length} file${paths.length === 1 ? '' : 's'}…`, 'info');
+    const busy = toast(paths.length === 1
+      ? t('Opening {n} file…', { n: paths.length })
+      : t('Opening {n} files…', { n: paths.length }), 'info');
 
     // Only the open itself is allowed to report "could not be opened". A throw
     // from the refresh afterwards used to claim the archives had failed when
@@ -310,7 +322,7 @@ export function openPicker(app, startPath) {
       result = await api.openMany(paths);
     } catch (error) {
       busy.remove();
-      toastError(error, 'Could not open those files');
+      toastError(error, t('Could not open those files'));
       return;
     }
     busy.remove();
@@ -321,28 +333,32 @@ export function openPicker(app, startPath) {
     // error toasts pushed the summary of what did open off the screen.
     if (result.failed.length) {
       toast(result.failed.map((f) => `${f.name}: ${f.message}`).join('\n'),
-        'error', { title: `${result.failed.length} file${result.failed.length === 1 ? '' : 's'} could not be opened` });
+        'error', { title: result.failed.length === 1
+          ? t('{n} file could not be opened', { n: result.failed.length })
+          : t('{n} files could not be opened', { n: result.failed.length }) });
     }
 
     try {
       await app.refreshFiles();
       if (result.opened.length) {
         toast(
-          `Opened ${result.opened.length} file${result.opened.length === 1 ? '' : 's'}.`,
+          result.opened.length === 1
+            ? t('Opened {n} file.', { n: result.opened.length })
+            : t('Opened {n} files.', { n: result.opened.length }),
           result.failed.length ? 'warning' : 'success');
         const first = result.opened[0];
         await app.tree.expand(first.id);
         app.navigate(first.id);
       }
     } catch (error) {
-      toastError(error, 'The files opened, but the tree could not be refreshed');
+      toastError(error, t('The files opened, but the tree could not be refreshed'));
     }
   };
 
   const commitImgFolder = async () => {
     if (!scan?.path) return;
     dialog.close();
-    const busy = toast('Opening IMG folder…', 'info');
+    const busy = toast(t('Opening IMG folder…'), 'info');
     try {
       const file = await api.openImgFolder(scan.path);
       busy.remove();
@@ -350,10 +366,10 @@ export function openPicker(app, startPath) {
       await app.refreshFiles();
       await app.tree.expand(file.id);
       app.navigate(file.id);
-      toast(`Opened ${file.name} as one reference-only IMG tree.`, 'success');
+      toast(t('Opened {name} as one reference-only IMG tree.', { name: file.name }), 'success');
     } catch (error) {
       busy.remove();
-      toastError(error, 'Could not open that IMG folder');
+      toastError(error, t('Could not open that IMG folder'));
     }
   };
 
@@ -364,18 +380,18 @@ export function openPicker(app, startPath) {
         class: 'btn btn-primary', style: 'margin-top:10px;width:100%',
         onclick: async () => {
           try {
-            const chosen = await window.mapleBenchDesktop.pickFolder('Choose your MapleStory folder');
+            const chosen = await window.mapleBenchDesktop.pickFolder(t('Choose your MapleStory folder'));
             if (chosen) await render(chosen);
           } catch (error) {
-            toastError(error, 'The folder dialog could not be opened');
+            toastError(error, t('The folder dialog could not be opened'));
           }
         },
-      }, icon('folderOpen', { size: 15 }), 'Browse Windows folders')
+      }, icon('folderOpen', { size: 15 }), t('Browse Windows folders'))
     : null;
 
   const manual = el('input', {
     class: 'field-input no-icon',
-    placeholder: 'Or paste a full path and press Enter',
+    placeholder: t('Or paste a full path and press Enter'),
     style: 'margin-top:10px',
   });
   manual.addEventListener('keydown', (event) => {
@@ -389,12 +405,12 @@ export function openPicker(app, startPath) {
   });
 
   const { dialog } = modal({
-    title: 'Open client or archive',
-    subtitle: 'Choose a client folder, an archive family, an .nx archive, a standalone .img, or mount an IMG folder.',
+    title: t('Open client or archive'),
+    subtitle: t('Choose a client folder, an archive family, an .nx archive, a standalone .img, or mount an IMG folder.'),
     width: 'min(94vw, 680px)',
     body: el('div', {}, pathBar, banner, list, summary, openImgFolder, headroom, native, manual),
     actions: [
-      { label: 'Cancel' },
+      { label: t('Cancel') },
       { label: '', class: 'hidden', closes: false },
     ],
     onOpen: (node) => {

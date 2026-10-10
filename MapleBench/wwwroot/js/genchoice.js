@@ -24,6 +24,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt, modal } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
@@ -122,9 +123,9 @@ export class GenChoiceSection {
 
   async prepare() {
     const donors = this.donorList();
-    if (!this.s.folder) { toast('Name the client folder first — a folder of COPIES.', 'warn'); return; }
+    if (!this.s.folder) { toast(t('Name the client folder first — a folder of COPIES.'), 'warn'); return; }
     if (!donors.length) {
-      toast('Name at least one donor archive — without one there is no older generation to show.', 'warn');
+      toast(t('Name at least one donor archive — without one there is no older generation to show.'), 'warn');
       return;
     }
     try {
@@ -138,7 +139,7 @@ export class GenChoiceSection {
       this.loadDecisions();
       this.poll();
     } catch (error) {
-      toastError(error, 'Could not start the prepare');
+      toastError(error, t('Could not start the prepare'));
     }
     this.render();
   }
@@ -152,20 +153,21 @@ export class GenChoiceSection {
       let settled = false;
       const finish = (answer) => { if (!settled) { settled = true; resolve(answer); } };
       const { dialog } = modal({
-        title: 'Build the archive from this choice',
-        subtitle: 'Two passes, in the recorded order: donor restore with the accepted skills, then the '
-                + 'canvas-format repair over its output. New files beside the source; nothing is installed.',
+        title: t('Build the archive from this choice'),
+        subtitle: t('Two passes, in the recorded order: donor restore with the accepted skills, then the '
+                + 'canvas-format repair over its output. New files beside the source; nothing is installed.'),
         body: el('div', { class: 'gc-confirm' },
-          el('p', { text: `${accepted} of ${total} conflicted skill(s) accepted — their donor art is `
-                        + 'restored and those skills will mix generations, which is the choice being made.' }),
-          el('p', { text: `${rejected} rejected and ${undecided} undecided — treated the same way: NOT `
+          el('p', { text: t('{accepted} of {total} conflicted skill(s) accepted — their donor art is '
+                        + 'restored and those skills will mix generations, which is the choice being made.',
+                        { accepted, total }) }),
+          el('p', { text: t('{rejected} rejected and {undecided} undecided — treated the same way: NOT '
                         + 'restored. Their links stay dangling and stay reported by the auditor; rejecting '
-                        + 'never deletes a link.' }),
-          el('p', { text: 'Every clean restore (no generation disagreement) is always included, and so is '
-                        + 'every canvas-format repair.' })),
+                        + 'never deletes a link.', { rejected, undecided }) }),
+          el('p', { text: t('Every clean restore (no generation disagreement) is always included, and so is '
+                        + 'every canvas-format repair.') })),
         actions: [
-          { label: 'Cancel', run: () => finish(false) },
-          { label: `Build with ${accepted} accepted`, class: 'btn-primary', run: () => finish(true) },
+          { label: t('Cancel'), run: () => finish(false) },
+          { label: t('Build with {n} accepted', { n: accepted }), class: 'btn-primary', run: () => finish(true) },
         ],
       });
       // Esc and the corner close both land here; without it the promise hangs.
@@ -187,7 +189,7 @@ export class GenChoiceSection {
       });
       this.poll();
     } catch (error) {
-      toastError(error, 'Could not start the build');
+      toastError(error, t('Could not start the build'));
     }
     this.render();
   }
@@ -279,7 +281,8 @@ export class GenChoiceSection {
   importDecisions(json) {
     const read = JSON.parse(json);
     if (read.schema !== 'maplebench/genchoice-decisions@1') {
-      throw new Error(`'${read.schema ?? '(no schema)'}' is not a decisions export this screen understands.`);
+      throw new Error(t('\'{schema}\' is not a decisions export this screen understands.',
+        { schema: read.schema ?? '(no schema)' }));
     }
     this.decisions = read.decisions ?? {};
     this.saveDecisions();
@@ -307,7 +310,7 @@ export class GenChoiceSection {
     if (state === 'failed') this.host.append(this.failureCard());
     if (state === 'cancelled') {
       this.host.append(el('div', { class: 'gc-card gc-note' },
-        el('p', { text: 'The last run was cancelled. Nothing it had not finished was written.' })));
+        el('p', { text: t('The last run was cancelled. Nothing it had not finished was written.') })));
     }
 
     if (this.result) this.host.append(this.resultCard());
@@ -320,21 +323,21 @@ export class GenChoiceSection {
       this.host.append(this.reportNotes());
     } else if (!this.result && state !== 'failed') {
       this.host.append(emptyState(
-        'replace', 'Nothing prepared yet',
-        'Point this at a folder of COPIES of the Skill family plus its donors, and Prepare will decode '
-        + 'both generations of every conflicted skill so you can choose between them per skill.'));
+        'replace', t('Nothing prepared yet'),
+        t('Point this at a folder of COPIES of the Skill family plus its donors, and Prepare will decode '
+        + 'both generations of every conflicted skill so you can choose between them per skill.')));
     }
   }
 
   head() {
     return el('div', { class: 'gc-head' },
       el('div', {},
-        el('h2', { text: 'Choose between generations' }),
+        el('h2', { text: t('Choose between generations') }),
         el('p', {
           class: 'gc-sub',
-          text: 'Restored donor art that would sit beside newer surviving art, one skill at a time: '
+          text: t('Restored donor art that would sit beside newer surviving art, one skill at a time: '
               + 'see both animate, accept or reject each, and build the archive from exactly that choice. '
-              + 'Rejected and undecided skills keep their dangling links — reported, never deleted.',
+              + 'Rejected and undecided skills keep their dangling links — reported, never deleted.'),
         })));
   }
 
@@ -343,9 +346,9 @@ export class GenChoiceSection {
   setupCard() {
     const running = this.running();
     return el('div', { class: 'gc-card' },
-      el('h3', { text: this.report ? 'What this choice reads' : '1 · What to read' }),
+      el('h3', { text: this.report ? t('What this choice reads') : t('1 · What to read') }),
       el('div', { class: 'gc-controls' },
-        el('label', { class: 'gc-label', text: 'Client folder (copies of the Skill family, read-only)' }),
+        el('label', { class: 'gc-label', text: t('Client folder (copies of the Skill family, read-only)') }),
         el('input', {
           class: 'input', type: 'text', value: this.s.folder, spellcheck: 'false',
           placeholder: 'C:\\MapleStory\\_genchoice_work\\client',
@@ -355,19 +358,19 @@ export class GenChoiceSection {
             this.loadDecisions();
           },
         }),
-        el('label', { class: 'gc-label', text: 'Donor archives, one per line, in preference order' }),
+        el('label', { class: 'gc-label', text: t('Donor archives, one per line, in preference order') }),
         el('textarea', {
           class: 'input gc-donors', rows: '2', spellcheck: 'false',
           placeholder: 'C:\\MapleStory\\_genchoice_work\\donors\\Skill_old.wz',
           oninput: (event) => { this.s.donors = event.target.value; this.save(); },
         }, this.s.donors || ''),
         el('div', { class: 'gc-row' },
-          el('label', { class: 'gc-label', text: 'Family' }),
+          el('label', { class: 'gc-label', text: t('Family') }),
           el('input', {
             class: 'input gc-family', type: 'text', value: this.s.family, spellcheck: 'false',
             oninput: (event) => { this.s.family = event.target.value.trim(); this.save(); },
           }),
-          el('label', { class: 'gc-label', text: 'Final output (empty = beside the source)' }),
+          el('label', { class: 'gc-label', text: t('Final output (empty = beside the source)') }),
           el('input', {
             class: 'input gc-output', type: 'text', value: this.s.output, spellcheck: 'false',
             placeholder: 'C:\\MapleStory\\_genchoice_work\\client\\Skill.genchoice.wz',
@@ -375,25 +378,25 @@ export class GenChoiceSection {
           })),
         el('label', {
           class: 'gc-check',
-          'data-tip': 'Other whole-archive repairs were already built from this client\'s pristine '
+          'data-tip': t('Other whole-archive repairs were already built from this client\'s pristine '
                     + 'Skill.wz, and the ledger refuses a second kind of output from the same input '
                     + 'unless this says a separate variant is wanted on purpose. Only one variant can '
-                    + 'ever be installed.',
+                    + 'ever be installed.'),
         },
           el('input', {
             type: 'checkbox',
             checked: this.s.acceptSeparateRepairs ? 'checked' : null,
             onchange: (event) => { this.s.acceptSeparateRepairs = event.target.checked; this.save(); },
           }),
-          el('span', { text: 'Allow a separate variant when the ledger says this input was already repaired' })),
+          el('span', { text: t('Allow a separate variant when the ledger says this input was already repaired') })),
         el('div', { class: 'gc-actions' },
           el('button', {
             class: 'btn btn-primary', disabled: running ? 'disabled' : null,
             onclick: () => this.prepare(),
-          }, icon('search', { size: 15 }), this.report ? 'Prepare again' : 'Prepare the choice'),
+          }, icon('search', { size: 15 }), this.report ? t('Prepare again') : t('Prepare the choice')),
           el('span', {
             class: 'gc-hint',
-            text: 'Read-only: the scan plus decoding both generations. Minutes over a 5 GB family.',
+            text: t('Read-only: the scan plus decoding both generations. Minutes over a 5 GB family.'),
           }))));
   }
 
@@ -411,20 +414,21 @@ export class GenChoiceSection {
         + (inner.canvasesDone ? ` · ${fmt.format(inner.canvasesDone)} canvases` : '')
       : '';
     return el('div', { class: 'gc-card' },
-      el('h3', { text: chooser.state === 'building' ? 'Building from the choice…' : 'Preparing the choice…' }),
-      el('p', { class: 'gc-sub', text: chooser.phase || 'starting' }),
+      el('h3', { text: chooser.state === 'building' ? t('Building from the choice…') : t('Preparing the choice…') }),
+      el('p', { class: 'gc-sub', text: chooser.phase || t('starting') }),
       chooser.groupsTotal
-        ? el('p', { class: 'gc-sub', text: `${chooser.groupsDone} of ${chooser.groupsTotal} skills decoded` })
+        ? el('p', { class: 'gc-sub', text: t('{done} of {total} skills decoded',
+              { done: chooser.groupsDone, total: chooser.groupsTotal }) })
         : null,
       innerLine ? el('p', { class: 'gc-sub gc-inner', text: innerLine }) : null,
       el('p', { class: 'gc-sub', text: `${(chooser.seconds ?? 0).toFixed(0)}s` }),
-      el('button', { class: 'btn', onclick: () => this.cancel() }, 'Cancel'));
+      el('button', { class: 'btn', onclick: () => this.cancel() }, t('Cancel')));
   }
 
   failureCard() {
     return el('div', { class: 'gc-card gc-failed' },
-      el('h3', { text: 'The last run failed' }),
-      el('p', { text: this.progress?.chooser?.error ?? 'No reason was reported.' }));
+      el('h3', { text: t('The last run failed') }),
+      el('p', { text: this.progress?.chooser?.error ?? t('No reason was reported.') }));
   }
 
   /* ---- the choice bar -------------------------------------------------- */
@@ -433,23 +437,23 @@ export class GenChoiceSection {
     const { accepted, rejected, undecided, total } = this.counts();
     return el('div', { class: 'gc-bar' },
       el('div', { class: 'gc-bar-counts' },
-        el('span', { class: 'gc-chip gc-chip-accept', text: `${accepted} accepted` }),
-        el('span', { class: 'gc-chip gc-chip-reject', text: `${rejected} rejected` }),
-        el('span', { class: 'gc-chip', text: `${undecided} undecided of ${total}` })),
+        el('span', { class: 'gc-chip gc-chip-accept', text: t('{n} accepted', { n: accepted }) }),
+        el('span', { class: 'gc-chip gc-chip-reject', text: t('{n} rejected', { n: rejected }) }),
+        el('span', { class: 'gc-chip', text: t('{undecided} undecided of {total}', { undecided, total }) })),
       el('div', { class: 'gc-bar-actions' },
-        el('button', { class: 'btn', onclick: () => this.decideAll('accept') }, 'Accept all'),
-        el('button', { class: 'btn', onclick: () => this.decideAll('reject') }, 'Reject all'),
-        el('button', { class: 'btn', onclick: () => this.clearAll() }, 'Clear'),
+        el('button', { class: 'btn', onclick: () => this.decideAll('accept') }, t('Accept all')),
+        el('button', { class: 'btn', onclick: () => this.decideAll('reject') }, t('Reject all')),
+        el('button', { class: 'btn', onclick: () => this.clearAll() }, t('Clear')),
         el('button', {
           class: 'btn', onclick: () => this.exportDecisions(),
-          'data-tip': 'Download the decision set as JSON — the same set localStorage carries between reloads.',
-        }, icon('download', { size: 14 }), 'Export'),
+          'data-tip': t('Download the decision set as JSON — the same set localStorage carries between reloads.'),
+        }, icon('download', { size: 14 }), t('Export')),
         el('button', {
           class: 'btn btn-primary', disabled: this.running() ? 'disabled' : null,
           onclick: () => this.build(),
-          'data-tip': 'Donor restore with the accepted skills, then the canvas-format repair over its '
-                    + 'output. Writes new files beside the source; installs nothing.',
-        }, icon('save', { size: 14 }), 'Build archive')));
+          'data-tip': t('Donor restore with the accepted skills, then the canvas-format repair over its '
+                    + 'output. Writes new files beside the source; installs nothing.'),
+        }, icon('save', { size: 14 }), t('Build archive'))));
   }
 
   /* ---- one skill ------------------------------------------------------- */
@@ -463,29 +467,31 @@ export class GenChoiceSection {
           group.skillName ? el('span', { class: 'gc-skill-name', text: group.skillName }) : null,
           el('span', {
             class: 'gc-skill-meta',
-            text: `${group.links} link(s) · ${fmt.format(group.canvases)} silent canvas(es) · lands in `
-                + `${group.targetArchive}.wz/${group.imagePath} under ${group.landsUnder} · donor `
-                + `${group.donors.join(', ')}`,
+            text: t('{links} link(s) · {canvases} silent canvas(es) · lands in '
+                + '{archive}.wz/{image} under {under} · donor {donors}',
+                { links: group.links, canvases: fmt.format(group.canvases),
+                  archive: group.targetArchive, image: group.imagePath,
+                  under: group.landsUnder, donors: group.donors.join(', ') }),
           })),
         el('div', { class: 'gc-group-buttons' },
           el('button', {
             class: 'btn gc-accept', 'data-on': decision === 'accept' ? 'true' : 'false',
             onclick: () => this.decide(group.skillId, 'accept'),
-            'data-tip': 'Restore this skill\'s donor art. Its links draw again; the skill mixes the two '
-                      + 'generations shown here.',
-          }, icon('check', { size: 14 }), 'Accept'),
+            'data-tip': t('Restore this skill\'s donor art. Its links draw again; the skill mixes the two '
+                      + 'generations shown here.'),
+          }, icon('check', { size: 14 }), t('Accept')),
           el('button', {
             class: 'btn gc-reject', 'data-on': decision === 'reject' ? 'true' : 'false',
             onclick: () => this.decide(group.skillId, 'reject'),
-            'data-tip': 'Leave this skill alone. Its look stays consistent; these links stay dangling '
-                      + 'and stay reported.',
-          }, icon('close', { size: 14 }), 'Reject'))),
+            'data-tip': t('Leave this skill alone. Its look stays consistent; these links stay dangling '
+                      + 'and stay reported.'),
+          }, icon('close', { size: 14 }), t('Reject')))),
       el('div', { class: 'gc-panes' },
-        this.pane('Would be restored — donor (older generation)',
-          'The art the dangling links were written for. Restoring it is what Accept means.',
+        this.pane(t('Would be restored — donor (older generation)'),
+          t('The art the dangling links were written for. Restoring it is what Accept means.'),
           group.donorSets),
-        this.pane('Already there — live (newer generation)',
-          'Survived the port and stays either way. This is what the restored art would sit beside.',
+        this.pane(t('Already there — live (newer generation)'),
+          t('Survived the port and stays either way. This is what the restored art would sit beside.'),
           group.liveSets)),
       group.notes?.length
         ? el('div', { class: 'gc-group-notes' },
@@ -499,7 +505,7 @@ export class GenChoiceSection {
       el('p', { class: 'gc-pane-sub', text: sub }),
       sets.length
         ? el('div', { class: 'gc-sets' }, ...sets.map((set) => this.setView(set)))
-        : el('p', { class: 'gc-pane-empty', text: 'Nothing decoded for this side — the notes below say why.' }));
+        : el('p', { class: 'gc-pane-empty', text: t('Nothing decoded for this side — the notes below say why.') }));
   }
 
   /**
@@ -518,7 +524,7 @@ export class GenChoiceSection {
           class: 'gc-frame gc-frame-missing',
           style: `left:${px(frame.offsetX)};top:${px(frame.offsetY)};`
                + `width:${px(frame.width)};height:${px(frame.height)}`,
-          'data-tip': frame.note || 'this frame did not decode',
+          'data-tip': frame.note || t('this frame did not decode'),
         });
       }
       return el('img', {
@@ -557,19 +563,21 @@ export class GenChoiceSection {
       },
         el('span', { class: 'gc-caption-name', text: leaf }),
         el('span', {
-          text: `${set.frames.length} frame(s) · ${set.width}×${set.height} · format ${formats} · `
-              + `${set.totalMs} ms${set.truncated ? ` · ${set.note}` : ''}`,
+          text: t('{n} frame(s) · {w}×{h} · format {formats} · {ms} ms{note}',
+              { n: set.frames.length, w: set.width, h: set.height, formats,
+                ms: set.totalMs, note: set.truncated ? ` · ${set.note}` : '' }),
         })));
   }
 
   reportNotes() {
     return el('div', { class: 'gc-card gc-note' },
-      el('h3', { text: 'What this choice rests on' }),
+      el('h3', { text: t('What this choice rests on') }),
       ...(this.report.notes ?? []).map((note) => el('p', { text: note })),
       el('p', {
-        text: `Beyond the choice: ${this.report.restorable} clean restore(s) are always included, `
-            + `${this.report.unrestorable} link(s) no donor holds are reported and left exactly as they `
+        text: t('Beyond the choice: {restorable} clean restore(s) are always included, '
+            + '{unrestorable} link(s) no donor holds are reported and left exactly as they '
             + 'are, and every canvas-format repair is always applied.',
+            { restorable: this.report.restorable, unrestorable: this.report.unrestorable }),
       }));
   }
 
@@ -580,39 +588,39 @@ export class GenChoiceSection {
     const restore = r.restore ?? {};
     const format = r.format;
     return el('div', { class: 'gc-card gc-result' },
-      el('h3', { text: 'Built — verified on the saved and reopened archives, installed nowhere' }),
+      el('h3', { text: t('Built — verified on the saved and reopened archives, installed nowhere') }),
       el('div', { class: 'gc-result-grid' },
-        this.stat('Accepted skills', `${r.acceptedSkillIds?.length ?? 0}`),
-        this.stat('Rejected/undecided', `${r.rejectedSkillIds?.length ?? 0}`),
-        this.stat('Links restored', `${restore.written ?? 0} (identity held ${restore.identityHeld ?? 0})`),
-        this.stat('Dangling', `${restore.danglingBefore ?? 0} → ${restore.danglingAfter ?? 0}`),
-        this.stat('Silent canvases', `${fmt.format(restore.danglingCanvasesBefore ?? 0)} → `
+        this.stat(t('Accepted skills'), `${r.acceptedSkillIds?.length ?? 0}`),
+        this.stat(t('Rejected/undecided'), `${r.rejectedSkillIds?.length ?? 0}`),
+        this.stat(t('Links restored'), `${restore.written ?? 0} (identity held ${restore.identityHeld ?? 0})`),
+        this.stat(t('Dangling'), `${restore.danglingBefore ?? 0} → ${restore.danglingAfter ?? 0}`),
+        this.stat(t('Silent canvases'), `${fmt.format(restore.danglingCanvasesBefore ?? 0)} → `
                                    + `${fmt.format(restore.danglingCanvasesAfter ?? 0)}`),
-        this.stat('Format repairs', format ? `${format.repaired} (decoded ${format.decoded})` : 'pass not reached'),
-        this.stat('Bystanders decoded', `${fmt.format((restore.bystandersDecoded ?? 0) + (format?.bystandersDecoded ?? 0))}`
+        this.stat(t('Format repairs'), format ? `${format.repaired} (decoded ${format.decoded})` : t('pass not reached')),
+        this.stat(t('Bystanders decoded'), `${fmt.format((restore.bystandersDecoded ?? 0) + (format?.bystandersDecoded ?? 0))}`
                                       + `, failed ${(restore.bystandersFailed ?? 0) + (format?.bystandersFailed ?? 0)}`),
-        this.stat('Bytes', `${fmt.format(restore.sourceBytes ?? 0)} → ${fmt.format(r.finalBytes ?? 0)}`)),
-      el('p', { class: 'gc-sub', text: `Final archive: ${r.finalOutput || '(nothing was written)'}` }),
+        this.stat(t('Bytes'), `${fmt.format(restore.sourceBytes ?? 0)} → ${fmt.format(r.finalBytes ?? 0)}`)),
+      el('p', { class: 'gc-sub', text: t('Final archive: {path}', { path: r.finalOutput || t('(nothing was written)') }) }),
       r.installCommand ? el('div', { class: 'gc-install' },
-        el('p', { class: 'gc-sub', text: 'To install — backup first, then copy. Run it yourself; this tool will not.' }),
+        el('p', { class: 'gc-sub', text: t('To install — backup first, then copy. Run it yourself; this tool will not.') }),
         el('code', { text: r.installCommand }),
         el('button', {
           class: 'btn',
           onclick: () => navigator.clipboard.writeText(r.installCommand)
-            .then(() => toast('Copied.', 'info'))
-            .catch(() => toast('Could not reach the clipboard — select the text instead.', 'warn')),
-        }, icon('copy', { size: 14 }), 'Copy')) : null,
+            .then(() => toast(t('Copied.'), 'info'))
+            .catch(() => toast(t('Could not reach the clipboard — select the text instead.'), 'warn')),
+        }, icon('copy', { size: 14 }), t('Copy'))) : null,
       (restore.stillDangling?.length ?? 0) > 0 ? el('details', { class: 'gc-still' },
-        el('summary', { text: `${restore.stillDangling.length} link(s) still dangling — rejected, undecided, or `
-                            + 'unrestorable. Reported, never deleted.' }),
+        el('summary', { text: t('{n} link(s) still dangling — rejected, undecided, or '
+                            + 'unrestorable. Reported, never deleted.', { n: restore.stillDangling.length }) }),
         ...restore.stillDangling.slice(0, 100).map((c) => el('p', { class: 'gc-mono', text: c.link }))) : null,
       (restore.failures?.length ?? 0) + (format?.failures?.length ?? 0) > 0
         ? el('div', { class: 'gc-failures' },
-            el('h4', { text: 'Failures' }),
+            el('h4', { text: t('Failures') }),
             ...[...(restore.failures ?? []), ...(format?.failures ?? [])].map((f) => el('p', { text: f })))
         : null,
       el('details', {},
-        el('summary', { text: 'The full record — every note both passes wrote' }),
+        el('summary', { text: t('The full record — every note both passes wrote') }),
         ...(r.notes ?? []).map((note) => el('p', { class: 'gc-sub', text: note })),
         ...(restore.notes ?? []).map((note) => el('p', { class: 'gc-sub', text: note })),
         ...((format?.notes) ?? []).map((note) => el('p', { class: 'gc-sub', text: note }))));

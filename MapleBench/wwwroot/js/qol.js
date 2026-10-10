@@ -7,6 +7,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, $, clear, toast, toastError, fmt, modal, confirmDialog, humanContext } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
@@ -98,7 +99,7 @@ export class Pins {
     const existing = this.find(path);
     if (existing) {
       this.items = this.items.filter((p) => p !== existing);
-      toast('Removed from pinned.', 'info');
+      toast(t('Removed from pinned.'), 'info');
     } else {
       const { filePath, subPath, file } = this.describe(path);
       this.items.unshift({
@@ -107,7 +108,7 @@ export class Pins {
         label: label || decodeURIComponent(path.split('/').pop()),
         file,
       });
-      toast('Pinned.', 'success');
+      toast(t('Pinned.'), 'success');
     }
     this.save();
     return this.has(path);
@@ -116,8 +117,8 @@ export class Pins {
   render(host) {
     clear(host);
     if (!this.items.length) {
-      host.append(emptyState('star', 'Nothing pinned',
-        'Press Ctrl D on a node, or use its right-click menu, to keep it one click away.'));
+      host.append(emptyState('star', t('Nothing pinned'),
+        t('Press Ctrl D on a node, or use its right-click menu, to keep it one click away.')));
       return;
     }
 
@@ -125,7 +126,7 @@ export class Pins {
       const target = this.resolve(pin);
       const subtitle = target
         ? pin.file
-        : `${pin.file} · not open`;
+        : t('{file} · not open', { file: pin.file });
 
       host.append(el('div', {
         style: 'display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:var(--r-sm)',
@@ -136,21 +137,21 @@ export class Pins {
           style: 'flex:1;text-align:left;border:0;background:transparent;font-size:var(--fs-13);overflow:hidden;' +
                  `color:var(--text-${target ? '1' : '3'})`,
           // A pin whose archive is closed says so rather than failing on click.
-          title: target ? decodeURIComponent(target) : `Open ${pin.filePath ?? pin.file} to use this pin.`,
+          title: target ? decodeURIComponent(target) : t('Open {file} to use this pin.', { file: pin.filePath ?? pin.file }),
           onclick: () => {
             const live = this.resolve(pin);
             if (live) this.app.navigate(live);
-            else toast(`${pin.file} is not open.`, 'warning');
+            else toast(t('{file} is not open.', { file: pin.file }), 'warning');
           },
         },
           el('div', { style: 'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', text: pin.label }),
           el('div', { style: 'font-size:var(--fs-10);color:var(--text-3)', text: subtitle })),
         el('button', {
-          class: 'btn btn-sm btn-icon btn-ghost', 'data-tip': 'Unpin',
+          class: 'btn btn-sm btn-icon btn-ghost', 'data-tip': t('Unpin'),
           onclick: () => {
             this.items = this.items.filter((p) => p !== pin);
             this.save();
-            toast('Removed from pinned.', 'info');
+            toast(t('Removed from pinned.'), 'info');
             this.render(host);
           },
         }, icon('close', { size: 13 }))));
@@ -175,14 +176,14 @@ export async function renderChanges(host, app) {
     [data, history] = await Promise.all([api.changes(), api.history().catch(() => null)]);
   } catch (error) {
     clear(host);
-    host.append(emptyState('alert', 'Could not read changes', error.message));
+    host.append(emptyState('alert', t('Could not read changes'), error.message));
     return;
   }
 
   clear(host);
   if (!data.files.length) {
-    host.append(emptyState('check', 'No unsaved changes',
-      'Everything on disk matches what you see here.'));
+    host.append(emptyState('check', t('No unsaved changes'),
+      t('Everything on disk matches what you see here.')));
     return;
   }
 
@@ -200,9 +201,9 @@ export async function renderChanges(host, app) {
     host.append(el('div', {
       style: 'display:flex;align-items:baseline;gap:6px;padding:8px 8px 2px;font-size:var(--fs-11);color:var(--text-2)',
     },
-      el('b', { text: `${fmt.format(history.undoDepth)} change${history.undoDepth === 1 ? '' : 's'} not yet written` }),
+      el('b', { text: t('{n} change not yet written', { n: fmt.format(history.undoDepth) }) }),
       history.nextUndo
-        ? el('span', { style: 'color:var(--text-3)', text: `· last was “${history.nextUndo}”` })
+        ? el('span', { style: 'color:var(--text-3)', text: t('· last was “{what}”', { what: history.nextUndo }) })
         : null));
   }
 
@@ -221,26 +222,26 @@ export async function renderChanges(host, app) {
       el('span', {
         style: 'color:var(--text-3);font-weight:500',
         title: entry.structuralEdits
-          ? `${entry.structuralEdits} of these added, removed, renamed or moved nodes. Those live in `
-            + 'the archive’s structure rather than inside an image, and the whole archive is '
-            + 'rewritten on save either way.'
+          ? t('{n} of these added, removed, renamed or moved nodes. Those live in the archive’s '
+            + 'structure rather than inside an image, and the whole archive is rewritten on save '
+            + 'either way.', { n: entry.structuralEdits })
           : null,
         // Never zero while the archive is dirty: unlistedChanges covers the
         // case where the work is real and cannot be enumerated, and it gets a
         // line of its own below rather than a count that reads as "nothing".
         text: entry.unlistedChanges
-          ? 'unsaved work'
-          : `${fmt.format(count)} change${count === 1 ? '' : 's'}`,
+          ? t('unsaved work')
+          : t('{n} change', { n: fmt.format(count) }),
       }),
       el('button', {
-        class: 'btn btn-sm btn-primary', style: 'margin-left:auto', text: 'Save',
+        class: 'btn btn-sm btn-primary', style: 'margin-left:auto', text: t('Save'),
         // Dead for the length of the write: the row stays on screen throughout,
         // and app.runSave drops a second call rather than queueing it, so a
         // live button would just be one that does nothing when clicked.
         onclick: async (event) => {
           const button = event.currentTarget;
           button.disabled = true;
-          button.textContent = 'Saving…';
+          button.textContent = t('Saving…');
           try { await app.runSave([entry.file], true); }
           finally { renderChanges(host, app); }
         },
@@ -267,15 +268,15 @@ export async function renderChanges(host, app) {
     // delete that is the container, which is the only thing left to look at.
     for (const node of entry.nodes ?? []) {
       host.append(row(
-        node.paths?.length ? decodeURIComponent(node.paths[0]) : 'Nothing left to navigate to',
+        node.paths?.length ? decodeURIComponent(node.paths[0]) : t('Nothing left to navigate to'),
         node.paths?.[0] || null, node.label, 'edit'));
     }
 
     if (entry.unlistedChanges) {
       host.append(el('div', {
         style: 'padding:2px 8px 6px 18px;font-size:var(--fs-11);color:var(--text-3)',
-        text: 'This archive has unsaved work that cannot be listed — an edit older than the undo '
-            + 'history, or one recorded without an undo entry. Saving writes it; closing loses it.',
+        text: t('This archive has unsaved work that cannot be listed — an edit older than the undo '
+            + 'history, or one recorded without an undo entry. Saving writes it; closing loses it.'),
       }));
     }
 
@@ -283,7 +284,7 @@ export async function renderChanges(host, app) {
     if (count > listed) {
       host.append(el('div', {
         style: 'padding:2px 8px 6px 18px;font-size:var(--fs-11);color:var(--text-3)',
-        text: `Showing the first ${fmt.format(listed)} of ${fmt.format(count)}.`,
+        text: t('Showing the first {shown} of {total}.', { shown: fmt.format(listed), total: fmt.format(count) }),
       }));
     }
   }
@@ -297,11 +298,11 @@ export function openFindReplace(app, scopePath) {
   const style = 'width:100%;height:34px;padding:0 10px;border:1px solid var(--border);' +
                 'border-radius:var(--r-sm);background:var(--bg-field);color:var(--text-1)';
 
-  const find = el('input', { placeholder: 'Find', style });
-  const replace = el('input', { placeholder: 'Replace with', style });
+  const find = el('input', { placeholder: t('Find'), style });
+  const replace = el('input', { placeholder: t('Replace with'), style });
   const scope = el('input', {
     value: scopePath ? decodeURIComponent(scopePath) : '',
-    placeholder: 'All open files',
+    placeholder: t('All open files'),
     style: style + ';font-family:var(--font-mono);font-size:var(--fs-12)',
     readonly: true,
   });
@@ -346,7 +347,7 @@ export function openFindReplace(app, scopePath) {
     busy = state;
     if (previewButton) {
       previewButton.disabled = state;
-      previewButton.textContent = state && label === 'preview' ? 'Previewing…' : 'Preview';
+      previewButton.textContent = state && label === 'preview' ? t('Previewing…') : t('Preview');
     }
     syncApplyButton();
   };
@@ -359,12 +360,12 @@ export function openFindReplace(app, scopePath) {
     applyButton.disabled = !ready;
     applyButton.title = ready
       ? ''
-      : (busy ? 'Working…' : 'Preview first, so you can see what will change.');
+      : (busy ? t('Working…') : t('Preview first, so you can see what will change.'));
   };
 
   const preview = async () => {
     if (busy) return;
-    if (!find.value) { toast('Enter something to find.', 'warning'); return; }
+    if (!find.value) { toast(t('Enter something to find.'), 'warning'); return; }
     setBusy(true, 'preview');
     clear(results);
     results.append(el('div', { class: 'skeleton skeleton-row', style: 'width:60%' }));
@@ -376,14 +377,14 @@ export function openFindReplace(app, scopePath) {
       if (!data.changed.length) {
         results.append(el('div', {
           style: 'padding:20px;text-align:center;color:var(--text-3);font-size:var(--fs-13)',
-          text: `Nothing matches "${find.value}".`,
+          text: t('Nothing matches "{what}".', { what: find.value }),
         }));
         return;
       }
 
       results.append(el('div', {
         style: 'font-size:var(--fs-12);color:var(--text-2);margin-bottom:8px;font-weight:600',
-        text: `${fmt.format(data.changed.length)} change${data.changed.length === 1 ? '' : 's'} would be made`,
+        text: t('{n} change would be made', { n: fmt.format(data.changed.length) }),
       }));
 
       // The ceiling, said before the write rather than discovered after it.
@@ -401,11 +402,10 @@ export function openFindReplace(app, scopePath) {
                  'border:1px solid var(--warn-border,var(--border));background:var(--warn-bg,var(--bg-subtle));' +
                  'font-size:var(--fs-11);line-height:1.5;color:var(--text-2)',
         },
-          el('b', { text: `There are more than ${fmt.format(LIMIT)} matches.` }),
-          ' Replacing now changes the first ',
-          el('b', { text: fmt.format(data.changed.length) }),
-          ' and leaves the rest exactly as they are. Narrow the scope to one archive or one branch and run it again, ' +
-          'or run this repeatedly until the count comes back under the ceiling.'));
+          el('b', { text: t('There are more than {limit} matches.', { limit: fmt.format(LIMIT) }) }),
+          el('span', {}, t(' Replacing now changes the first {shown} and leaves the rest exactly as they are. '
+            + 'Narrow the scope to one archive or one branch and run it again, or run this repeatedly until '
+            + 'the count comes back under the ceiling.', { shown: fmt.format(data.changed.length) }))));
       }
 
       for (const hit of data.changed.slice(0, 300)) {
@@ -422,7 +422,9 @@ export function openFindReplace(app, scopePath) {
           style: 'padding:8px;font-size:var(--fs-11);color:var(--text-3)',
           // A list that silently stops at 300 of 4,000 invites the reading that
           // 300 is the whole job.
-          text: `Showing the first 300 of ${fmt.format(data.changed.length)}. All ${fmt.format(data.changed.length)} are replaced.`,
+          text: t('Showing the first 300 of {total}. All {total} are replaced.', {
+            total: fmt.format(data.changed.length),
+          }),
         }));
       }
     } catch (error) {
@@ -437,13 +439,14 @@ export function openFindReplace(app, scopePath) {
     if (busy || !lastPreview?.changed.length) return;
 
     const ok = await confirmDialog({
-      title: `Apply ${fmt.format(lastPreview.changed.length)} change${lastPreview.changed.length === 1 ? '' : 's'}?`,
+      title: t('Apply {n} change?', { n: fmt.format(lastPreview.changed.length) }),
       message: (lastPreview.truncated
-        ? `This is the first ${fmt.format(lastPreview.changed.length)} of more matches than the ceiling allows. ` +
-          'Everything past it stays as it is, and this dialog cannot tell you how many that is. '
+        ? t('This is the first {shown} of more matches than the ceiling allows. Everything past it ' +
+          'stays as it is, and this dialog cannot tell you how many that is.',
+          { shown: fmt.format(lastPreview.changed.length) })
         : '') +
-        'Nothing is written to disk until you save. The whole replace is recorded as a single undo step.',
-      confirmLabel: 'Replace all',
+        t('Nothing is written to disk until you save. The whole replace is recorded as a single undo step.'),
+      confirmLabel: t('Replace all'),
       danger: Boolean(lastPreview.truncated),
     });
     if (!ok) return;
@@ -456,11 +459,11 @@ export function openFindReplace(app, scopePath) {
       // "Replaced 5000 values." after a capped run is a success message for a
       // job that stopped half-way.
       if (data.truncated) {
-        toast(`Replaced ${fmt.format(data.changed.length)} value${data.changed.length === 1 ? '' : 's'} — the ceiling. ` +
-              'There are more matches left untouched; run it again to continue.',
-        'warning', { title: 'Partly replaced' });
+        toast(t('Replaced {n} value — the ceiling. There are more matches left untouched; ' +
+              'run it again to continue.', { n: fmt.format(data.changed.length) }),
+        'warning', { title: t('Partly replaced') });
       } else {
-        toast(`Replaced ${fmt.format(data.changed.length)} value${data.changed.length === 1 ? '' : 's'}.`, 'success');
+        toast(t('Replaced {n} value.', { n: fmt.format(data.changed.length) }), 'success');
       }
       if (scopePath) {
         app.afterStructureChange(scopePath);
@@ -473,7 +476,7 @@ export function openFindReplace(app, scopePath) {
         else app.shop.load();
       }
     } catch (error) {
-      toastError(error, 'Replace failed');
+      toastError(error, t('Replace failed'));
     } finally {
       setBusy(false);
     }
@@ -482,32 +485,34 @@ export function openFindReplace(app, scopePath) {
   find.addEventListener('keydown', (e) => { if (e.key === 'Enter') preview(); });
 
   const { dialog } = modal({
-    title: 'Find and replace',
+    title: t('Find and replace'),
     width: '640px',
     body: el('div', {},
-      el('label', { style: 'font-size:var(--fs-11);font-weight:600;color:var(--text-2)', text: 'Scope' }),
+      el('label', { style: 'font-size:var(--fs-11);font-weight:600;color:var(--text-2)', text: t('Scope') }),
       scope,
       el('div', { style: 'height:10px' }),
       find,
       el('div', { style: 'height:8px' }),
       replace,
       el('div', { style: 'display:flex;gap:16px;flex-wrap:wrap;margin-top:12px' },
-        el('label', { class: 'check-row' }, inValues, 'Values'),
-        el('label', { class: 'check-row' }, inNames, 'Names'),
-        el('label', { class: 'check-row' }, useRegex, 'Regex'),
-        el('label', { class: 'check-row' }, caseSensitive, 'Match case')),
+        el('label', { class: 'check-row' }, inValues, t('Values')),
+        el('label', { class: 'check-row' }, inNames, t('Names')),
+        el('label', { class: 'check-row' }, useRegex, t('Regex')),
+        el('label', { class: 'check-row' }, caseSensitive, t('Match case'))),
       results),
     actions: [
-      { label: 'Cancel' },
-      { label: 'Preview', run: () => { preview(); return false; }, closes: false },
-      { label: 'Replace all', class: 'btn-primary', run: () => { apply(); return false; }, closes: false },
+      { label: t('Cancel') },
+      { label: t('Preview'), run: () => { preview(); return false; }, closes: false },
+      { label: t('Replace all'), class: 'btn-primary', run: () => { apply(); return false; }, closes: false },
     ],
     // The dialog argument, not the `dialog` const below: onOpen runs inside
     // modal(), before the destructuring assignment has happened.
     onOpen: (host) => {
       find.focus();
       const buttons = [...host.querySelectorAll('.modal-foot button')];
-      previewButton = buttons.find((b) => b.textContent.startsWith('Preview')) ?? null;
+      // Matched on position, not on the English label: the labels are
+      // translated, so textContent.startsWith('Preview') stops finding it.
+      previewButton = buttons[buttons.length - 2] ?? null;
       applyButton = buttons.find((b) => b.classList.contains('btn-primary')) ?? null;
       syncApplyButton();
     },
@@ -560,10 +565,10 @@ export function openBulkEdit(app, paths) {
     if (!applyButton) return;
     const ready = !busy && planned !== null && planned.changed > 0;
     applyButton.disabled = !ready;
-    applyButton.textContent = ready ? `Apply to ${planned.changed}` : 'Apply';
+    applyButton.textContent = ready ? t('Apply to {n}', { n: planned.changed }) : t('Apply');
     applyButton.title = ready
       ? planned.description
-      : (busy ? 'Working…' : 'Preview first, so you can see what will change.');
+      : (busy ? t('Working…') : t('Preview first, so you can see what will change.'));
   };
 
   const rowStyle = 'display:flex;align-items:baseline;gap:8px;padding:3px 6px;' +
@@ -576,8 +581,11 @@ export function openBulkEdit(app, paths) {
       style: 'font-size:var(--fs-12);font-weight:600;margin-bottom:6px;color:var(--text-2)',
       // The count is the plan's, never the selection's. Saying "312" over 40
       // actual writes is the failure this whole path is shaped to avoid.
-      text: `${result.description} · ${result.changed} of ${paths.length} would change` +
-            (result.skipped ? ` · ${result.skipped} skipped` : ''),
+      text: t('{what} · {changed} of {total} would change', {
+        what: result.description,
+        changed: result.changed,
+        total: paths.length,
+      }) + (result.skipped ? t(' · {n} skipped', { n: result.skipped }) : ''),
     }));
 
     // Changed rows first: the skipped ones are diagnostics and the changed ones
@@ -601,7 +609,7 @@ export function openBulkEdit(app, paths) {
     if (ordered.length > 400) {
       preview.append(el('div', {
         style: 'padding:6px;font-size:var(--fs-11);color:var(--text-3)',
-        text: `…and ${ordered.length - 400} more. All of them are included.`,
+        text: t('…and {n} more. All of them are included.', { n: ordered.length - 400 }),
       }));
     }
   };
@@ -633,14 +641,14 @@ export function openBulkEdit(app, paths) {
 
       // Reported from what came back, not from what was asked for.
       if (!result.applied) {
-        toast('Nothing was changed.', 'warning');
+        toast(t('Nothing was changed.'), 'warning');
       } else if (result.skipped) {
-        toast(`Changed ${result.changed} value${result.changed === 1 ? '' : 's'}. ` +
-              `${result.skipped} could not be and ${result.skipped === 1 ? 'was' : 'were'} left alone.`,
-              'warning', { action: { label: 'Undo', run: () => app.undo() } });
+        toast(t('Changed {n} value. {skipped} could not be and were left alone.', {
+          n: result.changed, skipped: result.skipped,
+        }), 'warning', { action: { label: t('Undo'), run: () => app.undo() } });
       } else {
-        toast(`Changed ${result.changed} value${result.changed === 1 ? '' : 's'} — ${result.description}.`,
-              'success', { action: { label: 'Undo', run: () => app.undo() } });
+        toast(t('Changed {n} value — {what}.', { n: result.changed, what: result.description }),
+              'success', { action: { label: t('Undo'), run: () => app.undo() } });
       }
 
       app.markDirty();
@@ -649,7 +657,7 @@ export function openBulkEdit(app, paths) {
       // rows show the old numbers until it re-reads them.
       if (app.panel === 'results') app.results.refreshValues();
     } catch (error) {
-      toastError(error, 'Bulk edit failed');
+      toastError(error, t('Bulk edit failed'));
     } finally {
       busy = false; syncApply();
     }
@@ -664,27 +672,29 @@ export function openBulkEdit(app, paths) {
   });
 
   const { dialog } = modal({
-    title: `Change ${paths.length} value${paths.length === 1 ? '' : 's'}`,
+    title: t('Change {n} value', { n: paths.length }),
     width: '560px',
     body: el('div', {},
       el('p', {
         style: 'margin:0 0 10px;color:var(--text-2);font-size:var(--fs-13);line-height:1.5',
-        text: 'Type an operation to apply to each value, or a plain value to set them all the same. ' +
-              'Nothing is written until you apply, and the whole change is one undo step.',
+        text: t('Type an operation to apply to each value, or a plain value to set them all the same. ' +
+              'Nothing is written until you apply, and the whole change is one undo step.'),
       }),
       expression,
       el('div', {
         style: 'margin-top:8px;font-size:var(--fs-11);color:var(--text-3);line-height:1.6',
+        // Only the prose goes through t(): the <code> tokens are literals the
+        // operation grammar accepts, not words.
         html: '<code>+50</code> <code>-10</code> <code>*1.5</code> <code>/2</code> ' +
               '<code>+15%</code> <code>round</code> <code>floor</code> <code>ceil</code> ' +
               '<code>min 1</code> <code>max 999</code> <code>clamp 1 999</code> ' +
-              '<code>=150</code> sets a literal',
+              '<code>=150</code> ' + t('sets a literal'),
       }),
       preview),
     actions: [
-      { label: 'Cancel' },
-      { label: 'Preview', run: () => { runPreview(); return false; }, closes: false },
-      { label: 'Apply', class: 'btn-primary', run: () => { apply(); return false; }, closes: false },
+      { label: t('Cancel') },
+      { label: t('Preview'), run: () => { runPreview(); return false; }, closes: false },
+      { label: t('Apply'), class: 'btn-primary', run: () => { apply(); return false; }, closes: false },
     ],
     onOpen: (host) => {
       expression.focus();
@@ -726,8 +736,8 @@ function addHandle(panel, side, onResize) {
     role: 'separator',
     tabindex: '0',
     'aria-orientation': 'vertical',
-    'aria-label': side === 'right' ? 'Resize file pane' : 'Resize inspector pane',
-    'data-tip': 'Drag to resize · Arrow keys also work',
+    'aria-label': side === 'right' ? t('Resize file pane') : t('Resize inspector pane'),
+    'data-tip': t('Drag to resize · Arrow keys also work'),
   });
   panel.style.position = 'relative';
   panel.append(handle);
@@ -798,7 +808,7 @@ export function offerSessionRestore(app) {
   return el('button', {
     class: 'btn',
     title: previous.map((f) => f.path).join('\n'),
-    text: `Reopen last session (${previous.length} file${previous.length === 1 ? '' : 's'})`,
+    text: t('Reopen last session ({n} file)', { n: previous.length }),
     onclick: async () => {
       for (const entry of previous) {
         try {
