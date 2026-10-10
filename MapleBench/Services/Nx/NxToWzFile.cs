@@ -147,39 +147,151 @@ public static class NxToWzFile
             // NX's root children are the *.img images themselves, exactly where WZ keeps them.
             var image = new WzImage(imageNode.Name);
 
-            // WzPropertyCollection.Add, not WzImage.AddProperty. The latter throws on a name the
-            // image already holds, and duplicate sibling names are legal in this format: the
-            // corpus holds two nodes named "1029" under Quest.nx's Say.img and two named
-            // "2104" under String.nx's Npc.img. WzNode.Build reaches the same conclusion for the
-            // same reason.
-            if (image.WzProperties is not { } properties)
-            {
-                throw new InvalidDataException($"'{imageNode.Name}' did not open with a property collection.");
-            }
-
-            foreach (NxNode child in imageNode)
-            {
-                properties.Add(BuildProperty(child, archive, mode, ref nodes, ref collapsed, ref canvases));
-            }
-
-            image.MarkWzImageAsParsed();
-
-            // Clear the dirty flag that populating the collection just set.
+            // WzImage's constructor sets Changed = true —"default for new item", WzImage.cs —
+            // and nothing has edited this image, so that default is a lie told by the constructor
+            // rather than by anything done to it. It was previously corrected at the bottom of
+            // this loop, once per image, immediately after the build. The build has moved inside
+            // the builder, so that correction now happens only when an image is first opened,
+            // which leaves every image nobody has looked at claiming to hold unsaved edits.
             //
-            // Adding a property marks its image changed —which is exactly right when a
-            // person edits an archive, and exactly wrong here, where "changed" would mean
-            // the user has unsaved work. Every node's DTO reads its dirty state from this
-            // one flag, so leaving it set would make a freshly opened NX file claim to hold
-            // edits, fire the close prompt on exit, and put a stray "unsaved changes" mark
-            // on a file nobody touched. An NX entry is read-only regardless, but the flag
-            // is what the UI reads, so it has to say the truth.
+            // That is the same failure the builder's own comment below describes, arriving
+            // through the other door: the file DTO reports Dirty, the close prompt fires on exit,
+            // and 35 untouched images put a mark on a file with no user edits in it. Clearing it
+            // here, where the shell is created, covers both states at once — an image nobody has
+            // opened and one the builder has just filled.
             image.Changed = false;
+
+            // Count what this image will produce before registering how to build it.
+            //
+            // The counters cannot be filled by the build any more, because the build no longer
+            // runs at open — and NxConversionResult reports all three. This walk visits the same
+            // paths the build would and increments on the same conditions, so the totals it
+            // produces are the build's own numbers rather than an estimate of them.
+            //
+            // It has to count per path, not per node record. NX is a DAG whose nodes sit in one
+            // flat breadth-first table, so a node reachable by several routes is materialised
+            // once per route: Character.nx declares 3,616,825 records and builds about 10.9
+            // million properties. A cheaper walk over the flat table would report 3.6 million and
+            // be out by a factor of three.
+            //
+            // What it costs is a traversal and no memory. NxNode is a handle over a mapped
+            // 20-byte record rather than an object, so nothing here is allocated that the
+            // archive does not already own.
+            MeasureImage(imageNode, ref nodes, ref collapsed, ref canvases);
+
+            // The build is deferred, not skipped: this image holds no properties until something
+            // asks for them through WzSessionService.EnsureParsed, which is the one place that can
+            // promise the session gate. Registering it means "open" costs thirty-five image shells
+            // instead of ten million properties.
+            NxImageBuilders.Register(image, built =>
+            {
+                // WzPropertyCollection.Add, not WzImage.AddProperty. The latter throws on a name the
+                // image already holds, and duplicate sibling names are legal in this format: the
+                // corpus holds two nodes named "1029" under Quest.nx's Say.img and two named
+                // "2104" under String.nx's Npc.img. WzNode.Build reaches the same conclusion for the
+                // same reason.
+                if (built.WzProperties is not { } properties)
+                {
+                    throw new InvalidDataException($"'{imageNode.Name}' did not open with a property collection.");
+                }
+
+                foreach (NxNode child in imageNode)
+                {
+                    properties.Add(BuildProperty(child, archive, mode, ref nodes, ref collapsed, ref canvases));
+                }
+
+                built.MarkWzImageAsParsed();
+
+                // Clear the dirty flag that populating the collection just set.
+                //
+                // Adding a property marks its image changed —which is exactly right when a
+                // person edits an archive, and exactly wrong here, where "changed" would mean
+                // the user has unsaved work. Every node's DTO reads its dirty state from this
+                // one flag, so leaving it set would make a freshly opened NX file claim to hold
+                // edits, fire the close prompt on exit, and put a stray "unsaved changes" mark
+                // on a file nobody touched. An NX entry is read-only regardless, but the flag
+                // is what the UI reads, so it has to say the truth.
+                built.Changed = false;
+            });
 
             file.WzDirectory.AddImage(image);
             images++;
         }
 
+        // Read after the loop and before any build can run, because that is the moment these
+        // three numbers describe the whole archive rather than whatever has been opened so far.
         return new NxConversionResult(file, archive, images, nodes, canvases, collapsed);
+    }
+
+    /// <summary>
+    /// Counts the properties one image's deferred build will produce, without building them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this exists.</b> <see cref="NxConversionResult"/> reports three totals and the open
+    /// log line prints two of them, and a deferred build leaves all three at zero — the result
+    /// would describe an archive nobody opened. The obvious fix, counting the flat node table,
+    /// is wrong by a factor of three on the reference corpus: NX is a DAG stored breadth-first,
+    /// so a node reachable by several routes becomes one property per route, and
+    /// <c>Character.nx</c> declares 3,616,825 records for about 10.9 million properties.
+    /// </para>
+    ///
+    /// <para>
+    /// So this walks the same paths the build walks and increments on the same conditions, which
+    /// makes the two agree by construction rather than by coincidence. Three statements have to
+    /// stay in step with <see cref="BuildProperty"/>: the per-path increment, the two types that
+    /// count as collapsed, and the increment on a bitmap node. It is not a reimplementation of
+    /// the build — it never reads a payload, allocates a property, or consults the archive's
+    /// strings — so it cannot disagree about what a node <em>is</em>, only about how many times
+    /// one is reached.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>What it does not check.</b> <see cref="GuardLeaf"/> is not run here. It throws on a
+    /// malformed archive, and a throw during a count would abort the open for the same shape the
+    /// build itself rejects — but the build is where that refusal belongs, and it will raise it
+    /// unchanged the moment anything opens this image. Counting a shape that the build will
+    /// refuse is harmless precisely because the build refuses it.
+    /// </para>
+    /// </remarks>
+    private static void MeasureImage(NxNode image, ref long nodes, ref long collapsed, ref int canvases)
+    {
+        foreach (NxNode child in image)
+        {
+            MeasureNode(child, ref nodes, ref collapsed, ref canvases);
+        }
+    }
+
+    private static void MeasureNode(NxNode node, ref long nodes, ref long collapsed, ref int canvases)
+    {
+        nodes++;
+
+        switch (node.Type)
+        {
+            // Both are the type collapse: NX has one 64-bit integer and one 64-bit float and no
+            // way to say whether the source was narrower.
+            case NxNodeType.Integer:
+            case NxNodeType.Real:
+                collapsed++;
+                break;
+
+            // A bitmap is not a leaf, so its children are counted after it — the same order
+            // BuildPropertyCore builds them in.
+            case NxNodeType.Bitmap:
+                canvases++;
+                foreach (NxNode child in node)
+                {
+                    MeasureNode(child, ref nodes, ref collapsed, ref canvases);
+                }
+                break;
+
+            case NxNodeType.None:
+                foreach (NxNode child in node)
+                {
+                    MeasureNode(child, ref nodes, ref collapsed, ref canvases);
+                }
+                break;
+        }
     }
 
     /// <summary>

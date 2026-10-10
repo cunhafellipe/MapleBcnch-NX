@@ -316,6 +316,19 @@ public static unsafe class NxWriter
         var root = new PlannedNode(null, string.Empty, NxNodeType.None, -1);
         foreach (WzImage image in file.WzDirectory.WzImages)
         {
+            // An NX image opened lazily is a shell: the name is there and the
+            // properties are not. Reading WzProperties off one without asking
+            // for it first yields nothing, and writing that nothing is how a
+            // 186 MB archive becomes a 282 KB one -- every image that was never
+            // browsed simply missing from the file, with a success message and
+            // a backup nobody thought to need. The writer is the one place that
+            // must never take an image on trust.
+            //
+            // Building here costs what the old eager open cost, which is the
+            // point: the archive has to be laid out in full to be written in
+            // full. What laziness buys is not paying that until the user saves.
+            NxImageBuilders.BuildIfPending(image);
+
             var imageNode = new PlannedNode(null, image.Name, NxNodeType.None, -1);
             foreach (WzImageProperty property in image.WzProperties ?? Enumerable.Empty<WzImageProperty>())
             {

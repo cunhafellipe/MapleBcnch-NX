@@ -1734,6 +1734,18 @@ public sealed class WzSessionService : IDisposable
 
     public static void EnsureParsed(WzImage image)
     {
+        // An NX image is a shell: NxToWzFile.Convert registered how to populate it instead of
+        // populating it, so that opening an archive costs one image object per image rather than
+        // a property per node. Asking here is what fills it, and this is the only place that can —
+        // it is called under the session gate, which is what a build needs.
+        //
+        // Reporting true means "this was an NX image", whether or not there was work to do, so
+        // the return is what stops the fallthrough. It must stop it: an NX image has no reader,
+        // so ParseImage() below would throw against a null one. A WZ image has no registry entry
+        // at all, so it returns false and the path below is untouched.
+        if (NxImageBuilders.BuildIfPending(image))
+            return;
+
         if (!image.Parsed && !image.Changed)
             image.ParseImage();
     }
