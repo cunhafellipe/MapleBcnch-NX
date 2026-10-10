@@ -20,6 +20,7 @@
  */
 
 import { q } from './api.js';
+import { t } from './i18n.js';
 import {
   el, clear, toast, toastError, fmt, debounce, modal, busyButton,
   motionIn, motionOut,
@@ -131,7 +132,7 @@ export class MapEditSection {
       this.caps = await get('/api/mapedit/capabilities');
     } catch (err) {
       this.caps = null;
-      toastError(err, 'Map editor');
+      toastError(err, t('Map editor'));
     }
 
     if (!this.caps?.available) {
@@ -143,7 +144,7 @@ export class MapEditSection {
         'The map editor reads maps out of Map002.wz and art out of Map.wz, Map001.wz and ' +
         'Map2.wz. Open the client’s Map family (copies, not the live client) and come back.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
-          icon('folderOpen', { size: 15 }), 'Open files')));
+          icon('folderOpen', { size: 15 }), t('Open files'))));
       return;
     }
 
@@ -180,7 +181,7 @@ export class MapEditSection {
     // edge. this.side stays the name of the container the palette renders
     // into — the drawer body IS the old side panel, grown up.
     this.side = el('div', { class: 'me-drawer-body' });
-    this.drawerTitle = el('strong', { text: 'Palette' });
+    this.drawerTitle = el('strong', { text: t('Palette') });
     this.drawer = el('div', { class: 'me-drawer', hidden: true },
       el('div', { class: 'me-drawer-head' },
         this.drawerTitle,
@@ -205,7 +206,7 @@ export class MapEditSection {
       class: 'me-keychip',
       'data-tip': 'While the map has focus, every shortcut goes to the map — not the app. Click for the list.',
       onclick: () => this.showKeysHelp(),
-    }, 'map keys · ?');
+    }, t('map keys · ?'));
     this.statusBar = el('div', { class: 'me-statusbar' }, this.statusText,
       el('span', { class: 'me-toolbar-spacer' }), this.keyChip);
 
@@ -532,7 +533,7 @@ export class MapEditSection {
         row('Tab', 'Fold every panel away / bring them back'),
         row('P · L · I · M', 'Palette · Layers · Inspector · Minimap'),
         row('Enter', 'Finish a foothold chain')),
-      actions: [{ label: 'Close' }],
+      actions: [{ label: t('Close') }],
     });
   }
 
@@ -552,14 +553,14 @@ export class MapEditSection {
     clear(this.banner);
     this.banner.append(
       el('div', { class: 'me-banner-card' },
-        el('h3', { text: 'No map open' }),
+        el('h3', { text: t('No map open') }),
         el('p', { text: `${fmt.format(this.caps.mapCount)} maps are available from ` +
           `${this.caps.mapArchives.join(', ')}.` }),
         el('p', { class: 'muted', text:
           'Once a map is open: hover shows what you are on, click selects, drag moves, ' +
           'space-drag pans, the wheel zooms at the cursor, and double-click edits in place.' }),
         el('button', { class: 'btn btn-primary', onclick: () => this.openPicker() },
-          icon('search', { size: 15 }), 'Open a map…')));
+          icon('search', { size: 15 }), t('Open a map…'))));
     motionIn(this.banner, { timeout: 240 });
   }
 
@@ -568,19 +569,19 @@ export class MapEditSection {
     const d = this.doc;
     this.toolbar.append(...[
       el('button', { class: 'btn', onclick: () => this.openPicker(), 'data-tip': 'Choose a map by id or name' },
-        icon('search', { size: 14 }), 'Open map…'),
+        icon('search', { size: 14 }), t('Open map…')),
       el('button', { class: 'btn', onclick: () => this.newMapDialog(),
         'data-tip': 'Create a map from scratch: 9-digit id, the measured minimal shape, a String.wz row' },
-        icon('plus', { size: 14 }), 'New map…'),
+        icon('plus', { size: 14 }), t('New map…')),
       d ? el('button', { class: 'btn', onclick: () => this.minimapDialog(),
           'data-tip': 'Regenerate the minimap from the map art — after a plan that names anyone sharing it' },
-          'Minimap…') : null,
+          t('Minimap…')) : null,
       this.animToggle(),
       d ? el('span', { class: 'me-title' },
           el('strong', { text: d.name ?? '(no String.wz name)' }),
           el('span', { class: 'muted num', text: ` ${d.imageName}` }),
           d.dirty ? el('span', { class: 'me-dirty', 'data-tip': 'Unsaved map edits' }) : null)
-        : el('span', { class: 'me-title muted', text: 'No map open' }),
+        : el('span', { class: 'me-title muted', text: t('No map open') }),
       ...this.lifeArtActions(),
       el('span', { class: 'me-toolbar-spacer' }),
       d ? el('span', {
@@ -596,9 +597,9 @@ export class MapEditSection {
           'aria-label': 'Redo map edit',
           disabled: !d.redoDepth, onclick: () => this.undo(true) }, icon('redo', { size: 15 })) : null,
       d ? el('button', { class: 'btn btn-ghost', 'data-tip': 'Every edit by name, newest first',
-          onclick: (e) => this.toggleHistory(e.currentTarget) }, 'History') : null,
+          onclick: (e) => this.toggleHistory(e.currentTarget) }, t('History')) : null,
       d ? el('button', { class: 'btn btn-primary', disabled: !d.dirty,
-          onclick: () => this.save() }, icon('save', { size: 15 }), 'Save map') : null,
+          onclick: () => this.save() }, icon('save', { size: 15 }), t('Save map')) : null,
     ].filter(Boolean));
   }
 
@@ -669,14 +670,14 @@ export class MapEditSection {
     let history;
     try {
       history = await get(`/api/mapedit/history?path=${q(this.doc.path)}`);
-    } catch (err) { toastError(err, 'History'); return; }
+    } catch (err) { toastError(err, t('History')); return; }
 
     const pop = el('div', { class: 'me-hist-pop' });
     pop.append(el('h5', { text: `Undo — ${history.undo.length}` }));
-    if (!history.undo.length) pop.append(el('p', { class: 'muted', text: 'Nothing to undo.' }));
+    if (!history.undo.length) pop.append(el('p', { class: 'muted', text: t('Nothing to undo.') }));
     history.undo.slice(0, 30).forEach((label, i) => {
       pop.append(el('div', { class: 'me-hist-row', text: label,
-        'data-tip': i === 0 ? 'Ctrl+Z takes this back next' : undefined }));
+        'data-tip': i === 0 ? t('Ctrl+Z takes this back next') : undefined }));
     });
     if (history.redo.length) {
       pop.append(el('h5', { text: `Redo — ${history.redo.length}` }));
@@ -712,7 +713,7 @@ export class MapEditSection {
     const list = el('div', { class: 'me-picker-list' });
     const note = el('p', { class: 'muted', text: '' });
     const input = el('input', {
-      class: 'field-input', type: 'search', placeholder: 'Map id or name — e.g. 100000000 or Henesys',
+      class: 'field-input', type: 'search', placeholder: t('Map id or name — e.g. 100000000 or Henesys'),
       autocomplete: 'off',
     });
 
@@ -734,20 +735,20 @@ export class MapEditSection {
             el('span', { class: 'me-picker-name', text: row.name ?? '(no name in String.wz)' }),
             el('span', { class: 'muted', text: row.source })));
         }
-        if (!result.maps.length) list.append(el('p', { class: 'muted', text: 'Nothing matches.' }));
+        if (!result.maps.length) list.append(el('p', { class: 'muted', text: t('Nothing matches.') }));
       } catch (err) {
-        toastError(err, 'Map list');
+        toastError(err, t('Map list'));
       }
     };
     input.addEventListener('input', debounce(load, 250));
 
     modal({
-      title: 'Open a map',
+      title: t('Open a map'),
       subtitle: this.caps.names
-        ? 'Names come from String.wz — the source that is actually right.'
-        : 'String.wz is not open, so maps show ids only.',
+        ? t('Names come from String.wz — the source that is actually right.')
+        : t('String.wz is not open, so maps show ids only.'),
       body: el('div', { class: 'me-picker' }, input, note, list),
-      actions: [{ label: 'Cancel' }],
+      actions: [{ label: t('Cancel') }],
       width: '560px',
       onOpen: (dialog) => {
         closeModal = () => dialog.close();
@@ -808,7 +809,7 @@ export class MapEditSection {
       const doc = await get(`/api/mapedit/doc?path=${q(this.doc.path)}`);
       this.adoptDoc(doc);
     } catch (err) {
-      toastError(err, 'Map document');
+      toastError(err, t('Map document'));
     }
   }
 
@@ -868,12 +869,12 @@ export class MapEditSection {
   showRefusal(reason) {
     clear(this.banner);
     this.banner.append(el('div', { class: 'me-banner-card me-refusal' },
-      el('h3', {}, icon('alert', { size: 16 }), ' This map was refused, not opened'),
+      el('h3', {}, icon('alert', { size: 16 }), t(' This map was refused, not opened')),
       el('p', { text: reason }),
       el('p', { class: 'muted', text:
         'The editor only opens maps it can write back byte-identically. Opening this one anyway ' +
         'would save a map that differs somewhere nobody asked to change.' }),
-      el('button', { class: 'btn', onclick: () => this.openPicker() }, 'Open another map')));
+      el('button', { class: 'btn', onclick: () => this.openPicker() }, t('Open another map'))));
     motionIn(this.banner, { timeout: 240 });
   }
 
@@ -930,7 +931,7 @@ export class MapEditSection {
     const d = this.doc;
     if (!d) return;
     this.dock.append(el('div', { class: 'me-dock-head' },
-      el('h4', { text: 'Layers' }),
+      el('h4', { text: t('Layers') }),
       el('button', {
         class: 'btn btn-ghost btn-icon me-dock-close', 'data-tip': 'Collapse (L)',
         'aria-label': 'Collapse layers', onclick: () => this.togglePanel('layers', false),
@@ -941,13 +942,13 @@ export class MapEditSection {
       layers.append(el('div', { class: 'me-layer-row' },
         el('button', {
           class: 'me-eye', 'aria-pressed': visible ? 'true' : 'false',
-          'aria-label': `${visible ? 'Hide' : 'Show'} layer ${layer.index}`,
-          'data-tip': visible ? 'Hide layer' : 'Show layer',
+          'aria-label': `${visible ? t('Hide') : t('Show')} layer ${layer.index}`,
+          'data-tip': visible ? t('Hide layer') : t('Show layer'),
           onclick: (e) => {
             const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
             e.currentTarget.setAttribute('aria-pressed', on ? 'true' : 'false');
-            e.currentTarget.setAttribute('aria-label', `${on ? 'Hide' : 'Show'} layer ${layer.index}`);
-            e.currentTarget.dataset.tip = on ? 'Hide layer' : 'Show layer';
+            e.currentTarget.setAttribute('aria-label', `${on ? t('Hide') : t('Show')} layer ${layer.index}`);
+            e.currentTarget.dataset.tip = on ? t('Hide layer') : t('Show layer');
             this.view.setLayerVisible(layer.index, on);
           },
         }, icon('eye', { size: 15 })),
@@ -969,7 +970,7 @@ export class MapEditSection {
         }) : null));
     }
     if (!d.layers.length)
-      layers.append(el('p', { class: 'muted', text: d.link ? 'A link stub has no layers of its own.' : 'No layers.' }));
+      layers.append(el('p', { class: 'muted', text: d.link ? t('A link stub has no layers of its own.') : t('No layers.') }));
     this.dock.append(layers);
   }
 
@@ -987,7 +988,7 @@ export class MapEditSection {
       ['life', 'NPC', `Life spawns (${d.life.length})`],
       ['reactor', 'RC', `Reactors (${d.reactors.length})`],
       ['rect', 'ZN', `Zones (${(d.rects ?? []).length})`],
-      ['vr', 'VR', d.boundsComputed ? 'Bounds (computed)' : 'VR bound'],
+      ['vr', 'VR', d.boundsComputed ? t('Bounds (computed)') : t('VR bound')],
     ];
     for (const [key, label, tip] of defs) {
       this.overlayStrip.append(el('button', {
@@ -1181,7 +1182,7 @@ export class MapEditSection {
     const global = el('input', {
       class: 'field-input me-pal-global', type: 'search',
       'aria-label': 'Search the palette catalog',
-      placeholder: 'Search everything — sets, mobs, NPCs, reactors…', value: p.global,
+      placeholder: t('Search everything — sets, mobs, NPCs, reactors…'), value: p.global,
     });
     const refresh = debounce(() => {
       if (!global.isConnected || !this.ui.pal) return;
@@ -1426,7 +1427,7 @@ export class MapEditSection {
   renderGlobalSearch(query) {
     const host = el('div', { class: 'me-pal-globalresults' });
     this.side.append(host);
-    host.append(el('p', { class: 'muted', text: 'Searching…' }));
+    host.append(el('p', { class: 'muted', text: t('Searching…') }));
     const stamp = query;
     (async () => {
       const [sets, mobs, npcs, reactors] = await Promise.all([
@@ -1466,7 +1467,7 @@ export class MapEditSection {
 
       if (reactors?.rows?.length) {
         any = true;
-        host.append(el('h5', { class: 'me-pal-group', text: 'Reactors' }));
+        host.append(el('h5', { class: 'me-pal-group', text: t('Reactors') }));
         const grid = el('div', { class: 'me-pal-grid' });
         for (const row of reactors.rows) {
           grid.append(this.paletteCell({
@@ -1479,7 +1480,7 @@ export class MapEditSection {
         host.append(grid);
       }
 
-      if (!any) host.append(el('p', { class: 'muted', text: 'Nothing matches anywhere.' }));
+      if (!any) host.append(el('p', { class: 'muted', text: t('Nothing matches anywhere.') }));
     })();
   }
 
@@ -1515,7 +1516,7 @@ export class MapEditSection {
           onchange: (e) => { this.snapTiles = e.currentTarget.checked; },
         }),
         el('span', {
-          text: 'Snap to tile grid',
+          text: t('Snap to tile grid'),
           'data-tip': 'Snaps placement to the armed tile’s own art size, aligned to an ' +
             'existing tile of the same variant on the target layer when one exists. A placement ' +
             'aid — tiles are modular at their art size — not a measured client grid.',
@@ -1526,11 +1527,11 @@ export class MapEditSection {
       mem.sets = { kind: p.kind, list: null };
       get(`/api/mapedit/palette/sets?kind=${q(p.kind)}`)
         .then((list) => { mem.sets.list = list; if (this.ui.pal) this.renderPaletteBody(); })
-        .catch((err) => toastError(err, 'Palette'));
-      this.side.append(el('p', { class: 'muted', text: 'Loading sets…' }));
+        .catch((err) => toastError(err, t('Palette')));
+      this.side.append(el('p', { class: 'muted', text: t('Loading sets…') }));
       return;
     }
-    if (!mem.sets.list) { this.side.append(el('p', { class: 'muted', text: 'Loading sets…' })); return; }
+    if (!mem.sets.list) { this.side.append(el('p', { class: 'muted', text: t('Loading sets…') })); return; }
 
     if (!mem.set) {
       const input = el('input', {
@@ -1548,12 +1549,12 @@ export class MapEditSection {
         for (const set of mem.sets.list) {
           if (query && !set.name.toLowerCase().includes(query)) continue;
           if (++shown > 200) {
-            list.append(el('p', { class: 'muted', text: 'More — narrow the search.' }));
+            list.append(el('p', { class: 'muted', text: t('More — narrow the search.') }));
             break;
           }
           list.append(this.setCell(set));
         }
-        if (!shown) list.append(el('p', { class: 'muted', text: 'No set matches.' }));
+        if (!shown) list.append(el('p', { class: 'muted', text: t('No set matches.') }));
       };
       const refresh = debounce(renderSets, 120);
       input.addEventListener('input', () => {
@@ -1569,10 +1570,10 @@ export class MapEditSection {
     }
 
     this.side.append(el('div', { class: 'me-pal-row' },
-      el('button', { class: 'btn btn-ghost', text: '‹ sets', onclick: () => { mem.set = null; mem.entries = null; this.renderPaletteBody(); } }),
+      el('button', { class: 'btn btn-ghost', text: t('‹ sets'), onclick: () => { mem.set = null; mem.entries = null; this.renderPaletteBody(); } }),
       el('strong', { text: mem.set.name })));
 
-    if (!mem.entries) { this.side.append(el('p', { class: 'muted', text: 'Loading entries…' })); return; }
+    if (!mem.entries) { this.side.append(el('p', { class: 'muted', text: t('Loading entries…') })); return; }
     if (mem.entries.truncated) {
       this.side.append(el('p', { class: 'muted', text:
         `Showing ${mem.entries.entries.length} of ${fmt.format(mem.entries.total)} entries.` }));
@@ -1621,11 +1622,11 @@ export class MapEditSection {
   entryTip(entry) {
     const p = this.palette;
     const mem = this.mem();
-    if (p.kind === 'Tile') return `${mem.set.name}/${entry.u}/${entry.no}${entry.hasFoothold ? ' — carries foothold geometry' : ''}`;
+    if (p.kind === 'Tile') return `${mem.set.name}/${entry.u}/${entry.no}${entry.hasFoothold ? t(' — carries foothold geometry') : ''}`;
     if (p.kind === 'Obj') {
       return `${mem.set.name}/${entry.l0}/${entry.l1}/${entry.l2}${entry.l3 ? `/${entry.l3}` : ''}` +
         `${entry.frames > 1 ? ` — ${entry.frames} frames` : ''}` +
-        `${entry.hasFoothold ? ' — carries foothold geometry' : ''}`;
+        `${entry.hasFoothold ? t(' — carries foothold geometry') : ''}`;
     }
     return `${mem.set.name}/${entry.ani ? 'ani' : 'back'}/${entry.no}`;
   }
@@ -1638,7 +1639,7 @@ export class MapEditSection {
     this.renderPaletteBody();
     get(`/api/mapedit/palette/entries?kind=${q(this.palette.kind)}&path=${q(set.path)}`)
       .then((entries) => { mem.entries = entries; if (this.ui.pal) this.renderPaletteBody(); })
-      .catch((err) => { toastError(err, 'Palette'); mem.set = null; this.renderPaletteBody(); });
+      .catch((err) => { toastError(err, t('Palette')); mem.set = null; this.renderPaletteBody(); });
   }
 
   armArt(paletteKind, setName, setPath, entry, { silent } = {}) {
@@ -1691,7 +1692,7 @@ export class MapEditSection {
       label: `${row.name ?? '(no name)'} · ${row.id}`,
       frames: 2, // stand animations play in the flyout when they exist
       previewLeaf: row.iconPath?.replace(/\/0$/, ''),
-      onclick: () => this.armLife(type, String(row.id), `${type === 'n' ? 'NPC' : 'mob'} ${row.name ?? row.id}`, row.iconPath),
+      onclick: () => this.armLife(type, String(row.id), `${type === 'n' ? t('NPC') : t('mob')} ${row.name ?? row.id}`, row.iconPath),
     });
   }
 
@@ -1712,7 +1713,7 @@ export class MapEditSection {
     const type = p.kind === 'npc' ? 'n' : 'm';
     const input = el('input', {
       class: 'field-input', type: 'search',
-      placeholder: `Search ${p.kind === 'npc' ? 'NPCs' : 'mobs'} by name or id…`, value: mem.query ?? '',
+      placeholder: `Search ${p.kind === 'npc' ? t('NPCs') : t('mobs')} by name or id…`, value: mem.query ?? '',
     });
     const list = el('div', { class: 'me-pal-lifegrid' });
     const load = async () => {
@@ -1736,9 +1737,9 @@ export class MapEditSection {
         if (!result.rows.length && result.namesAvailable) {
           list.append(el('p', { class: 'muted', text: input.value.trim()
             ? 'Nothing matches.'
-            : `Type a name or id — e.g. ${type === 'n' ? '“Maple Administrator” or 9010000' : '“snail” or 100100'} — and the matches appear as sprites.` }));
+            : `Type a name or id — e.g. ${type === 'n' ? t('“Maple Administrator” or 9010000') : t('“snail” or 100100')} — and the matches appear as sprites.` }));
         }
-      } catch (err) { toastError(err, 'Life palette'); }
+      } catch (err) { toastError(err, t('Life palette')); }
     };
     input.addEventListener('input', debounce(load, 250));
     this.side.append(input, list);
@@ -1764,7 +1765,7 @@ export class MapEditSection {
         grid.replaceWith(el('div', {},
           el('p', { class: 'muted', text: result.reason ?? 'Reactor.wz is not open.' }),
           (() => {
-            const manual = el('input', { class: 'field-input', placeholder: 'Reactor id (typed)… Enter arms it' });
+            const manual = el('input', { class: 'field-input', placeholder: t('Reactor id (typed)… Enter arms it') });
             manual.addEventListener('keydown', (e) => {
               if (e.key === 'Enter' && manual.value.trim()) this.armReactor(manual.value.trim(), null);
             });
@@ -1779,13 +1780,13 @@ export class MapEditSection {
           onclick: () => this.armReactor(row.id, row.iconPath),
         }));
       }
-    }).catch((err) => toastError(err, 'Reactor palette'));
+    }).catch((err) => toastError(err, t('Reactor palette')));
   }
 
   renderPortalPalette() {
-    const pnInput = el('input', { class: 'field-input', placeholder: 'pn — portal name (sp/tp may repeat)' });
-    const tnInput = el('input', { class: 'field-input', placeholder: 'tn — target portal name' });
-    const tmInput = el('input', { class: 'field-input num', placeholder: 'tm — target map id (999999999 = none)' });
+    const pnInput = el('input', { class: 'field-input', placeholder: t('pn — portal name (sp/tp may repeat)') });
+    const tnInput = el('input', { class: 'field-input', placeholder: t('tn — target portal name') });
+    const tmInput = el('input', { class: 'field-input num', placeholder: t('tm — target map id (999999999 = none)') });
     this.side.append(
       el('p', { class: 'muted me-pal-note', text:
         'Pick an icon to arm placement. pt comes from the MapHelper editor table — the measured ' +
@@ -1817,7 +1818,7 @@ export class MapEditSection {
       get('/api/mapedit/portal-icons').then((icons) => {
         this.portalIconList = icons;
         fill(icons);
-      }).catch(() => grid.append(el('p', { class: 'muted', text: 'MapHelper.img is not open.' })));
+      }).catch(() => grid.append(el('p', { class: 'muted', text: t('MapHelper.img is not open.') })));
     }
   }
 
@@ -1829,7 +1830,7 @@ export class MapEditSection {
         this.cancelPlacement();
         this.view.beginFootholdDraw(this.targetLayer());
         this.setStatus('Click to drop vertices; Enter or double-click finishes the chain; Esc cancels.');
-      } }, 'Draw foothold chain'),
+      } }, t('Draw foothold chain')),
       el('p', { class: 'muted me-pal-note', text:
         'Vertices become prev/next-linked footholds with coincident endpoints, a fresh group, and ' +
         'ids unique in this map. On the canvas: double-click a segment to insert a vertex, ' +
@@ -1839,29 +1840,29 @@ export class MapEditSection {
 
   renderLadderTools() {
     const lSelect = el('select', { class: 'field-input me-pal-layer' },
-      el('option', { value: '1', text: 'Ladder (l = 1)' }),
-      el('option', { value: '0', text: 'Rope (l = 0)' }));
+      el('option', { value: '1', text: t('Ladder (l = 1)') }),
+      el('option', { value: '0', text: t('Rope (l = 0)') }));
     const uf = el('input', { type: 'checkbox', checked: 'checked' });
     this.side.append(
       el('label', { class: 'me-pal-row' },
-        el('span', { class: 'muted', text: 'Kind' }), lSelect),
+        el('span', { class: 'muted', text: t('Kind') }), lSelect),
       el('label', { class: 'me-overlay-row' }, uf,
-        el('span', { text: 'uf — climbable off the top', 'data-tip':
+        el('span', { text: t('uf — climbable off the top'), 'data-tip':
           'uf = 1 lets the character climb off at the top; 0 does not.' })),
       el('label', { class: 'me-pal-row' },
-        el('span', { class: 'muted', text: 'Page (layer)' }), this.layerPicker()),
+        el('span', { class: 'muted', text: t('Page (layer)') }), this.layerPicker()),
       el('button', { class: 'btn btn-primary me-pal-draw', onclick: () => {
         this.view.cancelFootholdDraw();
         this.placing = {
           kind: 'ladder',
           get l() { return Number(lSelect.value); },
           get uf() { return uf.checked ? 1 : 0; },
-          label: 'ladder / rope',
+          label: t('ladder / rope'),
         };
         this.view.setPlacing(this.placing);
         this.setStatus('Click the top of the ladder, then its bottom — two clicks, one x. Esc cancels.');
         this.renderPaletteBody();
-      } }, 'Place ladder / rope'),
+      } }, t('Place ladder / rope')),
       el('p', { class: 'muted me-pal-note', text:
         'Written in the sampled shipping shape and order — l, uf, x, y1, y2, page, all Int. ' +
         'Placed ladders drag whole or by endpoint on the canvas.' }));
@@ -1976,7 +1977,7 @@ export class MapEditSection {
         `Re-skinning changes ALL ${fmt.format(layer.tiles.length)} tiles already on layer ` +
         `${layer.index} to '${arm.set}' pictures — same u/no, different art.` }));
 
-    const actions = [{ label: 'Cancel' }];
+    const actions = [{ label: t('Cancel') }];
     if (carriers.length) {
       actions.push({
         label: `Place on layer ${carriers[0].index}`,
@@ -2009,7 +2010,7 @@ export class MapEditSection {
         body: el('p', { text }),
         width: '420px',
         actions: [
-          { label: 'Cancel', run: () => resolve(false) },
+          { label: t('Cancel'), run: () => resolve(false) },
           { label: 'Proceed', class: 'btn-primary', run: () => resolve(true) },
         ],
         onOpen: (dialog) => dialog.addEventListener('close', () => resolve(false), { once: true }),
@@ -2049,8 +2050,8 @@ export class MapEditSection {
   async minimapDialog() {
     if (!this.doc) return;
     const body = el('div', {}, el('p', { class: 'muted', text:
-      'Planning… the sharer scan walks every map image in the session, so this can take a few seconds.' }));
-    const handle = modal({ title: 'Regenerate minimap', body, width: '520px', actions: [{ label: 'Close' }] });
+      t('Planning… the sharer scan walks every map image in the session, so this can take a few seconds.') }));
+    const handle = modal({ title: 'Regenerate minimap', body, width: '520px', actions: [{ label: t('Close') }] });
 
     let plan;
     try {
@@ -2069,7 +2070,7 @@ export class MapEditSection {
       'The render is the map art (tiles + objects, frame 0) at minimap scale — a faithful layout ' +
       'picture, not a pixel-copy of the client’s styling. Backgrounds are not drawn.' }));
     if (!plan.hasMiniMap) {
-      body.append(el('p', { text: 'This map has no minimap yet (939 geometry maps ship without one).' }));
+      body.append(el('p', { text: t('This map has no minimap yet (939 geometry maps ship without one).') }));
     }
 
     const detach = el('input', { type: 'checkbox' });
@@ -2105,15 +2106,15 @@ export class MapEditSection {
           busyButton(e.currentTarget, false);
           toastError(err, 'Minimap');
         }
-      } }, 'Regenerate')));
+      } }, t('Regenerate'))));
   }
 
   /* ============================================================ new map */
 
   newMapDialog() {
-    const idInput = el('input', { class: 'field-input num', placeholder: '9-digit id, e.g. 900000001' });
-    const nameInput = el('input', { class: 'field-input', placeholder: 'Map name (String.wz row)' });
-    const streetInput = el('input', { class: 'field-input', placeholder: 'Street name' });
+    const idInput = el('input', { class: 'field-input num', placeholder: t('9-digit id, e.g. 900000001') });
+    const nameInput = el('input', { class: 'field-input', placeholder: t('Map name (String.wz row)') });
+    const streetInput = el('input', { class: 'field-input', placeholder: t('Street name') });
     const body = el('div', { class: 'me-newmap' },
       el('p', { class: 'muted', text:
         'The id is collision-checked across every open Map archive. The map is scaffolded with ' +
@@ -2122,13 +2123,13 @@ export class MapEditSection {
       idInput, nameInput, streetInput);
 
     modal({
-      title: 'Create a map from scratch',
+      title: t('Create a map from scratch'),
       body,
       width: '460px',
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
-          label: 'Create and open', class: 'btn-primary',
+          label: t('Create and open'), class: 'btn-primary',
           run: async () => {
             const id = Number(idInput.value.trim());
             try {
@@ -2708,7 +2709,7 @@ export class MapEditSection {
       body,
       width: '480px',
       actions: [
-        { label: 'Cancel' },
+        { label: t('Cancel') },
         {
           label: 'Save and verify', class: 'btn-primary',
           run: () => { this.runSave(); },
@@ -2723,8 +2724,8 @@ export class MapEditSection {
       await this.refetchDoc();
       const lines = [
         el('p', {}, result.verified
-          ? el('strong', { text: 'Verified: the saved image’s bytes are exactly the model’s bytes.' })
-          : el('strong', { class: 'me-refusal-text', text: 'NOT VERIFIED — the saved image differs from the model:' })),
+          ? el('strong', { text: t('Verified: the saved image’s bytes are exactly the model’s bytes.') })
+          : el('strong', { class: 'me-refusal-text', text: t('NOT VERIFIED — the saved image differs from the model:') })),
         ...(result.differences ?? []).map((line) => el('p', { class: 'muted', text: line })),
         el('p', { class: 'muted', text: `Written to ${result.savedTo} ` +
           `(${fmt.format(result.archiveBytes)} bytes, ${result.seconds.toFixed(1)}s).` }),
@@ -2737,7 +2738,7 @@ export class MapEditSection {
               result.historyNote ?? 'Undo history was cleared by this save.' }),
       ];
       modal({ title: result.verified ? 'Map saved' : 'Saved, but verification failed',
-        body: el('div', {}, ...lines), width: '520px', actions: [{ label: 'Close' }] });
+        body: el('div', {}, ...lines), width: '520px', actions: [{ label: t('Close') }] });
     } catch (err) {
       toastError(err, 'Save map');
     }

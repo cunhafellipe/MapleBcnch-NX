@@ -1313,4 +1313,86 @@ export const zhHant = {
   'This skill has no levels': '這個技能沒有等級',
   'Could not reach the name editor': '無法開啟名稱編輯器',
   'No String.wz open': '尚未開啟 String.wz',
+// ---- shared dialog buttons -----------------------------------------------
+// These two are the default confirmLabel of promptForText() and
+// confirmDialog() in ui.js. They were unreachable to the property search
+// because they live in a parameter default, not in an object.
+  'OK': '確定',
+  'Confirm': '確認',
+// ---- animation ------------------------------------------------------------
+  'Play': '播放',
+  'Pause': '暫停',
+  'Loop': '循環播放',
+  'Show origin': '顯示原點',
+  'Could not read this animation': '無法讀取這個動畫',
+// ---- path placeholders ----------------------------------------------------
+// Real Windows paths shown in the empty input, so they stay Latin. Wrapped in
+// t() anyway: they are the app's own strings, not the user's, and a locale
+// that wanted a different convention could then change them in one place.
+  'C:\\MapleStory\\232': 'C:\\MapleStory\\232',
+  'C:\\clients\\my-base-copy': 'C:\\clients\\my-base-copy',
+  'C:\\clients\\donor-copy': 'C:\\clients\\donor-copy',
+  'C:\\MapleStory\\_genchoice_work\\client': 'C:\\MapleStory\\_genchoice_work\\client',
+  'C:\\MapleStory\\_genchoice_work\\donors\\Skill_old.wz': 'C:\\MapleStory\\_genchoice_work\\donors\\Skill_old.wz',
+  'C:\\MapleStory\\_genchoice_work\\client\\Skill.genchoice.wz': 'C:\\MapleStory\\_genchoice_work\\client\\Skill.genchoice.wz',
+  'e.g. C:\\Nexon\\Library\\maplestory\\appdata': '例如 C:\\Nexon\\Library\\maplestory\\appdata',
+// ---- search and filter labels ---------------------------------------------
+// Chips and dropdowns over the search results. 'name:' and maxHP stay Latin:
+  'Items': '道具',
+  'Maps': '地圖',
+  'NPC ID': 'NPC ID',
+  'Shops': '商店',
+  'Script handler (A to Z)': '腳本處理器（A 到 Z）',
+  'Chat lines (most first)': '對話行（多的在前）',
+  'every open archive': '每個開啟的封存',
+  'name:maxHP >10000': 'name:maxHP >10000',
+// ---- bulk edit operators --------------------------------------------------
+// The operation a numeric field change is expressed with. The values stay
+  'Set to': '設為',
+  'Multiply by': '乘以',
+  'Change by percent': '依百分比變更',
+  'Round to the nearest whole number': '四捨五入至整數',
+  'Round down': '無條件捨去',
+  'Leave the fraction alone': '保留小數',
+// ---- NPC card actions -----------------------------------------------------
+  'Port': '傳送門',
+  'Bulk edit': '批次編輯',
+  'Reload': '重新載入',
+  'Edit fields': '編輯欄位',
+  'Modified only': '只看已修改',
+  'Show absent fields': '顯示缺少的欄位',
+  'Preview changes': '預覽變更',
+  'in a group': '在群組中',
+  'Open String.wz entry': '開啟 String.wz 項目',
+  'Open the String.wz entry': '開啟該 String.wz 項目',
+  'Open in Explorer': '在檔案總覽中開啟',
+  'Nothing here would change': '這裡沒有任何東西會改變',
+  'Nothing to show': '沒有東西可顯示',
+  'Nothing in this filter': '這個篩選器裡沒有東西',
+  'Try an NPC ID like 9000000, part of a name, or a script handler.':
+    '試試 NPC ID（例如 9000000）、名稱的一小段，或腳本處理器名稱。',
+  'String.wz is not open, so NPCs have no names here — search by ID or script instead.':
+    '尚未開啟 String.wz，因此這裡的 NPC 沒有名稱 — 請改用 ID 或腳本搜尋。',
+  'Every NPC in this archive is filtered out. Switch back to All.':
+    '這個封存裡的 NPC 全被篩選掉了。請切回「全部」。',
+  'Nothing on this NPC has been changed yet. Turn "Modified only" back off.':
+    '這個 NPC 還沒有任何變更。請把「只看已修改」關掉。',
+  'The search looks at both the label and the raw WZ key. ':
+    '搜尋會同時比對標籤與原始 WZ 鍵。',
+  'Most NPCs carry only a handful of fields — try "Show absent fields".':
+    '多數 NPC 只有少數幾個欄位 — 試試「顯示缺少的欄位」。',
+  'String.wz is not open, so this line cannot be resolved.':
+    '尚未開啟 String.wz，因此無法解析這一行。',
+  'The words are edited in String.wz, not here — the buttons above open the exact node.':
+    '文字在 String.wz 裡編輯，不是在這裡 — 上方的按鈕會開啟對應的節點。',
+  'String.wz is not open for writing, so the words cannot be changed from this app right now.':
+    'String.wz 目前無法寫入，所以暫時不能從這個程式修改這些文字。',
+// ---- errors ---------------------------------------------------------------
+  'Could not read that NPC': '無法讀取該 NPC',
+  'Could not save that field': '無法儲存該欄位',
+  'Could not apply those changes': '無法套用這些變更',
+// ---- bulk edit expression -------------------------------------------------
+// A worked example of the expression grammar, not prose. It stays Latin
+// because every token in it is a real operator the parser accepts.
+  '*1.5   +50   -10%   clamp 1 999   =150': '*1.5   +50   -10%   clamp 1 999   =150',
 };

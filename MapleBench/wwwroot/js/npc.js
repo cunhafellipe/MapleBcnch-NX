@@ -290,9 +290,9 @@ export class NpcSection {
         this.error.message,
         el('div', { class: 'npc-empty-actions' },
           el('button', { class: 'btn btn-primary', onclick: () => this.load() },
-            icon('refresh', { size: 15 }), 'Try again'),
+            icon('refresh', { size: 15 }), t('Try again')),
           el('button', { class: 'btn', onclick: () => this.app.openFilePicker() },
-            icon('folderOpen', { size: 15 }), 'Open a file'))));
+            icon('folderOpen', { size: 15 }), t('Open a file')))));
       return;
     }
 
@@ -310,7 +310,7 @@ export class NpcSection {
         'NPC editing reads Npc.wz and uses String.wz for names and chat text. Open the client folder '
         + 'to make both available.',
         el('button', { class: 'btn btn-primary', onclick: () => this.app.openFilePicker() },
-          icon('folderOpen', { size: 15 }), 'Open client')));
+          icon('folderOpen', { size: 15 }), t('Open client'))));
       return;
     }
 
@@ -369,7 +369,7 @@ export class NpcSection {
         ? candidates[0].name
         : candidates.length > 1
           ? `${candidates.length} Npc archives`
-          : 'every open archive';
+          : t('every open archive');
 
     const head = el('div', { class: 'npc-panel npc-head' },
       el('div', { class: 'npc-head-text' },
@@ -456,10 +456,10 @@ export class NpcSection {
           this.page = 1;
           this.render();
         },
-      }, label, el('span', { class: 'cat-count', text: this.countFor(value) }))));
+      }, t(label), el('span', { class: 'cat-count', text: this.countFor(value) }))));
 
     const sort = el('select', { class: 'npc-select', 'aria-label': 'Sort NPCs' },
-      SORTS.map(([value, label]) => el('option', { value, text: label, selected: value === this.sort })));
+      SORTS.map(([value, label]) => el('option', { value, text: t(label), selected: value === this.sort })));
     sort.addEventListener('change', () => {
       this.sort = sort.value;
       localStorage.setItem('mb.npcSort', sort.value);
@@ -495,7 +495,7 @@ export class NpcSection {
     const count = this.selection.size;
 
     return el('div', { class: 'npc-selbar', 'data-active': count ? 'true' : 'false' },
-      el('span', { class: 'npc-selcount', text: count ? `${fmt.format(count)} selected` : 'Nothing selected' }),
+      el('span', { class: 'npc-selcount', text: count ? `${fmt.format(count)} selected` : t('Nothing selected') }),
       el('button', {
         class: 'btn btn-sm', disabled: !shown.length,
         onclick: () => {
@@ -506,7 +506,7 @@ export class NpcSection {
       el('button', {
         class: 'btn btn-sm', disabled: !count,
         onclick: () => { this.selection.clear(); this.render(); },
-      }, icon('close', { size: 14 }), 'Clear'),
+      }, icon('close', { size: 14 }), t('Clear')),
       // The same port dialog Mobs mode opens, given a different kind. Nothing
       // about it is mob-specific -- an NPC is Npc.wz/<id>.img plus
       // String.wz/Npc.img/<id> plus Sound.wz/Npc.img/<id>, which is the same
@@ -516,11 +516,11 @@ export class NpcSection {
         class: 'btn btn-sm', disabled: !count,
         'data-tip': 'Copy these NPCs into another open client, with their names, sounds and linked art',
         onclick: () => this.openPortDialog(),
-      }, icon('externalLink', { size: 14 }), count ? `Port ${fmt.format(count)}` : 'Port'),
+      }, icon('externalLink', { size: 14 }), count ? `Port ${fmt.format(count)}` : t('Port')),
       el('button', {
         class: 'btn btn-sm btn-primary', disabled: !count,
         onclick: () => this.openBulkDialog(),
-      }, icon('sliders', { size: 14 }), count ? `Bulk edit ${fmt.format(count)}` : 'Bulk edit'));
+      }, icon('sliders', { size: 14 }), count ? `Bulk edit ${fmt.format(count)}` : t('Bulk edit')));
   }
 
   /** Redraws only the result panel, leaving the search box untouched. */
@@ -537,7 +537,7 @@ export class NpcSection {
     this.page = Math.min(this.page, pages);
     const slice = results.slice((this.page - 1) * PAGE_SIZE, this.page * PAGE_SIZE);
 
-    const label = FILTERS.find(([value]) => value === this.filter)?.[1];
+    const label = t(FILTERS.find(([value]) => value === this.filter)?.[1] ?? '');
 
     const panel = el('div', { class: 'npc-panel' });
     panel.append(el('div', { class: 'npc-result-head' },
@@ -552,16 +552,16 @@ export class NpcSection {
         'info', t('No NPCs in this archive'),
         'The archive opened, but nothing in it is named like an NPC image (9000000.img). ' +
         'If you scoped to one file, try the others.',
-        el('button', { class: 'btn', onclick: () => this.load() }, icon('refresh', { size: 15 }), 'Reload')));
+        el('button', { class: 'btn', onclick: () => this.load() }, icon('refresh', { size: 15 }), t('Reload'))));
     } else if (!results.length) {
       panel.append(emptyState(
         'search',
-        this.query ? `No NPCs match "${this.query}"` : 'Nothing in this filter',
+        this.query ? `No NPCs match "${this.query}"` : t('Nothing in this filter'),
         this.query
           ? (this.capabilities.names
-              ? 'Try an NPC ID like 9000000, part of a name, or a script handler.'
-              : 'String.wz is not open, so NPCs have no names here — search by ID or script instead.')
-          : 'Every NPC in this archive is filtered out. Switch back to All.',
+              ? t('Try an NPC ID like 9000000, part of a name, or a script handler.')
+              : t('String.wz is not open, so NPCs have no names here — search by ID or script instead.'))
+          : t('Every NPC in this archive is filtered out. Switch back to All.'),
         this.query
           ? el('button', { class: 'btn', text: t('Clear search'), onclick: () => { this.query = ''; this.render(); } })
           : el('button', { class: 'btn', text: t('Show all NPCs'), onclick: () => { this.filter = 'all'; this.render(); } })));
@@ -631,12 +631,12 @@ export class NpcSection {
       badges.childElementCount ? badges : null,
       // "—" rather than "none": an NPC with no script node has no handler, and
       // a grid of zeros and empties reads as data that failed to load.
-      stat('Script', npc.script || (npc.hasScript ? 'in a group' : '—')),
+      stat('Script', npc.script || (npc.hasScript ? t('in a group') : '—')),
       stat('Chat lines', npc.speakLines == null ? '—' : fmt.format(npc.speakLines)),
       npc.linkTarget ? stat('Links to', npc.linkTarget, 'amber') : null,
       el('div', { class: 'npc-actions' },
         el('button', { class: 'btn btn-sm', style: 'flex:1', onclick: () => this.openNpcCard(npc) },
-          icon('edit', { size: 14 }), 'Edit fields'),
+          icon('edit', { size: 14 }), t('Edit fields')),
         el('button', {
           class: 'btn btn-sm btn-icon', 'data-tip': 'More',
           onclick: (event) => {
@@ -763,7 +763,7 @@ export class NpcSection {
     try {
       detail = await api.npcDetail(npc.path);
     } catch (error) {
-      toastError(error, 'Could not read that NPC');
+      toastError(error, t('Could not read that NPC'));
       return;
     }
 
@@ -811,7 +811,7 @@ export class NpcSection {
         modifiedToggle.setAttribute('aria-pressed', ctx.modifiedOnly ? 'true' : 'false');
         paint();
       },
-    }, icon('filter', { size: 14 }), 'Modified only');
+    }, icon('filter', { size: 14 }), t('Modified only'));
 
     const absentToggle = el('button', {
       class: 'btn btn-sm', 'aria-pressed': 'false',
@@ -821,7 +821,7 @@ export class NpcSection {
         absentToggle.setAttribute('aria-pressed', ctx.showAbsent ? 'true' : 'false');
         paint();
       },
-    }, icon('plus', { size: 14 }), 'Show absent fields');
+    }, icon('plus', { size: 14 }), t('Show absent fields'));
 
     const paint = () => {
       clear(headHost);
@@ -851,11 +851,11 @@ export class NpcSection {
       if (!shown) {
         sectionsHost.append(emptyState(
           'search',
-          ctx.search ? `No field matches "${ctx.search}"` : 'Nothing to show',
+          ctx.search ? `No field matches "${ctx.search}"` : t('Nothing to show'),
           ctx.modifiedOnly
-            ? 'Nothing on this NPC has been changed yet. Turn "Modified only" back off.'
-            : 'The search looks at both the label and the raw WZ key. ' +
-              'Most NPCs carry only a handful of fields — try "Show absent fields".'));
+            ? t('Nothing on this NPC has been changed yet. Turn "Modified only" back off.')
+            : t('The search looks at both the label and the raw WZ key. ') +
+              t('Most NPCs carry only a handful of fields — try "Show absent fields".')));
       }
 
       counter.textContent = modified
@@ -922,14 +922,14 @@ export class NpcSection {
         ? el('button', {
             class: 'btn btn-sm', 'data-tip': 'The name, job line and chat text live here',
             onclick: () => { ctx.close?.(); this.showInExplorer(detail.stringPath); },
-          }, icon('type', { size: 14 }), 'Open String.wz entry')
+          }, icon('type', { size: 14 }), t('Open String.wz entry'))
         : null,
       el('button', {
         class: 'btn btn-sm', 'data-tip': 'Open this .img in the Explorer',
         // Closing first: leaving the card sitting over the Explorer hides the
         // node it just navigated to, which reads as the button doing nothing.
         onclick: () => { ctx.close?.(); this.showInExplorer(detail.path); },
-      }, icon('externalLink', { size: 14 }), 'Show in Explorer'));
+      }, icon('externalLink', { size: 14 }), t('Show in Explorer')));
   }
 
   /**
@@ -959,7 +959,7 @@ export class NpcSection {
         strip.append(el('button', {
           class: 'btn btn-sm',
           onclick: () => { ctx.close?.(); this.showInExplorer(detail.stringPath); },
-        }, icon('type', { size: 14 }), 'Open the String.wz entry'));
+        }, icon('type', { size: 14 }), t('Open the String.wz entry')));
       }
 
       return strip;
@@ -1146,7 +1146,7 @@ export class NpcSection {
         class: 'btn btn-sm',
         'data-tip': 'This holds a group of values, so it is edited in the tree',
         onclick: () => { ctx.close?.(); this.showInExplorer(field.path); },
-      }, icon('externalLink', { size: 14 }), 'Open in Explorer'));
+      }, icon('externalLink', { size: 14 }), t('Open in Explorer')));
   }
 
   /**
@@ -1211,7 +1211,7 @@ export class NpcSection {
               ? line.text
               : this.capabilities.names
                 ? `Nothing in String.wz answers to "${line.key ?? 'this key'}", so this line is silent in game.`
-                : 'String.wz is not open, so this line cannot be resolved.' }),
+                : t('String.wz is not open, so this line cannot be resolved.') }),
           el('div', { class: 'npc-binding-extra' },
             el('span', { class: 'npc-key-chip', text: line.key ?? 'no key' }),
             el('span', { text: t(' in String.wz') }))),
@@ -1238,8 +1238,8 @@ export class NpcSection {
       // Rule 12: the limit named where the user reaches for it.
       el('div', { class: 'npc-section-foot',
         text: this.capabilities.canEditText
-          ? 'The words are edited in String.wz, not here — the buttons above open the exact node.'
-          : 'String.wz is not open for writing, so the words cannot be changed from this app right now.' }));
+          ? t('The words are edited in String.wz, not here — the buttons above open the exact node.')
+          : t('String.wz is not open for writing, so the words cannot be changed from this app right now.') }));
   }
 
   /**
@@ -1297,7 +1297,7 @@ export class NpcSection {
         paint();
       } catch (error) {
         revert?.();
-        toastError(error, 'Could not save that field');
+        toastError(error, t('Could not save that field'));
       }
     });
   }
@@ -1373,7 +1373,7 @@ export class NpcSection {
     // field is as likely to hold a script name as a count.
     const valueInput = el('input', { class: 'npc-input', value: '1', spellcheck: 'false' });
     const roundSelect = el('select', { class: 'npc-select', 'aria-label': 'Rounding' },
-      ROUNDING.map(([value, label]) => el('option', { value, text: label })));
+      ROUNDING.map(([value, label]) => el('option', { value, text: t(label) })));
 
     const kindOf = (key) => fields.find((f) => f.key === key)?.kind ?? 'Text';
 
@@ -1389,7 +1389,7 @@ export class NpcSection {
       const wanted = numeric ? OPS : OPS.slice(0, 1);
       const keep = wanted.some(([value]) => value === opSelect.value) ? opSelect.value : 'set';
       clear(opSelect);
-      opSelect.append(...wanted.map(([value, label]) => el('option', { value, text: label, selected: value === keep })));
+      opSelect.append(...wanted.map(([value, label]) => el('option', { value, text: t(label), selected: value === keep })));
       opSelect.disabled = !numeric;
       roundSelect.disabled = !numeric || keep === 'set';
     };
@@ -1402,7 +1402,7 @@ export class NpcSection {
       'data-tip': 'Preview first — nothing is written until you have seen the values',
     }, icon('check', { size: 15 }), `Apply to ${fmt.format(paths.length)} NPC${paths.length === 1 ? '' : 's'}`);
 
-    const previewButton = el('button', { class: 'btn' }, icon('eye', { size: 15 }), 'Preview changes');
+    const previewButton = el('button', { class: 'btn' }, icon('eye', { size: 15 }), t('Preview changes'));
 
     /**
      * Any change to the recipe throws the preview away.
@@ -1454,7 +1454,7 @@ export class NpcSection {
         applyButton.disabled = changing === 0;
         applyButton.dataset.tip = changing
           ? `Write these ${fmt.format(changing)} changes`
-          : 'Nothing here would change';
+          : t('Nothing here would change');
       } catch (error) {
         preview = null;
         applyButton.disabled = true;
@@ -1493,7 +1493,7 @@ export class NpcSection {
       const changing = (preview.changes || []).filter((c) => !c.skipped);
       const ok = await confirmDialog({
         title: `Change ${fieldSelect.value} on ${fmt.format(changing.length)} NPC${changing.length === 1 ? '' : 's'}?`,
-        message: `${OPS.find(([v]) => v === opSelect.value)?.[1]} ${valueInput.value} — this is the preview you ` +
+        message: `${t(OPS.find(([v]) => v === opSelect.value)?.[1])} ${valueInput.value} — this is the preview you ` +
                  'are looking at. Nothing is written to disk until you save, and you can undo it.',
         confirmLabel: t('Apply the changes'),
         danger: false,
@@ -1513,7 +1513,7 @@ export class NpcSection {
         this.app.markDirty();
         await this.load();
       } catch (error) {
-        toastError(error, 'Could not apply those changes');
+        toastError(error, t('Could not apply those changes'));
       }
     }));
   }

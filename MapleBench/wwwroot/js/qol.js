@@ -544,7 +544,7 @@ export function openFindReplace(app, scopePath) {
  */
 export function openBulkEdit(app, paths) {
   const expression = el('input', {
-    placeholder: '*1.5   +50   -10%   clamp 1 999   =150',
+    placeholder: t('*1.5   +50   -10%   clamp 1 999   =150'),
     style: 'width:100%;height:36px;padding:0 12px;border:1px solid var(--border);' +
            'border-radius:var(--r-sm);background:var(--bg-field);color:var(--text-1);' +
            'font-family:var(--font-mono)',

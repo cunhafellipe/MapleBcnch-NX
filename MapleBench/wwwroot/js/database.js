@@ -284,7 +284,7 @@ export class Database {
 
     return el('div', { class: 'db-panel db-head' },
       el('div', { class: 'db-head-text' },
-        el('div', { class: 'db-head-title', text: 'Game Data Search' }),
+        el('div', { class: 'db-head-title', text: t('Game Data Search') }),
         el('div', { class: 'db-head-sub' },
           el('span', { text: t('Names from ') }),
           el('b', { text: subject }),
@@ -419,7 +419,7 @@ export class Database {
     }
 
     if (this.searching) {
-      panel.append(el('div', { class: 'db-result-head' }, el('span', { text: 'Searching…' })));
+      panel.append(el('div', { class: 'db-result-head' }, el('span', { text: t('Searching…') })));
       for (let i = 0; i < 6; i++) {
         panel.append(el('div', { class: 'skeleton skeleton-row', style: `width:${45 + ((i * 37) % 40)}%` }));
       }

@@ -3,6 +3,7 @@
  */
 
 import { icon } from './icons.js';
+import { t } from './i18n.js';
 
 export const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
@@ -636,7 +637,7 @@ export function modal({ title, subtitle, body, actions = [], width, onOpen }) {
  * Resolves to the trimmed string, or null if the user cancelled or left it
  * empty. Enter submits, so it is as quick as a native prompt.
  */
-export function promptForText({ title, message, value = '', confirmLabel = 'OK', placeholder = '' }) {
+export function promptForText({ title, message, value = '', confirmLabel = t('OK'), placeholder = '' }) {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (result) => { if (!settled) { settled = true; resolve(result); } };
@@ -667,7 +668,7 @@ export function promptForText({ title, message, value = '', confirmLabel = 'OK',
           : null,
         input),
       actions: [
-        { label: 'Cancel', run: () => finish(null) },
+        { label: t('Cancel'), run: () => finish(null) },
         { label: confirmLabel, class: 'btn-primary', run: () => { submit(); return false; }, closes: false },
       ],
       onOpen: () => {
@@ -686,7 +687,7 @@ export function promptForText({ title, message, value = '', confirmLabel = 'OK',
   });
 }
 
-export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger = true }) {
+export function confirmDialog({ title, message, confirmLabel = t('Confirm'), danger = true }) {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
@@ -695,7 +696,7 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
       title,
       body: el('p', { text: message, style: 'margin:0 0 8px;color:var(--text-2);line-height:1.5' }),
       actions: [
-        { label: 'Cancel', run: () => finish(false) },
+        { label: t('Cancel'), run: () => finish(false) },
         { label: confirmLabel, class: danger ? 'btn-red' : 'btn-primary', run: () => finish(true) },
       ],
       onOpen: (node) => {

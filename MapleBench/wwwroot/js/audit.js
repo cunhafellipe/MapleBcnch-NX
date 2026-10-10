@@ -36,6 +36,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toast, toastError, fmt } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
@@ -114,7 +115,7 @@ export class AuditSection {
       localStorage.setItem(FOLDER_KEY, this.folder);
     } catch (error) {
       this.plan = null;
-      toastError(error, 'Could not read that folder');
+      toastError(error, t('Could not read that folder'));
     }
     this.render();
   }
@@ -125,7 +126,7 @@ export class AuditSection {
       this.progress = await api.auditStart({ folder: this.folder, maxPerCheck: 300 });
       this.poll();
     } catch (error) {
-      toastError(error, 'Could not start the audit');
+      toastError(error, t('Could not start the audit'));
     }
     this.render();
   }
@@ -151,7 +152,7 @@ export class AuditSection {
       this.repair.progress = await api.repairScanStart({ path: archive, maxCases: 400 });
       this.pollRepair();
     } catch (error) {
-      toastError(error, 'Could not scan that archive');
+      toastError(error, t('Could not scan that archive'));
     }
     this.render();
   }
@@ -176,7 +177,7 @@ export class AuditSection {
       this.repair.progress = await api.repairApply({ path: archive, confirm: true });
       this.pollRepair();
     } catch (error) {
-      toastError(error, 'Could not start the repair');
+      toastError(error, t('Could not start the repair'));
     }
     this.render();
   }
@@ -235,7 +236,7 @@ export class AuditSection {
 
     this.host.append(emptyState(
       'search', t('Point it at a client folder'),
-      'The auditor reads every .wz a client mounts and reports what will not resolve once they are ' +
+      t('The auditor reads every .wz a client mounts and reports what will not resolve once they are ') +
       'mounted together. It opens files read-only and writes nothing.'));
   }
 
@@ -252,10 +253,10 @@ export class AuditSection {
 
     return el('div', { class: 'audit-head' },
       el('div', { class: 'audit-title' },
-        el('h2', { text: 'Client integrity' }),
+        el('h2', { text: t('Client integrity') }),
         el('p', {
           class: 'audit-sub',
-          text: 'Every check here answers a question no single archive can: what happens once they are ' +
+          text: t('Every check here answers a question no single archive can: what happens once they are ') +
                 'all mounted together. Read-only — nothing is written, moved or fixed.',
         })),
       el('div', { class: 'audit-controls' },
@@ -263,14 +264,14 @@ export class AuditSection {
         el('button', {
           class: 'btn',
           onclick: () => this.loadPlan(),
-          'data-tip': 'List the archives a client would mount from this folder. Opens nothing.',
-        }, icon('folderOpen', { size: 15 }), 'Read folder'),
+          'data-tip': t('List the archives a client would mount from this folder. Opens nothing.'),
+        }, icon('folderOpen', { size: 15 }), t('Read folder')),
         el('button', {
           class: 'btn btn-primary',
           disabled: !this.plan,
           onclick: () => this.start(),
-          'data-tip': this.plan ? 'Minutes on a full client. Progress below; cancel any time.' : 'Read a folder first',
-        }, icon('search', { size: 15 }), 'Run audit')));
+          'data-tip': this.plan ? t('Minutes on a full client. Progress below; cancel any time.') : t('Read a folder first'),
+        }, icon('search', { size: 15 }), t('Run audit'))));
   }
 
   planView() {
@@ -288,8 +289,8 @@ export class AuditSection {
         el('h3', { text: `${rows.length} archives in ${this.plan.families.length} families` }),
         el('table', { class: 'table audit-table' },
           el('thead', {}, el('tr', {},
-            el('th', { text: 'Family' }), el('th', { text: 'Archive' }),
-            el('th', { class: 'num', text: 'Mounts' }), el('th', { class: 'num', text: 'Size' }))),
+            el('th', { text: t('Family') }), el('th', { text: t('Archive') }),
+            el('th', { class: 'num', text: t('Mounts') }), el('th', { class: 'num', text: t('Size') }))),
           el('tbody', {}, ...rows))),
       // Shown, not hidden. A backup sitting beside the live archive is the most
       // common reason a folder audits differently from the client that runs, and
@@ -317,12 +318,12 @@ export class AuditSection {
         text: `${p.archivesDone} of ${p.archivesTotal} archives · ${fmt.format(p.imagesDone)} images ` +
               `· ${fmt.format(p.findings)} findings so far`,
       }),
-      el('button', { class: 'btn', onclick: () => this.cancel() }, 'Stop'));
+      el('button', { class: 'btn', onclick: () => this.cancel() }, t('Stop')));
   }
 
   failure() {
     return el('div', { class: 'audit-card audit-failed' },
-      el('h3', { text: 'The audit stopped' }),
+      el('h3', { text: t('The audit stopped') }),
       el('p', { text: this.progress.error ?? 'No reason was reported.' }));
   }
 
@@ -380,7 +381,7 @@ export class AuditSection {
             // ambiguous: "found nothing" and "looked at nothing" read the same,
             // and only the examined count and the limit tell them apart.
             check.examined === 0
-              ? el('span', { class: 'audit-none', text: ' — nothing was examined' })
+              ? el('span', { class: 'audit-none', text: t(' — nothing was examined') })
               : null,
             check.notChecked
               ? el('div', { class: 'audit-dim audit-limit', text: check.notChecked })
@@ -408,15 +409,15 @@ export class AuditSection {
     if (!rows.length) return null;
 
     return el('div', { class: 'audit-card' },
-      el('h3', { text: 'String.wz against the archives that define what it names' }),
+      el('h3', { text: t('String.wz against the archives that define what it names') }),
       el('table', { class: 'table audit-table' },
         el('thead', {}, el('tr', {},
-          el('th', { text: 'Kind' }),
-          el('th', { text: 'String.wz image' }),
-          el('th', { class: 'num', text: 'Named' }),
-          el('th', { class: 'num', text: 'Defined' }),
-          el('th', { class: 'num', text: 'Named, not defined' }),
-          el('th', { class: 'num', text: 'Defined, not named' }))),
+          el('th', { text: t('Kind') }),
+          el('th', { text: t('String.wz image') }),
+          el('th', { class: 'num', text: t('Named') }),
+          el('th', { class: 'num', text: t('Defined') }),
+          el('th', { class: 'num', text: t('Named, not defined') }),
+          el('th', { class: 'num', text: t('Defined, not named') }))),
         el('tbody', {}, ...rows.map((row) => el('tr', {},
           el('td', { text: row.kind }),
           el('td', {}, el('code', { text: row.stringImage })),
@@ -455,17 +456,17 @@ export class AuditSection {
    */
   archives(report) {
     return el('div', { class: 'audit-card audit-muted' },
-      el('h3', { text: 'What was read, in the order the client mounts it' }),
+      el('h3', { text: t('What was read, in the order the client mounts it') }),
       el('table', { class: 'table audit-table' },
         el('thead', {}, el('tr', {},
-          el('th', { text: 'Archive' }),
-          el('th', { text: 'Namespace' }),
-          el('th', { class: 'num', text: 'Mounts' }),
-          el('th', { class: 'num', text: 'Size' }),
-          el('th', { text: 'Status' }),
-          el('th', { class: 'num', text: 'Images' }),
-          el('th', { class: 'num', text: 'Canvases' }),
-          el('th', { class: 'num', text: 'Seconds' }))),
+          el('th', { text: t('Archive') }),
+          el('th', { text: t('Namespace') }),
+          el('th', { class: 'num', text: t('Mounts') }),
+          el('th', { class: 'num', text: t('Size') }),
+          el('th', { text: t('Status') }),
+          el('th', { class: 'num', text: t('Images') }),
+          el('th', { class: 'num', text: t('Canvases') }),
+          el('th', { class: 'num', text: t('Seconds') }))),
         el('tbody', {}, ...report.archives.map((archive) => el('tr', {},
           el('td', {}, el('code', { text: archive.name })),
           el('td', { text: archive.family }),
@@ -517,7 +518,7 @@ export class AuditSection {
               : null,
             el('table', { class: 'table audit-table' },
               el('thead', {}, el('tr', {},
-                el('th', { text: 'Where' }), el('th', { text: 'What' }), el('th', { text: 'Target' }))),
+                el('th', { text: t('Where') }), el('th', { text: t('What') }), el('th', { text: t('Target') }))),
               el('tbody', {}, ...rows.map((finding) => el('tr', {},
                 // The path is selectable text rather than a link into the tree:
                 // the archive it names is usually not open, and a link that
@@ -552,17 +553,17 @@ export class AuditSection {
     const result = this.repair.result;
 
     return el('div', { class: 'audit-card audit-check', 'data-severity': 'Critical' },
-      el('h3', { text: 'Repair: re-join the split format value' }),
+      el('h3', { text: t('Repair: re-join the split format value') }),
       el('p', {
         class: 'audit-sub',
-        text: 'These canvases carry a format that was written across two fields — the low byte in ' +
+        text: t('These canvases carry a format that was written across two fields — the low byte in ') +
               'the format and the rest in the magnification beside it. This app wrote them that way ' +
               'before the writer was fixed; the client reads the second number as a magnification ' +
               'and shifts the sprite down to a couple of pixels, or to none.',
       }),
       el('p', {
         class: 'audit-sub',
-        text: 'A magnification of 1, 2 or 4 is ordinary in real data, and each of those joins to a ' +
+        text: t('A magnification of 1, 2 or 4 is ordinary in real data, and each of those joins to a ') +
               'real format (257, 513, 1026), so the pair on its own proves nothing. What decides is ' +
               'the payload: a genuinely scaled canvas stores its pixels at the reduced size, a split ' +
               'value stores them full-size in the joined format. Only the second is touched.',
@@ -574,7 +575,7 @@ export class AuditSection {
               `${this.repair.progress.archive || ''} · ` +
               `${fmt.format(this.repair.progress.canvasesDone)} canvases · ` +
               `${fmt.format(this.repair.progress.found)} found` }),
-            el('button', { class: 'btn', onclick: () => api.repairCancel().catch(() => {}) }, 'Stop'))
+            el('button', { class: 'btn', onclick: () => api.repairCancel().catch(() => {}) }, t('Stop')))
         : el('div', { class: 'audit-controls' },
             ...archives.map((name) => el('button', {
               class: 'btn',
@@ -607,9 +608,9 @@ export class AuditSection {
               ? el('button', {
                   class: 'btn btn-primary',
                   onclick: () => this.repairApply(),
-                  'data-tip': 'Writes a new archive beside this one. The original is not touched.',
+                  'data-tip': t('Writes a new archive beside this one. The original is not touched.'),
                 }, icon('save', { size: 15 }), `Write a repaired copy (${fmt.format(scan.split)})`)
-              : el('p', { class: 'audit-sub', text: 'Nothing in this archive is a split value.' }),
+              : el('p', { class: 'audit-sub', text: t('Nothing in this archive is a split value.') }),
             this.notes(scan.notes, 'What the scan concluded'))
         : null,
 
@@ -622,23 +623,23 @@ export class AuditSection {
                   `${fmt.format(result.failedToDecode)} did not decode. Do not install this file.` })
               : null,
             ...(result.failures ?? []).map((line) => el('p', { class: 'audit-sub', text: line })),
-            el('p', { class: 'audit-sub', text: 'Written to:' }),
+            el('p', { class: 'audit-sub', text: t('Written to:') }),
             el('code', { text: result.output }),
             // The command, not a button. Copying a repaired archive over a live
             // client is the one step this app will not take on the user's
             // behalf -- and the command takes the backup first, in the same
             // line, so there is no ordering to get wrong.
             el('p', { class: 'audit-sub', text:
-              'To install it, run this in PowerShell. It backs the current archive up first, and ' +
+              t('To install it, run this in PowerShell. It backs the current archive up first, and ') +
               'only copies if that backup succeeded:' }),
             el('pre', {}, el('code', { text: result.installCommand })),
             el('button', {
               class: 'btn',
               onclick: () => {
                 navigator.clipboard?.writeText(result.installCommand);
-                toast('Command copied');
+                toast(t('Command copied'));
               },
-            }, 'Copy command'),
+            }, t('Copy command')),
             this.notes(result.notes, 'What the repair did'))
         : null);
   }

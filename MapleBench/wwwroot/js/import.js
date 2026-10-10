@@ -98,7 +98,7 @@ export function openImporter(app, startPath, { dual = false } = {}) {
 
   const sourceInput = el('input', {
     class: 'field-input no-icon',
-    placeholder: 'e.g. C:\\Nexon\\Library\\maplestory\\appdata',
+    placeholder: t('e.g. C:\\Nexon\\Library\\maplestory\\appdata'),
     value: startPath ?? localStorage.getItem(LAST_SOURCE) ?? '',
   });
 

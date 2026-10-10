@@ -1907,7 +1907,7 @@ el('label', { class: 'muted', style: 'font-size:var(--fs-11);font-weight:700', t
           const rect = event.currentTarget.getBoundingClientRect();
           this.showMenu(SORT_MODES.map(([value, label]) => ({
             icon: this.tree.sortMode === value ? 'check' : 'list',
-            label,
+            label: t(label),
             run: () => {
               this.tree.setSortMode(value);
               this.inspector.sortMode = value;

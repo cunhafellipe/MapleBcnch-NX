@@ -320,7 +320,7 @@ export class ComposeSection {
           class: 'input compose-folder',
           type: 'text',
           value: m.base.folder,
-          placeholder: 'C:\\clients\\my-base-copy',
+          placeholder: t('C:\\clients\\my-base-copy'),
           spellcheck: 'false',
           oninput: (event) => { m.base.folder = event.target.value.trim(); this.save(); },
           onkeydown: (event) => { if (event.key === 'Enter') this.readBase(); },
@@ -410,7 +410,7 @@ export class ComposeSection {
         }),
         el('input', {
           class: 'input compose-folder', type: 'text', value: source.folder,
-          placeholder: 'C:\\clients\\donor-copy', spellcheck: 'false',
+          placeholder: t('C:\\clients\\donor-copy'), spellcheck: 'false',
           oninput: (event) => { source.folder = event.target.value.trim(); this.save(); },
           onkeydown: (event) => { if (event.key === 'Enter') this.readSource(source); },
         }),

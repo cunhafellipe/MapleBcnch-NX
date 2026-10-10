@@ -365,7 +365,7 @@ export function openFamilyPicker(app, startPath) {
   let sheet = null;
   const start = startPath || localStorage.getItem('mb.lastDir') || '';
   const input = el('input', {
-    value: start, placeholder: 'C:\\MapleStory\\232',
+    value: start, placeholder: t('C:\\MapleStory\\232'),
     style: 'flex:1;height:34px;padding:0 10px;border:1px solid var(--border);'
          + 'border-radius:var(--r-sm);background:var(--bg-field)',
   });

@@ -314,7 +314,7 @@ export class ResultsPanel {
     const input = el('input', {
       class: 'field-input',
       type: 'search',
-      placeholder: 'name:maxHP >10000',
+      placeholder: t('name:maxHP >10000'),
       value: this.query,
       // The examples are in the placeholder and the empty state, not in a help
       // panel: the grammar is two prefixes, and anything that needs a manual to

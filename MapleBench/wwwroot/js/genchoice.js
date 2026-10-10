@@ -351,7 +351,7 @@ export class GenChoiceSection {
         el('label', { class: 'gc-label', text: t('Client folder (copies of the Skill family, read-only)') }),
         el('input', {
           class: 'input', type: 'text', value: this.s.folder, spellcheck: 'false',
-          placeholder: 'C:\\MapleStory\\_genchoice_work\\client',
+          placeholder: t('C:\\MapleStory\\_genchoice_work\\client'),
           oninput: (event) => {
             this.s.folder = event.target.value.trim();
             this.save();
@@ -361,7 +361,7 @@ export class GenChoiceSection {
         el('label', { class: 'gc-label', text: t('Donor archives, one per line, in preference order') }),
         el('textarea', {
           class: 'input gc-donors', rows: '2', spellcheck: 'false',
-          placeholder: 'C:\\MapleStory\\_genchoice_work\\donors\\Skill_old.wz',
+          placeholder: t('C:\\MapleStory\\_genchoice_work\\donors\\Skill_old.wz'),
           oninput: (event) => { this.s.donors = event.target.value; this.save(); },
         }, this.s.donors || ''),
         el('div', { class: 'gc-row' },
@@ -373,7 +373,7 @@ export class GenChoiceSection {
           el('label', { class: 'gc-label', text: t('Final output (empty = beside the source)') }),
           el('input', {
             class: 'input gc-output', type: 'text', value: this.s.output, spellcheck: 'false',
-            placeholder: 'C:\\MapleStory\\_genchoice_work\\client\\Skill.genchoice.wz',
+            placeholder: t('C:\\MapleStory\\_genchoice_work\\client\\Skill.genchoice.wz'),
             oninput: (event) => { this.s.output = event.target.value.trim(); this.save(); },
           })),
         el('label', {

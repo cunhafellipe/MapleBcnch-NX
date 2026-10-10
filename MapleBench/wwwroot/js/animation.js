@@ -9,6 +9,7 @@
  */
 
 import { api } from './api.js';
+import { t } from './i18n.js';
 import { el, clear, toastError, scalePixelArt } from './ui.js';
 import { canvasUrl } from './media.js';
 import { icon } from './icons.js';
@@ -41,7 +42,7 @@ export class AnimationPlayer {
       // "Not an animation" is a 200 with isAnimation:false, and a vanished node
       // is a 404 -- both are silent by design. Anything else is a real failure,
       // and swallowing it rendered nothing with no way to tell why.
-      if (error?.status !== 404) toastError(error, 'Could not read this animation');
+      if (error?.status !== 404) toastError(error, t('Could not read this animation'));
       return null;
     }
     if (this.cancelled || !data.isAnimation || !data.frames.length) return null;
@@ -84,7 +85,7 @@ export class AnimationPlayer {
     const playButton = el('button', {
       class: 'btn btn-sm', 'data-tip': 'Play the animation',
       onclick: () => this.toggle(),
-    }, icon('play', { size: 13 }), el('span', { text: 'Play' }));
+    }, icon('play', { size: 13 }), el('span', { text: t('Play') }));
     this.playButton = playButton;
 
     const scrubber = el('input', {
@@ -151,9 +152,9 @@ export class AnimationPlayer {
         scrubber, speedSelect),
       el('div', { style: 'display:flex;gap:14px;margin-top:8px' },
         el('label', { class: 'check-row', style: 'font-size:var(--fs-12)' },
-          el('input', { type: 'checkbox', checked: true, onchange: (e) => { this.loop = e.target.checked; } }), 'Loop'),
+          el('input', { type: 'checkbox', checked: true, onchange: (e) => { this.loop = e.target.checked; } }), t('Loop')),
         el('label', { class: 'check-row', style: 'font-size:var(--fs-12)' },
-          el('input', { type: 'checkbox', onchange: (e) => { this.showOrigin = e.target.checked; this.draw(); } }), 'Show origin')),
+          el('input', { type: 'checkbox', onchange: (e) => { this.showOrigin = e.target.checked; this.draw(); } }), t('Show origin'))),
       label,
       strip);
   }
@@ -230,7 +231,7 @@ export class AnimationPlayer {
   paintPlayButton(button) {
     clear(button);
     button.append(icon(this.playing ? 'pause' : 'play', { size: 13 }),
-                  el('span', { text: this.playing ? 'Pause' : 'Play' }));
+                  el('span', { text: this.playing ? t('Pause') : t('Play') }));
   }
 
   tick() {
