@@ -1,0 +1,57 @@
+name: Discord 專案更新發報
+
+# ─────────────────────────────────────────────────────────────
+# 本倉庫的更新發報到「NX編輯器」頻道。
+# 每個頻道只收一個項目 —— 新項目請另建頻道與 webhook，不要共用本頻道。
+#
+# 頻道／倉庫對應：
+#   伺服器更新  ← server
+#   NX編輯器    ← MapleBcnch-NX（就是本倉庫）
+#
+# 觸發點在 GitHub 伺服器端 —— 任何人從任何機器 push 或開 PR 都會發報。
+# 不需要 actions/checkout，也不需要 GITHUB_TOKEN。
+# ─────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: ["**"]          # 所有分支的推送
+  pull_request_target:        # PR 開啟/更新/關閉
+    types: [opened, reopened, synchronize, ready_for_review, closed]
+  workflow_dispatch:           # 手動觸發測試
+
+# 連續推送時不要互相取消 —— 每一筆變更都要發報，不漏
+concurrency:
+  group: discord-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    permissions: {}            # 不需任何倉庫權限
+    steps:
+      # secret 缺失時跳過而非失敗（紅色標記會干擾真正的錯誤）
+      # 注意：secrets 不能直接用在 job 層級的 if，必須先輸出成 step output
+      - name: 檢查 webhook 是否已設定
+        id: check
+        env:
+          WH: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$WH" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "未設定 DISCORD_WEBHOOK_URL，略過發報" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 發報到 Discord
+        if: steps.check.outputs.ready == 'true'
+        uses: Qbox-project/pipeline-pling@v1
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # PR 與 push 分開頻道時用（留空則同頻道）
+          # pull-request-webhook-url: ${{ secrets.DISCORD_WEBHOOK_PR }}
+          # 排除 Dependabot 之類的機器人提交
+          skip-bots: "true"
+          # 分支過濾（留空＝全部）
+          # branch-allowlist: "main,develop"
+          # 使用推送者頭像 + 顯示倉庫名，方便多倉庫辨識
+          use-sender-avatar: "true"
+          use-repo-username: "true"
