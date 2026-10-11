@@ -53,7 +53,8 @@
 
 | 文件 | 內容 |
 |---|---|
-| [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器接下來怎麼走：先決定要不要做、要修的三件事、MapleNecrocer 缺的四項怎麼補、驗收條件 |
+| **[PLAN-MASTER.md](PLAN-MASTER.md)** | ⭐ **總計畫**：現在的狀態、四階段任務序列與驗收門檻、主目錄怎麼同步、明確不做的事 |
+| [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器的技術細節與設計決策 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
 | [tools/visual-check/](../tools/visual-check/) | 視覺驗收工具（截圖 + 讀 canvas 像素） |
