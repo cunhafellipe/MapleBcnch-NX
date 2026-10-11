@@ -35,6 +35,7 @@ public static class Endpoints
         api.MapDomains();
         api.MapSkills();
         api.MapTransfers();
+        api.MapNxMerge();
         api.MapImport();
         api.MapAudit();
         api.MapRepair();

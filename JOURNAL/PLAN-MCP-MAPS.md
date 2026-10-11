@@ -91,3 +91,12 @@
 - `wz-mcp-map.cmd` — 啟動腳本
 - `docs/CLI-AND-MCP.md` — 更新實測結果
 - `JOURNAL/2026-10-11-mcp-maps.md` — 本輪日誌
+
+---
+
+## 後續新增（2026-10-11 稍後）
+
+`wz_asset_merge_nx` — 把鬆散的候選 `.img` 合併進既有的 `.nx`（SAO 第一層
+`910870003` 的收尾步驟）。走 `/api/nx/merge`，**不在 session 內開檔**，
+自己寫暫存 → 讀回驗證 → 備份 → 換檔；先 `commit=false` 預覽再 `commit=true`。
+詳見 `MapleMcp/README.md` 與 `content/floor01/generated-field-v001/HANDOVER-MAP-MERGE.md`。

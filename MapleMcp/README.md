@@ -23,15 +23,32 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 #    環境變數 WZ_SERVER 可改後端位址
 ```
 
+註冊範例（VS Code 已內建 `.vscode/mcp.json`；Claude Desktop / Cursor 用同一個 `mcpServers` 區塊）：
+
+```jsonc
+{
+  "mcpServers": {
+    "maplebench": {
+      "command": "<repo>/wz-mcp-map.cmd",
+      "env": { "WZ_SERVER": "http://127.0.0.1:5100" }
+    }
+  }
+}
+```
+
+> **給 AI agent**：repo 根目錄有 [`AGENTS.md`](../AGENTS.md)——開後端、連 MCP、
+> 工具清單、不可違反的規則都在那裡。連上 MCP 後工具是自動探索的，不必先讀文件。
+
 ---
 
-## 10 個工具
+## 地圖工具（11 個）
 
 | 工具 | 作用 |
 |---|---|
 | `wz_map_capabilities` | 後端現在能做什麼、開了哪些封存 |
 | `wz_map_list` | 列出封存內的地圖（可搜尋） |
 | `wz_map_open` | 開啟地圖，回傳完整結構 |
+| `wz_map_create` | 從量測出的最小骨架建立新地圖 |
 | `wz_map_doc` | 已開啟地圖的結構摘要 |
 | `wz_map_node` | 讀取單一節點，**找出可寫的葉節點** |
 | `wz_map_palette` | 列出素材 set 與 `drawableEntries` |
@@ -51,6 +68,43 @@ agent 選錯目標 → 帶 commit=false 重跑 → 讀結果 → 確認後才 co
 
 沿用舊版 `WzMcp` 已驗證的模式。磁碟變動只發生在
 `wz_map_save(commit=true)`，而存檔會重寫整個封存（會留時間戳備份）。
+
+---
+
+## NX 合併工具（`wz_asset_merge_nx`）
+
+生成好的候選 `.img` 要進到客戶端會開的封存，用這一個工具：
+
+| 參數 | 意義 |
+|---|---|
+| `targetNx` | 要改寫的 `.nx` 絕對路徑 |
+| `entries` | `[{ source, target }]`，`source` 是鬆散的 `.img`，`target` 是封存內目錄（如 `Map/Map9`、`Obj`）；同名節點會被取代 |
+| `commit` | 預設 `false`：只開檔檢查、回報會新增或取代什麼；讀過再帶 `true` 重跑 |
+| `backup` | 預設 `true`：改寫前把原檔留成時間戳 `.bak` |
+
+一次呼叫就是一次**全封存改寫**，所以它自己做了交易：
+先寫到旁邊的暫存檔 → 重新讀回驗證節點數與每個目標路徑 → 把原檔改名備份 → 才換上新檔。
+任一步失敗都不會動到目的檔。
+
+**封存不能已經開在這個 session**（會被拒絕）：在活的映射底下換檔，
+會讓 session 讀到已經不存在的位元組。合併是獨立於 session 之外的檔案操作。
+
+SAO 第一層的實例：
+
+```json
+{
+  "targetNx": "E:/SAO Client/wz/Map.nx",
+  "entries": [
+    { "source": "E:/SAO Client/content/floor01/generated-field-v001/img/Map/Map9/910870003.img", "target": "Map/Map9" },
+    { "source": "E:/SAO Client/content/floor01/generated-field-v001/img/Obj/saoGeneratedField910870003.img", "target": "Obj" }
+  ],
+  "commit": true
+}
+```
+
+> 實測：先在 `Map.nx` 的複本上跑（8,400,281 → 8,400,592 節點、31 秒），
+> 再對實機 `Map.nx` 跑 `commit=true`（27.6 秒、`verified: true`）；
+> 用獨立 NX 解析器確認兩張 IMG 都在、舊的城鎮地圖未被動到。
 
 ---
 

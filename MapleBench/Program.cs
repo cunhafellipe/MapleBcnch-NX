@@ -120,6 +120,9 @@ public static class Program
         builder.Services.AddSingleton<UndoService>();
         builder.Services.AddSingleton<WzEditService>();
         builder.Services.AddSingleton<WzSaveService>();
+        // Grafts candidate IMGs into an NX archive by reusing the session's
+        // open and the save service's transaction; it holds no state of its own.
+        builder.Services.AddSingleton<NxMergeService>();
         builder.Services.AddSingleton<WzSearchService>();
         builder.Services.AddSingleton<WzRenderService>();
         builder.Services.AddSingleton<StringPoolService>();

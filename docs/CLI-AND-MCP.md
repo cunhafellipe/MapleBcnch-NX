@@ -43,22 +43,28 @@
 
 ## MCP — 兩個伺服器，各管一件事
 
-### `maplebench-maps`（新版，本專案內）— ✅ 10 個地圖工具
+### `maplebench-assets`（新版，本專案內）— ✅ 10 個地圖工具 + 通用 `wz_asset_*`
 
 `MapleMcp/`，用官方 `ModelContextProtocol` SDK 2.2.0。
 專案內路徑：`MapleMcp/bin/Release/net10.0-windows/maple-mcp.exe`
 
-握手實測：
+握手實測（2026-10-11，`tools/probe/mcp-probe.mjs`）：
 
 ```
-server  : maplebench-maps v1.0.0
+server  : maplebench-assets v1.3.0
 protocol: 2024-11-05
-tools   : 10
+tools   : 34（11 個地圖 + 23 個通用資產，含 wz_asset_merge_nx）
   wz_map_capabilities  wz_map_list      wz_map_open     wz_map_doc
   wz_map_node         wz_map_palette   wz_map_place    wz_map_batch
-  wz_map_validate     wz_map_save
-地圖相關工具: 10
+  wz_map_validate     wz_map_save      wz_map_create
+  wz_asset_*（開檔、讀寫節點、canvas、存檔、transfer、merge_nx …）
+地圖相關工具: 14
 ```
+
+> `wz_asset_merge_nx` 是 2026-10-11 新增：把鬆散的候選 `.img`（例如 SAO 第一層的
+> `Map/Map9/910870003.img` 與 `Obj/saoGeneratedField910870003.img`）合併進客戶端會開的 `.nx`。
+> 先 `commit=false` 預覽、再 `commit=true` 改寫；會留時間戳備份並讀回驗證。
+> 詳見 `MapleMcp/README.md`。
 
 **完整流程實測通過**（只經 MCP，不碰 HTTP）：
 從 `capabilities` → `list` → `open` → `palette` → `place` → `validate`
