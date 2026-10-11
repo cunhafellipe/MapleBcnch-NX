@@ -124,7 +124,18 @@ public sealed class ExportService
 
                 if (node is WzImage existing)
                 {
-                    image = existing;
+                    // NOT the session's own object. The recovery path below calls
+                    // property.Remove(), which removes through the parent pointer and
+                    // mutates the collection the open archive is holding -- so serving
+                    // it the live image would quietly delete UOL and _outlink content
+                    // from the user's archive and leave WzImage.Changed set, making the
+                    // next save persist the mutilation. Nothing here reports that, and
+                    // nested WzSubProperty removals set no flag at all, so the deletions
+                    // would not even show in the dirty indicator.
+                    //
+                    // Clone it instead. If the clone cannot be built, say so and refuse
+                    // rather than damage the archive to produce a file.
+                    image = CloneForExport(existing);
                 }
                 else if (node is WzImageProperty subtree)
                                                 {
@@ -150,10 +161,13 @@ public sealed class ExportService
                                                                 image.AddProperty(child.DeepClone());
                                                             }
                                                             catch (Exception ex) when (ex is NullReferenceException
-                                                                                       or InvalidCastException)
-                                                            {
-                                                                unresolvable++;
-                                                            }
+                                                                     or InvalidCastException
+                                                                     or ArgumentException
+                                                                     or InvalidOperationException
+                                                                     or SystemException)
+                                                                {
+                                                                    unresolvable++;
+                                                                }
                                                         }
                                                     }
                                                     else
@@ -217,6 +231,62 @@ public sealed class ExportService
                     /// Removes canvas properties whose pixels live in another archive, so the
                     /// rest of the node can still be written. Returns how many were dropped.
                     /// </summary>
+                    /// <summary>A detached copy of a whole image, built one child at a time.</summary>
+                    /// <remarks>
+                    /// DeepClone on the image itself recurses into every descendant and throws
+                    /// on the first canvas whose reader is missing, losing the whole export.
+                    /// Cloning per child means a bad canvas costs that canvas only. The copy is
+                    /// never attached to the session, so the recovery pass that removes
+                    /// unresolvable nodes can only damage this copy.
+                    /// </remarks>
+                    private static WzImage CloneForExport(WzImage source)
+                    {
+                        WzImage copy = new(source.Name);
+                        if (source.WzProperties is not { Count: > 0 } kids)
+                            return copy;
+
+                        int copied = 0;
+                        foreach (WzImageProperty child in kids)
+                        {
+                            WzImageProperty? clone = TryClone(child);
+                            if (clone is null)
+                                continue;
+
+                            // AddProperty refuses a name it already holds, and same-named
+                            // siblings are legal here: WzPropertyCollection counts them and
+                            // WzPath.Child disambiguates them with "#n". Letting that refusal
+                            // escape would be the very 500 this recovery exists to prevent, so
+                            // the copy is allowed to differ in NAME and never in content.
+                            if (copy.WzProperties.Any(p => p.Name == clone.Name))
+                                clone.Name += "#export";
+
+                            copy.AddProperty(clone);
+                            copied++;
+                        }
+
+                        if (copied == 0)
+                            throw new InvalidOperationException(
+                                $"'{source.Name}' has no child that could be copied, so there is nothing to export.");
+
+                        return copy;
+                    }
+
+                    /// <summary>A detached copy of one child, or null if it cannot be cloned.</summary>
+                    private static WzImageProperty? TryClone(WzImageProperty child)
+                    {
+                        try
+                        {
+                            return child.DeepClone();
+                        }
+                        // Deliberately broad: the failure being recovered from is an NRE from
+                        // MapleLib dereferencing a missing canvas reader, and a different
+                        // unrecoverable shape should cost this child rather than the export.
+                        catch (Exception)
+                        {
+                            return null;
+                        }
+                    }
+
                     private static int DropLinkedCanvases(WzImage image)
                     {
                         int dropped = 0;
