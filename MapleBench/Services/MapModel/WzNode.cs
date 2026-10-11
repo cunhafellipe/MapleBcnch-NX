@@ -437,6 +437,24 @@ public sealed class WzNode
         return image;
     }
 
+    /// <summary>
+    /// Builds the same thing as <see cref="BuildImage"/> into the only container
+    /// an NX archive has. NX has no directory type and no image type: a map that
+    /// is <c>Map/Map9/910870002.img</c> in a .wz is three nested
+    /// <see cref="WzSubProperty"/> nodes there, and the children are identical.
+    /// Kept beside <see cref="BuildImage"/> so the two shapes are read together
+    /// and cannot drift into producing different maps.
+    /// </summary>
+    public static WzSubProperty BuildSubProperty(string name, IEnumerable<WzNode> nodes)
+    {
+        ArgumentNullException.ThrowIfNull(nodes);
+
+        WzSubProperty property = new(name);
+        foreach (WzNode node in nodes)
+            property.WzProperties.Add(node.Build());
+        return property;
+    }
+
     private void BuildChildrenInto(WzPropertyCollection target)
     {
         if (_children == null)

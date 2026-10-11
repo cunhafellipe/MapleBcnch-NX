@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Server;
 
@@ -358,5 +359,46 @@ public static class MapTools
             });
         }
         return MapClient.J(await maps.PostAsync("api/mapedit/save", new { path }, ct));
+    }
+
+    [Description(
+        "Create a new map from the measured minimal scaffold: a nine-digit id, its " +
+        "Map<digit> bucket, the info keys and empty containers real maps ship, and a " +
+        "String.wz row so the map has a name. Refuses an id that already exists in any " +
+        "open Map archive. Works on NX archives as well as .wz — an NX archive keeps " +
+        "the bucket and the map as properties where a .wz keeps them as a directory " +
+        "and an image, and both are written. Default is a preview; pass commit=true " +
+        "to create, which saves the archive and keeps a timestamped backup.")]
+    [McpServerTool(Name = "wz_map_create")]
+    public static async Task<string> Create(MapClient maps,
+        [Description("Nine-digit map id. Its first digit picks the bucket (Map0..Map9) " +
+                     "and it is the image's name, so it cannot be changed later.")]
+        int id,
+        [Description("Name for String.wz/Map.img/<region>/<id>/mapName")]
+        string? name = null,
+        [Description("Street name for the same row")] string? streetName = null,
+        [Description("Actually create and save. Default false — preview first.")]
+        bool commit = false,
+        CancellationToken ct = default)
+    {
+        string bucket = "Map" + (id / 100000000).ToString(CultureInfo.InvariantCulture);
+        string image = id.ToString("D9", CultureInfo.InvariantCulture) + ".img";
+        if (!commit)
+        {
+            return MapClient.J(new JsonObject
+            {
+                ["preview"] = true,
+                ["id"] = id,
+                ["bucket"] = bucket,
+                ["image"] = image,
+                ["path"] = bucket + "/" + image,
+                ["note"] = "Would create " + bucket + "/" + image + " in the mount-order-first "
+                           + "open Map archive, then save that archive (a timestamped backup is "
+                           + "kept). Re-run with commit=true to write.",
+            });
+        }
+
+        return MapClient.J(await maps.PostAsync("api/mapedit/create",
+            new { id, name, streetName }, ct));
     }
 }

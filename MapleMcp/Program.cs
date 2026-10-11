@@ -39,14 +39,26 @@ public static class Program
             {
                 options.ServerInfo = new ModelContextProtocol.Protocol.Implementation
                 {
-                    Name = "maplebench",
-                    Version = "1.1.0",
+                    Name = "maplebench-assets",
+                    Version = "1.4.0",
                 };
 
                 options.ServerInstructions = """
-                    Two surfaces over one MapleBench backend: build and edit
-                    maps, and split archives into .img files. Both need the
-                    backend running (MapleBenchX.exe --browser).
+                    Four surfaces over one MapleBench backend: generic WZ/IMG/NX assets,
+                    map authoring, archive splitting, and map creation.
+                    All need the backend running (MapleBenchX.exe --browser).
+
+                    GENERIC WZ/IMG/NX ASSETS. Available as wz_asset_*.
+                    Begin with wz_asset_files, open references read-only, inspect
+                    nodes before editing, and save to a separate candidate path.
+                    Generic previews only report intent; they do NOT validate the
+                    backend or encryption. Paths and profiles differ from Orz.
+                    This server does NOT yet replace Orz nx_build/publish,
+                    split-WZ source lookup or patch verification. Trusted source
+                    aliases use MAPLEBENCH_SOURCES; real encryption profiles must
+                    be independently verified. Synthetic IMG roundtrip is tested;
+                    production WZ/NX and game compatibility remain unverified.
+                    Never claim that saving NX synchronized its source IMG.
 
                     AUTHORING MAPS
 
