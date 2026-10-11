@@ -1,0 +1,59 @@
+name: Discord 更新與 PR 通知
+
+# ─────────────────────────────────────────────────────────────
+# 推送與 PR 發報到「NX編輯器」Discord 頻道。
+# 版面：時間 / 版本 / 內容 三個重點，全繁中。
+#
+# 自訂格式不使用 Qbox-project/pipeline-pling —— 那個 action 沒有
+# message 模板參數，內容格式鎖死無法改成中文。改用本倉庫自己的
+# .github/notify-discord.sh，直接組 Discord embed payload。
+#
+# 觸發點在 GitHub 伺服器端 —— 任何人從任何機器 push 或開 PR 都會發報。
+# 不需要 actions/checkout，也不需要 GITHUB_TOKEN。
+#
+# 要設定 webhook（先做這步，再 commit 本檔案）：
+#   Settings → Secrets and variables → Actions → New repository secret
+#   名稱 DISCORD_WEBHOOK_URL，值為目標頻道的 webhook URL
+# ─────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: ["**"]          # 所有分支的推送
+  pull_request_target:        # PR 開啟/更新/關閉/合併
+    types: [opened, reopened, synchronize, ready_for_review, closed]
+
+# 連續推送時不要互相取消 —— 每一筆變更都要發報，不漏
+concurrency:
+  group: discord-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    permissions: {}            # 不需任何倉庫權限
+    steps:
+      # secret 缺失時跳過而非失敗（紅色標記會干擾真正的錯誤）
+      # 注意：secrets 不能直接用在 job 層級的 if，必須先輸出成 step output
+      - name: 檢查 webhook 是否已設定
+        id: check
+        env:
+          WH: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$WH" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "未設定 DISCORD_WEBHOOK_URL，略過發報" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # 取出通知腳本。sparse 只抓 .github/ 這一個目錄，
+      # 避免整個大型倉庫被下載。
+      - name: 取出通知腳本
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
+
+      - name: 發報到 Discord
+        if: steps.check.outputs.ready == 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: bash .github/notify-discord.sh
