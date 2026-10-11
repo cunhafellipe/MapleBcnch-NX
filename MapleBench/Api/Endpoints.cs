@@ -907,6 +907,15 @@ public static class Endpoints
             return Results.File(data, "application/octet-stream", name);
         });
 
+        // Same bytes, different node class. The per-resource unit is not always
+        // a WzImage: skills live at "<group>.img/skill/<id>", a WzImageProperty,
+        // which /export/img rejects. See ExportService.ExportNodeAsImg.
+        api.MapGet("/export/node-img", (string path, string? name, ExportService export) =>
+        {
+            (byte[] data, string fileName) = export.ExportNodeAsImg(path, name);
+            return Results.File(data, "application/octet-stream", fileName);
+        });
+
         api.MapGet("/export/json", (string path, int? depth, ExportService export) =>
         {
             byte[] json = export.ExportJson(path, Math.Clamp(depth ?? 12, 1, 40));

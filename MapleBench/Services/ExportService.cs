@@ -89,9 +89,94 @@ public sealed class ExportService
     }
 
     /// <summary>
-    /// Every canvas under a node as PNGs in a ZIP, mirroring the WZ hierarchy,
-    /// plus a manifest.json describing each one.
-    /// </summary>
+        /// Serialises any node as a standalone .img file, wrapping a property
+        /// subtree in a synthetic image when the node is not an image itself.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Needed because the per-resource unit is not always a <see cref="WzImage"/>.
+        /// Skills are the case that forced this: <c>Skill_00000.ms</c> holds 408
+        /// images at the top level, but they are job groups, not skills — one is
+        /// 2.7 MB because 75 skills sit inside it. The individual skill lives at
+        /// <c>&lt;group&gt;.img/skill/&lt;id&gt;</c>, and that node is a
+        /// <c>WzImageProperty</c>, which <see cref="ExportImg"/> refuses outright.
+        /// </para>
+        /// <para>
+        /// The subtree is cloned rather than re-parented: a MapleLib property
+        /// carries a parent pointer and a reader, and moving a live node into a new
+        /// image would leave the original archive pointing at a property that now
+        /// belongs to something else. The clone's own children become the new
+        /// image's root children, so the output reads the same as any other .img
+        /// — <c>icon</c>, <c>level</c>, <c>info</c> at the top rather than nested
+        /// under an extra level.
+        /// </para>
+        /// </remarks>
+        public (byte[] Data, string FileName) ExportNodeAsImg(string path, string? asName)
+        {
+            lock (_session.Gate)
+            {
+                WzObject node = _session.Resolve(path);
+                WzImage image;
+
+                if (node is WzImage existing)
+                {
+                    image = existing;
+                }
+                else if (node is WzImageProperty subtree)
+                                {
+                                    WzImageProperty clone = subtree.DeepClone();
+                                    image = new WzImage(Stem(asName) ?? Stem(subtree.Name) ?? "node");
+
+                                    // The clone's own children become the new image's top level, so
+                                    // the output reads like any other .img (icon, level, info) rather
+                                    // than carrying an extra wrapper level. A leaf property has a null
+                                    // collection, and then there is nothing to lift and the clone
+                                    // itself is the whole content.
+                                    if (clone.WzProperties is { Count: > 0 })
+                                    {
+                                        foreach (WzImageProperty child in clone.WzProperties)
+                                        {
+                                            image.AddProperty(child.DeepClone());
+                                        }
+                                    }
+                                    else
+                                    {
+                                        image.AddProperty(clone);
+                                    }
+                                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"'{node.Name}' is a {node.GetType().Name}, which carries no children to export. "
+                        + "Select an .img node, or a property inside one.");
+                }
+
+                WzSessionService.EnsureParsed(image);
+
+                byte[] data = NxWzExport.SerializeImageAsWz(image);
+                if (data.Length == 0)
+                    throw new InvalidOperationException("The node serialised to zero bytes, so no download was made.");
+
+                string name = Sanitise(asName ?? image.Name ?? "node");
+                if (!name.EndsWith(".img", StringComparison.OrdinalIgnoreCase))
+                    name += ".img";
+                return (data, name);
+            }
+        }
+
+        /// <summary>The name without a directory or an .img suffix.</summary>
+        private static string? Stem(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+            string stem = Path.GetFileNameWithoutExtension(value);
+            return string.IsNullOrWhiteSpace(stem) ? null : stem;
+        }
+
+        /// <summary>
+        /// Every canvas under a node as PNGs in a ZIP, mirroring the WZ hierarchy,
+        /// plus a manifest.json describing each one.
+        /// </summary>
     public byte[] ExportImages(string path)
     {
         // The sweep reports which of its own caps stopped it; anything else here
