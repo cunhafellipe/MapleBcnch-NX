@@ -38,13 +38,25 @@ public static class Program
             {
                 options.ServerInfo = new ModelContextProtocol.Protocol.Implementation
                 {
-                    Name = "maplebench-maps",
-                    Version = "1.0.0",
+                    Name = "maplebench-assets",
+                    Version = "1.3.0",
                 };
 
                 options.ServerInstructions = """
                     Build and edit MapleStory maps (.img) in the archives the
                     MapleBench backend has open.
+
+                    Generic WZ/IMG/NX tools are available as wz_asset_*.
+                    Begin with wz_asset_files, open references read-only, inspect
+                    nodes before editing, and save to a separate candidate path.
+                    Generic previews only report intent; they do NOT validate the
+                    backend or encryption. Paths and profiles differ from Orz.
+                    This server does NOT yet replace Orz nx_build/publish,
+                    split-WZ source lookup or patch verification. Trusted source
+                    aliases use MAPLEBENCH_SOURCES; real encryption profiles must
+                    be independently verified. Synthetic IMG roundtrip is tested;
+                    production WZ/NX and game compatibility remain unverified.
+                    Never claim that saving NX synchronized its source IMG.
 
                     The order to work in:
 
