@@ -1,22 +1,25 @@
-name: Discord 專案更新發報
+name: Discord 更新與 PR 通知
 
 # ─────────────────────────────────────────────────────────────
-# 本倉庫的更新發報到「NX編輯器」頻道。
-# 每個頻道只收一個項目 —— 新項目請另建頻道與 webhook，不要共用本頻道。
+# 推送與 PR 發報到「NX編輯器」Discord 頻道。
+# 版面：時間 / 版本 / 內容 三個重點，全繁中。
 #
-# 頻道／倉庫對應：
-#   伺服器更新  ← server
-#   NX編輯器    ← MapleBcnch-NX（就是本倉庫）
+# 自訂格式不使用 Qbox-project/pipeline-pling —— 那個 action 沒有
+# message 模板參數，內容格式鎖死無法改成中文。改用本倉庫自己的
+# .github/notify-discord.sh，直接組 Discord embed payload。
 #
 # 觸發點在 GitHub 伺服器端 —— 任何人從任何機器 push 或開 PR 都會發報。
 # 不需要 actions/checkout，也不需要 GITHUB_TOKEN。
+#
+# 要設定 webhook（先做這步，再 commit 本檔案）：
+#   Settings → Secrets and variables → Actions → New repository secret
+#   名稱 DISCORD_WEBHOOK_URL，值為目標頻道的 webhook URL
 # ─────────────────────────────────────────────────────────────
 on:
   push:
     branches: ["**"]          # 所有分支的推送
-  pull_request_target:        # PR 開啟/更新/關閉
+  pull_request_target:        # PR 開啟/更新/關閉/合併
     types: [opened, reopened, synchronize, ready_for_review, closed]
-  workflow_dispatch:           # 手動觸發測試
 
 # 連續推送時不要互相取消 —— 每一筆變更都要發報，不漏
 concurrency:
@@ -41,17 +44,16 @@ jobs:
             echo "未設定 DISCORD_WEBHOOK_URL，略過發報" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # 取出通知腳本。sparse 只抓 .github/ 這一個目錄，
+      # 避免整個大型倉庫被下載。
+      - name: 取出通知腳本
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
+
       - name: 發報到 Discord
         if: steps.check.outputs.ready == 'true'
-        uses: Qbox-project/pipeline-pling@v1
-        with:
-          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          # PR 與 push 分開頻道時用（留空則同頻道）
-          # pull-request-webhook-url: ${{ secrets.DISCORD_WEBHOOK_PR }}
-          # 排除 Dependabot 之類的機器人提交
-          skip-bots: "true"
-          # 分支過濾（留空＝全部）
-          # branch-allowlist: "main,develop"
-          # 使用推送者頭像 + 顯示倉庫名，方便多倉庫辨識
-          use-sender-avatar: "true"
-          use-repo-username: "true"
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: bash .github/notify-discord.sh
