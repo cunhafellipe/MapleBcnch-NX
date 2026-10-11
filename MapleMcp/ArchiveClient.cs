@@ -77,17 +77,45 @@ public sealed class ArchiveClient
     }
 
     /// <summary>Closing is best-effort: never let cleanup mask the real failure.</summary>
+    /// <remarks>
+    /// A transport failure returns false, but a refusal from the backend carries the
+    /// reason it refused — "it has unsaved changes", "it is not open". Collapsing both
+    /// into false reports a live backend as gone and throws the explanation away.
+    /// </remarks>
     public async Task<bool> CloseAsync(string fileId, CancellationToken ct = default)
     {
         try
         {
             using HttpRequestMessage req = new(HttpMethod.Delete, $"api/files/{fileId}");
             using HttpResponseMessage res = await _http.SendAsync(req, ct);
-            return res.IsSuccessStatusCode;
+            if (res.IsSuccessStatusCode)
+                return true;
+
+            string body = await res.Content.ReadAsStringAsync(ct);
+            throw new BackendError(
+                $"The backend refused to close {fileId} (HTTP {(int)res.StatusCode}): "
+                + (ExtractMessage(body) ?? body));
+        }
+        catch (BackendError)
+        {
+            throw;
         }
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    /// <summary>The backend's own sentence, when it sent one.</summary>
+    private static string? ExtractMessage(string body)
+    {
+        try
+        {
+            return JsonNode.Parse(body)?["message"]?.GetValue<string>();
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 

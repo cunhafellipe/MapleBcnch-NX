@@ -76,7 +76,7 @@ public static class ArchiveTools
     }
 
     [McpServerTool(Name = "wz_archive_close"),
-     Description("Close an open archive by session id, freeing its memory. Always close what you opened; a 679 MB archive stays resident until it is closed.")]
+     Description("Close an open archive by session id, freeing its memory. ALWAYS close what you opened; a 679 MB archive stays resident until it is closed. WARNING: closing DISCARDS unsaved edits in that archive — save first, and never close an archive the user opened.")]
     public static async Task<string> Close(
         ArchiveClient client,
         [Description("Session id, e.g. f1")] string fileId,
@@ -84,7 +84,7 @@ public static class ArchiveTools
     {
         bool ok = await client.CloseAsync(fileId, ct);
         return ok
-            ? $"Closed {fileId}."
+            ? $"Closed {fileId}. Any unsaved edits in it were discarded — closing does not write to disk."
             : $"Could not close {fileId} — the backend may already be gone. "
               + "Its memory is released when the backend exits either way.";
     }
@@ -207,8 +207,21 @@ public static class ArchiveTools
             }
 
             string? fileId = null;
+            bool openedHere = false;
             try
             {
+                // The backend REUSES a session for a path it already holds and returns the
+                // SAME id, so "the id I got back" does not mean "I opened this". Closing
+                // it would dispose an archive the user had open with unsaved edits -- and
+                // the finally below runs on the dry-run path too. Ask the backend what was
+                // already open BEFORE the call, and close only what this run added.
+                JsonNode? before = await client.GetJsonAsync("api/files", ct);
+                var alreadyOpen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (before is JsonArray openList)
+                    foreach (JsonNode? f in openList)
+                        if (f?["filePath"]?.GetValue<string>() is { Length: > 0 } p)
+                            alreadyOpen.Add(p);
+
                 JsonNode? opened = await client.PostJsonAsync(
                     "api/files/open", new { path = archive }, ct);
                 fileId = opened?["id"]?.GetValue<string>() ?? opened?["opened"]?[0]?["id"]?.GetValue<string>();
@@ -216,6 +229,15 @@ public static class ArchiveTools
                 {
                     report.Failed.Add($"{name}: open returned no session id");
                     continue;
+                }
+
+                string full = Path.GetFullPath(archive);
+                openedHere = !alreadyOpen.Contains(full);
+                if (!openedHere)
+                {
+                    report.Skipped.Add(
+                        $"{name}: already open in the backend, so it is left exactly as it is "
+                        + "(including unsaved edits). Close it yourself if that is not wanted.");
                 }
                 if (!report.NoteOpenSize(info, outDir))
                     continue;
@@ -248,7 +270,15 @@ public static class ArchiveTools
                     ct.ThrowIfCancellationRequested();
                     if (child is not JsonObject obj) continue;
                     if (obj["kind"]?.GetValue<string>() != "Image") continue;
-                    if (limitFiles > 0 && report.Written >= limitFiles) break;
+                    if (limitFiles > 0 && report.Written >= limitFiles)
+                    {
+                        // Say so, or "Wrote N" reads as a finished run.
+                        report.HitLimit = true;
+                        report.Skipped.Add(
+                            $"stopped at limitFiles={limitFiles:N0} — the remaining nodes in "
+                            + $"{name} were NOT split. Raise the limit to continue.");
+                        break;
+                    }
 
                     string childName = obj["name"]?.GetValue<string>()
                         ?? throw new InvalidOperationException("child without a name");
@@ -265,7 +295,7 @@ public static class ArchiveTools
                             continue;
                         }
                         Directory.CreateDirectory(dest);
-                        string file = Path.Combine(dest, SafeName(childName));
+                        string file = UniquePath(dest, SafeName(childName));
                         await File.WriteAllBytesAsync(file, data, ct);
                         report.Written++;
                         report.Bytes += data.Length;
@@ -286,8 +316,22 @@ public static class ArchiveTools
             }
             finally
             {
-                if (fileId is not null)
-                    await client.CloseAsync(fileId, ct);
+                // Only what this run opened. A dry run reaches here too, and closing an
+                // archive the user already had open would discard their unsaved work
+                // while the report says nothing was written.
+                if (fileId is not null && openedHere)
+                {
+                    // Cleanup must not turn a successful split into a failure, nor mask
+                    // the real error above. Report it and move on.
+                    try
+                    {
+                        await client.CloseAsync(fileId, ct);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        report.Failed.Add($"{name}: could not close after splitting — {Short(ex)}");
+                    }
+                }
             }
         }
 
@@ -301,6 +345,12 @@ public static class ArchiveTools
         public int Written { get; set; }
         public long Bytes { get; set; }
         public long WouldWrite { get; set; }
+        /// <summary>
+        /// Set when limitFiles stopped the run. Without this the report reads
+        /// "Wrote N .img files" for output that is deliberately incomplete, and
+        /// N looks like a total rather than a cap.
+        /// </summary>
+        public bool HitLimit { get; set; }
         public List<string> Failed { get; } = [];
         public List<string> Skipped { get; } = [];
         public List<string> DryRunDetail { get; } = [];
@@ -337,7 +387,10 @@ public static class ArchiveTools
             var sb = new System.Text.StringBuilder();
             sb.AppendLine(dryRun
                 ? $"DRY RUN — nothing written. {WouldWrite:N0} .img would be written."
-                : $"Wrote {Written:N0} .img files, {Bytes / 1073741824.0:N2} GB.");
+                : HitLimit
+                    ? $"PARTIAL RUN — stopped at the limitFiles cap. Wrote {Written:N0} .img files, "
+                      + $"{Bytes / 1073741824.0:N2} GB. This is NOT the complete set."
+                    : $"Wrote {Written:N0} .img files, {Bytes / 1073741824.0:N2} GB.");
 
             foreach ((string folder, int n) in PerArchive.OrderByDescending(kv => kv.Value).Take(20))
                 sb.AppendLine($"  {folder}: {n:N0}");
@@ -376,6 +429,31 @@ private static string SafeName(string name)
         char[] bad = Path.GetInvalidFileNameChars();
         foreach (char c in bad) name = name.Replace(c, '_');
         return name.Length == 0 ? "unnamed" : name;
+    }
+
+    /// <summary>
+    /// A path no earlier write in this run has taken.
+    /// </summary>
+    /// <remarks>
+    /// SafeName is lossy on purpose — it strips characters the filesystem rejects —
+    /// so two different node names can collapse onto one filename ("a/b" and "a?b"
+    /// both become "a_b"). Writing both to the same path silently keeps only the
+    /// last, and the report would still count both. Suffixing on collision keeps
+    /// every file, and the count then means what it says.
+    /// </remarks>
+    private static string UniquePath(string dir, string fileName)
+    {
+        string candidate = Path.Combine(dir, fileName);
+        if (!File.Exists(candidate)) return candidate;
+
+        string stem = Path.GetFileNameWithoutExtension(fileName);
+        string ext = Path.GetExtension(fileName);
+        for (int n = 2; ; n++)
+        {
+            candidate = Path.Combine(dir, $"{stem}~{n}{ext}");
+            if (!File.Exists(candidate)) return candidate;
+            if (n > 10000) throw new IOException($"Could not find a free name for {fileName}.");
+        }
     }
 
     private static string Short(Exception ex) =>
