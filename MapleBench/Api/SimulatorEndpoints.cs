@@ -48,6 +48,13 @@ public static class SimulatorEndpoints
             Results.Ok(maps.WalkCharacter(request.Path, request.StartX, request.StartY,
                 request.Direction, request.JumpEvery, request.DropAtStep, request.Climb)));
 
+        // Mobs and NPCs patrol their own foothold chain. Seeded, so a map's answer
+        // is the same twice — MapleNecrocer's are not, which is the whole reason
+        // this endpoint exists rather than a recommendation to watch them.
+        group.MapGet("/mob", (string path, int? spawnX, int? spawnY, int seed, int steps,
+            MapEditorService maps) =>
+            Results.Ok(maps.PatrolMob(path, spawnX, spawnY, seed, steps)));
+
         // A single step, with everything it touched. The walk's own output says
         // WHERE the character ended up, never WHY, and "ended where it started
         // after 18,000 steps" is not a diagnosis.

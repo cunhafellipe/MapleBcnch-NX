@@ -380,6 +380,75 @@ public sealed partial class MapEditorService
     /// is the way onward; if wider, a character nowhere near a ladder keeps
     /// drifting instead of being told it fell.
     /// </remarks>
+    /// <summary>
+    /// Runs a mob's patrol and reports whether it stayed on the map.
+    /// </summary>
+    /// <remarks>
+    /// The seed is a parameter, not a constant. MapleNecrocer rolls an unseeded
+    /// <c>Random</c> per tick, so its mobs move differently every run and a
+    /// question with a different answer each time is not a question. Given the
+    /// same seed this replays exactly.
+    /// </remarks>
+    public MapMobPatrolDto PatrolMob(string path, int? spawnX, int? spawnY, int seed, int steps)
+    {
+        lock (_gate)
+        {
+            FootholdPhysics physics = new(LoadForReading(path));
+            MapMobPatrolDto dto = new()
+            {
+                Seed = seed,
+                Steps = Math.Clamp(steps, 1, 6000),
+            };
+
+            MapDocument doc = LoadForReading(path);
+            if (doc.Life.Count == 0)
+            {
+                dto.Note = "this map has no mob or NPC spawns";
+                return dto;
+            }
+
+            int pick = Math.Abs(seed) % doc.Life.Count;
+            MapLife mob = doc.Life[pick];
+            dto.MobId = mob.Id ?? mob.Key ?? "?";
+            dto.SpawnX = (int)(mob.X ?? 0);
+            dto.SpawnY = (int)(mob.Cy ?? mob.Y ?? 0);
+
+            FootholdPhysics.Foot? start =
+                FindStartFoothold(physics, dto.SpawnX, dto.SpawnY);
+            if (start is null)
+            {
+                dto.StayedOnMap = false;
+                dto.Reason =
+                    $"the spawn at x={dto.SpawnX}, y={dto.SpawnY} has no foothold under it — "
+                    + "the mob would fall the moment the map loads.";
+                return dto;
+            }
+
+            dto.StartFoothold = start.Value.Id;
+            MobPatrol mob2 = new(physics, start.Value, seed);
+            float maxDx = 0;
+            for (int i = 0; i < dto.Steps && mob2.OnGround; i++)
+            {
+                mob2.Step();
+                maxDx = Math.Max(maxDx, Math.Abs(mob2.X - dto.SpawnX));
+            }
+
+            dto.EndX = (int)Math.Round(mob2.X);
+            dto.EndY = (int)Math.Round(mob2.Y);
+            dto.Reversals = mob2.Reversals;
+            dto.EndingFoothold = mob2.Foothold.Id;
+            dto.MaxDistance = (int)Math.Round(maxDx);
+            dto.StayedOnMap = mob2.OnGround;
+
+            dto.Reason = mob2.OnGround
+                ? $"the spawn patrolled {dto.Reversals} turn(s) over {maxDx:N0} px in {dto.Steps} frames, "
+                  + $"ending on foothold {mob2.Foothold.Id}"
+                : mob2.LeftGroundBecause ?? "the spawn left its chain";
+
+            return dto;
+        }
+    }
+
     private static bool LadderInReach(FootholdPhysics physics, CharacterPhysics who)
     {
         int x = (int)Math.Round(who.X);
@@ -617,3 +686,22 @@ public sealed record MapWalkTraceTick(
     string GroundBelow, string Action,
     int? LadderX, int? StandingX,
     float ClimbEnterX, float ClimbSnappedX, float ClimbExitX, string? LeftGround);
+
+/// <summary>One spawn's patrol.</summary>
+public sealed class MapMobPatrolDto
+{
+    public int Seed { get; set; }
+    public int Steps { get; set; }
+    public string Note { get; set; } = "";
+    public string MobId { get; set; } = "";
+    public int SpawnX { get; set; }
+    public int SpawnY { get; set; }
+    public string StartFoothold { get; set; } = "";
+    public int EndX { get; set; }
+    public int EndY { get; set; }
+    public int Reversals { get; set; }
+    public string EndingFoothold { get; set; } = "";
+    public int MaxDistance { get; set; }
+    public bool StayedOnMap { get; set; }
+    public string Reason { get; set; } = "";
+}
