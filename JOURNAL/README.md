@@ -44,11 +44,13 @@
 | [2026-10-11-generation](2026-10-11-generation.md) | 讓 Agent 能依提示詞生成地圖：`/validate`、`/batch`，以及一次自我推翻 |
 | [2026-10-11-handover-takeover](2026-10-11-handover-takeover.md) | 接手 `MapleBcnch-NX`：複驗交接內容、冷啟動持久化、foothold 生成器設計 |
 | [2026-10-11-merge](2026-10-11-merge.md) | 合併 GitHub 上的 `wz_asset_*` 與本地的 `wz_archive_*`：唯一的 `Program.cs` 衝突怎麼解、伺服器為何取 `maplebench-assets` |
+| [2026-10-11-simulator](2026-10-11-simulator.md) | 整合 MapleNecrocer 模擬環境：一個**沒做完**的整合。做了 2/14，以及差點把部分成品說成完成的教訓 |
 
 ## 專案文件
 
 | 文件 | 內容 |
 |---|---|
+| [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器接下來怎麼走：先決定要不要做、要修的三件事、MapleNecrocer 缺的四項怎麼補、驗收條件 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
 | [tools/visual-check/](../tools/visual-check/) | 視覺驗收工具（截圖 + 讀 canvas 像素） |
