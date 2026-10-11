@@ -35,6 +35,7 @@ public sealed class FootholdPhysics
 {
     private readonly List<Foot> _footholds;
     private readonly List<Ladder> _ladders = [];
+    private readonly List<Portal> _portals = [];
 
     public FootholdPhysics(MapDocument map)
     {
@@ -78,6 +79,7 @@ public sealed class FootholdPhysics
 
         Bounds = ComputeBounds();
         BuildLadders(map);
+        BuildPortals(map);
     }
 
     /// <summary>
@@ -324,6 +326,50 @@ public sealed class FootholdPhysics
         public bool CanExitTop => UpperFoothold != 0;
     }
 
+    /// <summary>
+    /// A portal: the way off this map onto another.
+/// </summary>
+/// <remarks>
+/// The shape and the detection box are MapleNecrocer's (<c>MapPortal.Find</c>):
+/// <code>
+/// if ((P.X &gt; Portal.X - 15) &amp;&amp; (P.X &lt; Portal.X + 15) &amp;&amp; (P.Y &lt; Portal.Y + 12) &amp;&amp; (P.Y &gt; Portal.Y - 12))
+/// </code>
+/// Wider in X than a ladder, because a portal is something you walk INTO rather
+/// than a column you climb.
+/// </remarks>
+public readonly record struct Portal(
+        string Name, string ToName, long ToMap, long Type, int X, int Y)
+    {
+        /// <summary>
+        /// Whether standing here would actually take the character somewhere.
+        /// </summary>
+        /// <remarks>
+        /// MapleNecrocer only builds sprites for types 2 and 10 (MapPortal.cs:73),
+        /// and a portal with <c>tm == 999999999</c> is a one-way end that goes
+        /// nowhere. Reporting those as exits would tell an agent a map leads
+        /// somewhere it does not.
+        /// </remarks>
+        public bool IsExit => Type is 2 or 10 && ToMap != 999999999 && ToMap != 0;
+    }
+
+    /// <summary>Every portal on the map.</summary>
+    public IReadOnlyList<Portal> Portals => _portals;
+
+    /// <summary>The portal the character is standing in, or null.</summary>
+    public Portal? FindPortal(int x, int y)
+    {
+        foreach (Portal p in _portals)
+        {
+            if (x > p.X - PortalReachX && x < p.X + PortalReachX
+                && y < p.Y + PortalReachY && y > p.Y - PortalReachY)
+                return p;
+        }
+        return null;
+    }
+
+    private const int PortalReachX = 15;
+    private const int PortalReachY = 12;
+
     /// <summary>Every ladder and rope on the map.</summary>
     public IReadOnlyList<Ladder> Ladders => _ladders;
 
@@ -350,6 +396,27 @@ public sealed class FootholdPhysics
 
     /// <summary>Vertical padding above and below, as the client measures it (±12).</summary>
     private const int LadderReachY = 12;
+
+    /// <summary>
+    /// Reads <c>portal/&lt;name&gt;</c> — pn, tn, tm, pt, x, y.
+    /// </summary>
+    private void BuildPortals(MapDocument map)
+    {
+        WzNode? root = map.Find("portal");
+        if (root is null)
+            return;
+
+        foreach (WzNode entry in root.Children)
+        {
+            _portals.Add(new Portal(
+                entry.TextAt("pn") ?? entry.Name,
+                entry.TextAt("tn") ?? "",
+                entry.IntegerAt("tm") ?? 0,
+                entry.IntegerAt("pt") ?? 0,
+                (int)(entry.IntegerAt("x") ?? 0),
+                (int)(entry.IntegerAt("y") ?? 0)));
+        }
+    }
 
     private (int, int, int, int)? ComputeBounds()
     {

@@ -110,6 +110,26 @@ public sealed partial class MapEditorService
 
                 who.Step(dir, climb);
 
+                // A portal beside the path is how this map continues. Checking
+                // only after a successful walk missed them: the chain routinely
+                // stops short of the door, and the walk then reports "fell out"
+                // for a map the character could have left through a portal four
+                // pixels away.
+                if (result.ReachedPortal.Length == 0
+                    && physics.FindPortal((int)Math.Round(who.X), (int)Math.Round(who.Y))
+                        is { IsExit: true } doorNow)
+                {
+                    result.ReachedPortal = doorNow.Name;
+                    result.PortalTargetMap = doorNow.ToMap;
+                    result.PortalTargetName = doorNow.ToName;
+                    result.Reason =
+                        $"the character reached the portal '{doorNow.Name}' at x={(int)Math.Round(who.X)}, "
+                        + $"y={(int)Math.Round(who.Y)} after {who.Ticks} steps "
+                        + $"({who.Ticks * CharacterPhysics.StepSeconds:N1}s), bound for "
+                        + $"map {doorNow.ToMap}{(doorNow.ToName.Length > 0 ? $" entry '{doorNow.ToName}'" : "")}.";
+                    break;
+                }
+
                 int x = (int)Math.Round(who.X);
                 if (who.Ticks % SampleEvery == 0)
                     track.Add(new MapWalkPointDto(who.Ticks, x, (int)Math.Round(who.Y)));
@@ -165,6 +185,26 @@ public sealed partial class MapEditorService
                         // Calling it a defect would condemn working maps, so it is
                         // reported as what it is. Measured: 31 of 200 walks ended
                         // here, several of them at 97% of the span.
+                        // Ending at the mouth of a door is arriving, not being
+                        // stuck: the rest of this map is reached through the
+                        // portal. Measured, a map whose only chain ends beside a
+                        // portal is fully playable and reported as blocked.
+                        FootholdPhysics.Portal? door =
+                            physics.FindPortal(x, (int)Math.Round(who.Y));
+
+                        if (door is { IsExit: true } exit)
+                        {
+                            result.ReachedPortal = exit.Name;
+                            result.PortalTargetMap = exit.ToMap;
+                            result.PortalTargetName = exit.ToName;
+                            result.Reason =
+                                $"the character walked into the portal '{exit.Name}' at x={x}, "
+                                + $"y={(int)Math.Round(who.Y)} after {who.Ticks} steps "
+                                + $"({who.Ticks * CharacterPhysics.StepSeconds:N1}s), bound for "
+                                + $"map {exit.ToMap}{(exit.ToName.Length > 0 ? $" entry '{exit.ToName}'" : "")}.";
+                            break;
+                        }
+
                         result.ChainEndedShort = true;
                         int span = Math.Max(1, bounds.Right - bounds.Left);
                         int travelled = Math.Abs(x - (dir > 0 ? bounds.Left : bounds.Right));
@@ -446,6 +486,15 @@ public sealed class MapWalkRunDto
 
     /// <summary>Step at which it dropped through, 0 for never.</summary>
     public int DropAtStep { get; set; }
+
+    /// <summary>The portal the character walked into, or empty.</summary>
+    public string ReachedPortal { get; set; } = "";
+
+    /// <summary>Map id that portal leads to.</summary>
+    public long PortalTargetMap { get; set; }
+
+    /// <summary>Entry name inside that map, if the portal names one.</summary>
+    public string PortalTargetName { get; set; } = "";
 
     /// <summary>Climb intent used, 0 for never. -1 is up.</summary>
     public int Climb { get; set; }

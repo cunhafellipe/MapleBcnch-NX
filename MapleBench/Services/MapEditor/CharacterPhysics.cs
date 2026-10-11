@@ -188,7 +188,16 @@ public sealed class CharacterPhysics
         Walk(moveLeft, out leftGround);
         if (leftGround)
             return;
+
+        // Standing in a portal. The client triggers on Up (MapleCharacter.cs:589)
+        // but the geometry is what matters here: a character that reaches the
+        // mouth of a door has arrived, and reporting which door tells the caller
+        // whether the rest of the map is reachable.
+        StandingPortal = _map.FindPortal((int)Math.Round(_x), (int)Math.Round(_y));
     }
+
+    /// <summary>The portal the character is standing in, or null.</summary>
+    public FootholdPhysics.Portal? StandingPortal { get; private set; }
 
     /// <summary>
     /// Move along the current foothold and step to the next at its end.
