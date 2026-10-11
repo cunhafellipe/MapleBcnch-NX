@@ -11,9 +11,9 @@ import { readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOTS = [
-  'C:/MUWORK/GAME/MPSH',
-  'C:/MUWORK/GAME/gamania Games',
-  'C:/MUWORK/GAME/MAPLESOTRY',
+  // Override rather than edit: the defaults below were one machine's layout.
+  ...(process.env.NX_FIXTURE_ROOTS ?? '')
+    .split(';').map((p) => p.trim()).filter(Boolean),
 ];
 
 const found = { nx: [], wz: [] };

@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, readdirSync, copyFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const RUNTIME = 'C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe';
+const RUNTIME = process.env.DOTNET_PATH || 'dotnet';
 const DLL = process.argv[2];
 const NX = process.argv[3];
 const WZ = process.argv[4];

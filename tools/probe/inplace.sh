@@ -1,6 +1,6 @@
 #!/bin/sh
 # End-to-end in-place save check against a scratch COPY of Morph.nx.
-# The real archives in C:\MUWORK\GAME\MPSH are never written to.
+# The real archives under $NX_FIXTURE_DIR are never written to.
 set -e
 BASE=http://127.0.0.1:5210/api
 SCRATCH='C:\nxscratch'

@@ -161,6 +161,67 @@ Character.nx  0.3s   ws=3.48GB
 
 ---
 
+## 接手複驗（2026-10-11，`ec3e03c`）
+
+專案搬到 `MapleBcnch-NX`。以下每項都重跑過，**不是照抄 HANDOVER 的說法**。
+
+| 項目 | 結果 |
+|---|---|
+| 調色盤修復（`EnumerateChildren`/`PropertiesOf`） | 在，5 處 |
+| `ReopenNx` 在 session gate **之外** | 是（呼叫在 1456，gate 在 1353）← 上一輪死結已解 |
+| `file.Name` 不再被覆寫成空字串 | 是 ← 上一輪我改壞的那個 |
+| `acceptance.mjs` | **15/15 PASS**，`save verifies — 12.72s reopenMs=85` |
+| 冷啟動持久化 | 放 1 塊 → 存檔 `verified:true` → 重啟 → 讀回**剛好 1 塊**，位置素材正確 |
+
+### 我又踩了 §4.1 的坑
+
+第一次複驗看到 layer 0 有**兩個**圖塊、座標素材完全相同，
+我判定是重複寫入 bug。**錯了**——`acceptance.mjs` 每次都在同一座標放一塊，
+我跑了兩遍。**測試沒有冪等，不是程式有問題。**
+
+---
+
+## 新發現，尚未處理
+
+### 9. `GET /api/mapedit/maps` 會讓行程消失 🔴
+
+列出 5366 張地圖時行程沒了，回應為空。
+
+**注意這與交接文件矛盾**：`HANDOVER.md` §2.3 把「列舉地圖（5366 張，含中文名稱）」
+列為 agent 做得到的能力，`acceptance.mjs` 也通過。但我在乾淨的行程上
+單獨打這個端點，行程消失。
+
+可能是**累積狀態**而非端點本身：接手時我已經在同一個 session 裡開了
+`Map.nx` + `Npc.nx` + `Etc.nx`，再列 5366 張。
+也可能是端點本身。**兩者都還沒排除。**
+
+- 記憶體：63.9 GB 中閒置 21.9 GB，**不是 OOM**
+- log：無任何錯誤
+- 表現與 P0-1 同類（大量工作 → 無輸出、行程消失），但成因不同
+
+**懷疑**：`ListMapsUnderGate` 在 session gate 內枚舉 5366 張，
+每一張都要 `_strings.GetMapName(id)`。gate 持有數十秒，
+所有 session 請求堆在後面；curl 逾時後我殺掉行程，看起來像崩潰。
+
+**怎麼分辨**（下次動手時照做）：
+1. 全新行程，只開 `Map.nx`，立刻打 `/maps?limit=6`（小 limit）
+2. 同一個行程，打 `/maps`（不帶 limit，會列全部）
+3. 兩者都成功 → 是累積狀態；小 limit 成功但全列失敗 → 是端點本身
+
+**驗收**：列 5366 張地圖能在合理時間內回應，且行程存活。
+
+### 10. 視覺驗收仍然做不了 🔴
+
+`tools/visual-check/editor.mjs` 需要 headless Chrome，
+**這台機器的瀏覽器 daemon 起不來**（`Daemon broker authentication failed`）。
+`_t2/` 底下的 `shot.mjs` 同樣。
+
+素材圖片我是抓 PNG 下來用眼睛看的（草皮紋理、磚牆都正確），
+但**編輯器畫面本身從頭到尾沒有被看過**。
+見 P0-2。
+
+---
+
 ## P3 — 工具與紀律
 
 ### 5. `edit-preserving-eol.js` 的 `>>>` 模式已修，但插入仍會多出空行
@@ -209,62 +270,56 @@ Character.nx  0.3s   ws=3.48GB
 
 ## 執行順序的理由
 
-1. **先做 1（存檔崩潰）**：它是資料安全問題。使用者放了一堆圖塊再存檔，
-   現在的行為是行程死掉——檔案寫出來了，但使用者無法確認。
-2. **再做 2（視覺確認）**：使用者唯一看得到的就是畫面，而且這一次就是因為沒看
-   才漏掉的。
-3. **P1 一起做**：1 和 P1 的「多封存會讓行程消失」很可能是同一個原因。
-   查清楚一次能解兩塊。
+> **2026-10-11 接手後更新**：P0-1（存檔崩潰）已解決並複驗。
+> 順序變成 **P1-2 foothold → 第 9 項 maps 崩潰 → 視覺驗收**。
+
+1. **先做 P1-2（foothold 生成器）**：這是「能看」與「能玩」之間唯一的缺口，
+   也是使用者終極目標（agent 依提示詞生成地圖）擋下來的那一條。
+   設計已完成，見 [FOOTHOLD-GENERATOR-NOTES.md](../tools/probe/FOOTHOLD-GENERATOR-NOTES.md)。
+   **動手前先量出三件事**：`origin` 語意、鏈的接續規則、`group` 分段。
+   上一任 agent 只抽一張地圖就把 layer 寫死成 4，抽第二張才推翻——不要重蹈。
+
+2. **再做第 9 項（`/maps` 崩潰）**：它是「大量工作 → 無輸出 → 行程消失」，
+   與已解決的 P0-1 同類症狀。既然那個是 gate 持有過久，這個也該先查 gate，
+   再查演算法。
+
+3. **視覺驗收（第 10 項 / P0-2）**：使用者唯一看得到的就是畫面，
+   而且這兩次都是因為沒看才漏掉問題。但它**卡在工具上**——
+   這台機器的瀏覽器 daemon 起不來，需要先解決或改用別的截圖方式。
+   這是唯一一個「環境擋住」而非「技術擋住」的項目。
 
 ---
 
-## 本輪變更清單（尚未 commit）
+## 接手這一輪的變更（2026-10-11 晚間）
 
-```csharp
-Services/MapAssetService.cs                            43/  (上輪未提交)
-Services/MapEditor/MapEditorDtos.cs                    9/
-Services/MapEditor/MapEditorService.Palette.cs         52/
-Services/MapEditor/MapEditorService.Placement.cs      27/
-Services/MapEditor/MapEditorService.cs                154/   ← 本輪：reopen 移出 gate
-Services/WzSaveService.cs                             28/
-Services/WzSessionService.cs                          87/    ← file.Name 不再被覆寫
-Services/WzSessionService.cs (ReopenNx)                     本輪：轉換保持在 gate 外
-
-wwwroot/index.html                                   41/    ← 本輪：補 11 個 data-i18n-attr
-wwwroot/js/locale.zh-Hant.js                         14/    ← 本輪：補 5 條漏翻譯
-JOURNAL/README.md                                     7/
-JOURNAL/TODO.md                                       本輪：全面重寫
-JOURNAL/shots/*.png                                   本輪：3 張驗證截圖
-
-nx-probe/i18n-coverage.js                             本輪：改為委派 inventory
-nx-probe/i18n-missing-keys.js                         本輪：改為委派 inventory
-nx-probe/i18n-inventory.js                            本輪：修 4 處掃描盲點
+```text
+JOURNAL/2026-10-11-handover-takeover.md      新增：接手複驗與冷啟動證據
+JOURNAL/TODO.md                              更新：複驗結果、兩個新發現、執行順序
+tools/probe/FOOTHOLD-GENERATOR-NOTES.md      新增：foothold 生成器設計與三個待量項目
 ```
 
-建置 **0 警告 0 錯誤**。行尾全部 CRLF，與 HEAD 一致。
-i18n 檢查 **exit 0**（0 未翻譯 / 0 重複 / 0 placeholder 不符）。
+**沒有改任何程式碼**——接手這一輪是驗證，不是修改。
+工作區除這三個文件外乾淨。
 
-### 回歸驗證（2026-10-11，最終）
+### 複驗（2026-10-11 接手時）
 
 ```
-開 Map.nx → 開地圖 → 放 tile #2 → 存檔
-  verified=true  seconds=9.55  historyKept=true  reopenMs=70  diffs=0
-重開行程冷讀磁碟：
-  圖層 0  ts=ancientForest  tiles=3
-    no=0 @(-300,-200)  no=1 @(-250,-200)  no=2 @(-400,-200)
+建置                                     0 警告 0 錯誤
+node tools/probe/acceptance.mjs          15/15 PASS
+  └ save verifies — 12.72s reopenMs=85
+放 1 塊 → 存檔 → 行程重啟 → 冷讀磁碟
+  layer 0 tiles: 1  →  t|ancientForest|bsc/0 @ -350,200
 ```
-
-三個圖塊（含前兩輪放的）全部從磁碟讀回，素材與座標正確。
-
-**這一輪可以提交了**——P0-1、P0-2 都有實測證據，不再是未驗證的修復。
 
 ### 還沒做的事（下一輪接手時從這裡開始）
 
-1. **P2-3** NX 與 .wz 同時開啟只取第一種表示法——**需要產品決定**，不是 bug。
-2. **P2-4** NX 畫布在 session 佔 3.1 GB（存檔峰值 14.76 GB）——真實風險，
-   閒置記憶體不足時會 OOM。`MemoryPressureService` 是否接上 NX 路徑未確認。
-3. **P1 剩餘三項**未測：`minimap/regenerate`（會寫檔）、`foothold-chain`（需多点 body）、
-   `portal` 放置。需要另開一份素材副本再測。
-4. **188 條 unreachable 翻譯條目**待批次清理。
-5. `_t2/` 下的驗證腳本（shot.mjs / editor.mjs / palette.mjs）未進 git。
+1. **P1-2 foothold 生成器** —— 設計已寫好（`tools/probe/FOOTHOLD-GENERATOR-NOTES.md`），
+   **程式碼還沒寫**。動手前先量三件事：`origin` 語意、鏈的接續規則、`group` 分段。
+2. **第 9 項 `/api/mapedit/maps` 崩潰** —— 新的，先查 session gate 持有時間。
+3. **第 10 項 視覺驗收** —— 卡在 headless Chrome 起不來，需要先解決環境。
+4. **P2-3** NX 與 .wz 同時開啟只取第一種表示法——**需要產品決定**，不是 bug。
+5. **P2-4** NX 畫布在 session 佔 3.1 GB（存檔峰值 14.76 GB）——真實風險。
+6. **P1 剩餘三項**未測：`minimap/regenerate`、`foothold-chain`、`portal` 放置。
+7. **188 條 unreachable 翻譯條目**待批次清理。
+8. `_t2/` 下的驗證腳本（shot.mjs / editor.mjs / palette.mjs）未進 git。
    應該移進 `tools/` 並在 README 記錄用法——它們是唯一能重跑視覺驗收的東西。

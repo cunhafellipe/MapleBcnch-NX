@@ -7,7 +7,8 @@ maximal em-dash run that sits at a span boundary restores the file exactly.
 import sys
 import importlib.util
 
-spec = importlib.util.spec_from_file_location("fx", r"C:\MUWORK\GAME\MAPLESOTRY\wz工具\追風WZ編輯器\nx-probe\fix-emdash.py")
+# This referenced the project's previous directory name; that path no longer exists.
+spec = importlib.util.spec_from_file_location("fx", os.environ.get("FIX_EMDASH", "fix-emdash.py"))
 fx = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fx)
 

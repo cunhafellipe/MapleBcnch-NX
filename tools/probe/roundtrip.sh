@@ -1,9 +1,9 @@
 #!/bin/bash
 # Round-trip every NX archive in the reference corpus through the writer.
 # Reads only from the source directory; all output goes to the scratch directory.
-DOTNET='C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe'
-VERIFY='C:/MUWORK/GAME/MAPLESOTRY/wz工具/追風WZ編輯器/agent-wz/src/NxVerify/bin/Release/net10.0-windows/NxVerify.dll'
-SRC='C:/MUWORK/GAME/MPSH'
+DOTNET="${DOTNET_PATH:-dotnet}"
+VERIFY="${NXVERIFY_DLL:-tools/NxVerify/bin/Release/net10.0-windows/NxVerify.dll}"
+SRC="${NX_FIXTURE_DIR:-}"
 OUT='C:/nxtmp'
 mkdir -p "$OUT"
 for f in "$SRC"/*.nx; do

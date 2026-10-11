@@ -11,7 +11,7 @@
 
 import { spawn } from 'node:child_process';
 
-const RUNTIME = 'C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe';
+const RUNTIME = process.env.DOTNET_PATH || 'dotnet';
 const DLL = process.argv[2];
 const A = process.argv[3];      // races here
 const B = process.argv[4];      // converts during concurrent work

@@ -1,7 +1,9 @@
 ﻿import nxparse, glob, os
 print("Do NX parents that share a node share an IDENTICAL child range?")
 print(f"{'file':16s} {'multiParent':>11s} {'identicalRange':>14s} {'partialShare':>12s}")
-for p in [r"C:\MUWORK\GAME\MPSH\Morph.nx", r"C:\MUWORK\GAME\MPSH\Item.nx", r"C:\MUWORK\GAME\MPSH\Character.nx"]:
+# Set NX_FIXTURE_DIR to the directory holding the archives; the default is the
+# current directory so the script runs without configuration.
+for p in [f'{os.environ.get("NX_FIXTURE_DIR", ".")}\\{n}.nx' for n in ("Morph", "Item", "Character")]:
     f = nxparse.NxFile(p)
     parents = {}
     for n in f.nodes:

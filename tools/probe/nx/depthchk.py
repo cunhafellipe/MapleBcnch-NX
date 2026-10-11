@@ -1,6 +1,8 @@
-﻿import nxparse
+﻿import nxparse, os
 from collections import defaultdict, deque
-f = nxparse.NxFile(r"C:\MUWORK\GAME\MPSH\Character.nx")
+# Set NX_CHARACTER to the archive; the default is the current directory so the
+# script runs without configuration.
+f = nxparse.NxFile(os.environ.get("NX_CHARACTER", "Character.nx"))
 # depth per node via BFS (first visit wins)
 depth = {0:0}
 q = deque([0])

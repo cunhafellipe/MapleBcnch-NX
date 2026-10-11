@@ -1,7 +1,7 @@
 # 交接文件
 
 **交接日期**：2026-10-11
-**專案位置**：`C:\MUWORK\GAME\MAPLESOTRY\wz工具\MapleBcnch-NX`
+**專案位置**：本倉庫根目錄
 **分支**：`map-generation-baseline`（最新 `1da3f35`，工作區乾淨）
 **上游**：`https://github.com/xkiro-dev/MapleBench`
 
@@ -196,7 +196,7 @@ i18n 工具在說謊（回報「已翻譯」的其實是從沒渲染過的字串
 ### 5.1 環境
 
 ```
-.NET SDK 10.0（dotnet 在 C:\MUWORK\app\scoop\apps\dotnet-sdk\current\）
+.NET SDK 10.0（`dotnet` 需在 PATH，或設 `DOTNET_PATH`）
 Node 24（驗證腳本用）
 Chrome（視覺驗收用，headless + CDP）
 ```

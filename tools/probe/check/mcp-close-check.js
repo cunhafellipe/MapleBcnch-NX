@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const [DLL, SERVER, IDS_CSV, RUNTIME, MODE, COMMIT] = [
   process.argv[2], process.argv[3], process.argv[4],
-  process.argv[5] ?? 'C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe',
+  process.env.DOTNET_PATH || 'dotnet',
   process.argv[6] ?? 'all', process.argv[7] ?? 'preview',
 ];
 

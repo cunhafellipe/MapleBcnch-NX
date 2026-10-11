@@ -14,7 +14,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
-const RUNTIME = 'C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe';
+const RUNTIME = process.env.DOTNET_PATH || 'dotnet';
 const DLL = process.argv[2];
 const BIG = process.argv[3];      // a large NX: the slow open
 const SMALL = process.argv[4];    // a small NX: opened first, browsed during

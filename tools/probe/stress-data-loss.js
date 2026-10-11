@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync, writeFileSync, copyFileSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const RUNTIME = 'C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe';
+const RUNTIME = process.env.DOTNET_PATH || 'dotnet';
 const DLL = process.argv[2];
 const CLI = process.argv[3];
 const SRC = process.argv[4];           // an NX file to copy and stress

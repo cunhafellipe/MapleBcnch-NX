@@ -318,7 +318,7 @@ def digest(path):
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "audit"
-    files = sys.argv[2:] or [r"C:\MUWORK\GAME\MPSH\Base.nx"]
+    files = sys.argv[2:] or [os.environ.get("NX_BASE", "Base.nx")]
     if mode == "digest":
         for p in files:
             print(digest(p))

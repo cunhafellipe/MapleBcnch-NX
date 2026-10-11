@@ -42,6 +42,7 @@
 | [2026-10-10](2026-10-10.md) | i18n 收尾；NX 地圖編輯器實測與四項修復 |
 | [2026-10-11](2026-10-11.md) | NX 素材調色盤空白的真正原因：容器形狀的八處硬編碼假設 |
 | [2026-10-11-generation](2026-10-11-generation.md) | 讓 Agent 能依提示詞生成地圖：`/validate`、`/batch`，以及一次自我推翻 |
+| [2026-10-11-handover-takeover](2026-10-11-handover-takeover.md) | 接手 `MapleBcnch-NX`：複驗交接內容、冷啟動持久化、foothold 生成器設計 |
 
 ## 專案文件
 

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
-$dotnet = 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current\dotnet.exe'
-$exe = 'C:\MUWORK\GAME\MAPLESOTRY\wz工具\追風WZ編輯器\agent-wz\src\NxVerify\bin\Release\net10.0-windows\NxVerify.exe'
-$src  = 'C:\MUWORK\GAME\MPSH'
+$dotnet = if ($env:DOTNET_PATH) { $env:DOTNET_PATH } else { 'dotnet' }
+$exe = if ($env:NXVERIFY_EXE) { $env:NXVERIFY_EXE } else { 'tools/NxVerify/bin/Release/net10.0-windows/NxVerify.exe' }
+$src  = $env:NX_FIXTURE_DIR
 $out  = 'C:\nxtmp'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
