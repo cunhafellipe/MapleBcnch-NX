@@ -120,7 +120,7 @@ public sealed class CharacterPhysics
     /// One fixed step.
     /// </summary>
     /// <param name="moveLeft">-1, 0 or +1.</param>
-    public void Step(int moveLeft)
+    public void Step(int moveLeft, int climb = 0)
     {
         Ticks++;
 
@@ -136,20 +136,66 @@ public sealed class CharacterPhysics
             else if (_speed < 0) _speed = Math.Min(0, _speed + Decceleration);
         }
 
+        LastAction = "walk";
+
+        // Climbing takes over whenever it is asked for and a ladder is in reach.
+        // The client does the same: the Up/Down branches run before the walk
+        // branches and set InLadder, and the walk is skipped (MapleCharacter.cs:541).
+        //
+        // The reach test is deliberately WIDER than the client's ±10. A ladder
+        // spans a column and the character approaches it along a foothold that
+        // may stop short of it — measured, a ladder at x=1274 and a foothold
+        // ending at x=1256 left the character 18px away, outside the client's
+        // box, so the climb could never begin and the walk ran to the end of
+        // the tick budget instead. A ladder you can see is a ladder you climb.
+        if (climb != 0 && FindLadderForClimb() is { } ladderHere)
+        {
+            LastAction = "climb";
+            // Pass the ladder in. Climb used to look it up again from its own
+            // position, and by then Step had not moved anything — but the two
+            // lookups disagreed, so the character fell instead of climbing and
+            // landed back on the foothold it started from. One lookup, one
+            // ladder, one answer.
+            ClimbOn(moveLeft, climb, ladderHere);
+            return;
+        }
+
+        // Standing on a ladder, having reached the end of it, is a resting
+        // state and not a request to keep climbing. Without this the top check
+        // inside Climb fires again every tick, the character is teleported back
+        // to the ladder's Y each time, and the walk spends its whole tick budget
+        // oscillating. Measured: 18,000 steps ending where it started.
+        if (_ladder is not null && climb != 0)
+        {
+            LastAction = "climb-top";
+            _velocityY = 0;
+            return;
+        }
+
         if (!OnGround)
         {
+            LastAction = "fall";
             Fall();
             return;
         }
 
-        Walk(moveLeft);
+        // Walking is what may END this step by running out of chain. When it
+        // does, this tick has already been spent; stepping again would resume
+        // from the new foothold at full speed and skip whatever the character
+        // is standing on. The client has the same shape — the walk-left and
+        // walk-right blocks each `return` when they hand over.
+        bool leftGround = false;
+        Walk(moveLeft, out leftGround);
+        if (leftGround)
+            return;
     }
 
     /// <summary>
     /// Move along the current foothold and step to the next at its end.
     /// </summary>
-    private void Walk(int moveLeft)
+    private void Walk(int moveLeft, out bool leftGround)
     {
+        leftGround = false;
         FootholdPhysics.Foot fh = _foothold!.Value;
         if (fh.IsWall)
         {
@@ -202,6 +248,20 @@ public sealed class CharacterPhysics
         }
 
         bool reachedEnd = moveLeft >= 0 ? _x >= fh.X2 : _x <= fh.X1;
+
+        // What the step decided, for a caller that cannot otherwise tell a
+        // character that stood still from one that walked and was reset.
+        LastWalk = new WalkDecision
+        {
+            Foothold = fh.Id,
+            MovedTo = (int)Math.Round(_x),
+            FootholdEnd = moveLeft >= 0 ? fh.X2 : fh.X1,
+            ReachedEnd = reachedEnd,
+            BlockedByWall = wall is { } wb && _x <= wb.X1 + 1,
+            WallAt = wall?.X1,
+            GroundBelow = ground?.Id,
+        };
+
         if (!reachedEnd)
             return;
 
@@ -212,6 +272,7 @@ public sealed class CharacterPhysics
 
         if (next is not { IsWall: false } step)
         {
+            leftGround = true;
             LeaveGround(
                 moveLeft >= 0
                     ? $"foothold {fh.Id} ends at x={fh.X2} with no walkable foothold after it"
@@ -261,6 +322,31 @@ public sealed class CharacterPhysics
         }
     }
 
+    /// <summary>Where X stood on entry to the last climb, before the snap.</summary>
+    public float ClimbEnterX { get; private set; }
+    /// <summary>Where X stood immediately after the snap onto the ladder column.</summary>
+    public float ClimbSnappedX { get; private set; }
+    /// <summary>Where X stood at the climb's top/bottom test.</summary>
+    public float ClimbExitX { get; private set; }
+
+    /// <summary>Which branch ran on the last step. For diagnosis, not for logic.</summary>
+    public string LastAction { get; private set; } = "";
+
+    /// <summary>What the last <c>Walk</c> decided. For diagnosis, not for logic.</summary>
+    public WalkDecision? LastWalk { get; private set; }
+
+    /// <summary>One tick's worth of walking decisions.</summary>
+    public sealed class WalkDecision
+    {
+        public string Foothold { get; init; } = "";
+        public int MovedTo { get; init; }
+        public int FootholdEnd { get; init; }
+        public bool ReachedEnd { get; init; }
+        public bool BlockedByWall { get; init; }
+        public int? WallAt { get; init; }
+        public string? GroundBelow { get; init; }
+    }
+
     /// <summary>Jump from the current foothold.</summary>
     public bool Jump()
     {
@@ -270,6 +356,193 @@ public sealed class CharacterPhysics
         OnGround = false;
         return true;
     }
+
+    /// <summary>
+    /// The ladder to climb, using a wider box than the client's.
+    /// </summary>
+    /// <remarks>
+    /// The client reaches ±10 in X (LadderRopes.cs:18-27), which is right for a
+    /// player steering with a key. A walk is a script that arrives wherever the
+    /// chain ended, and chains routinely stop short of the column they serve:
+    /// measured, a ladder at x=1274 with the chain stopping at x=1256. Keeping
+    /// the client's box would mean the climb is unreachable on exactly the maps
+    /// where a ladder is the way onward — which is every map that has one.
+    /// </remarks>
+    private FootholdPhysics.Ladder? FindLadderForClimb()
+    {
+        FootholdPhysics.Ladder? near = _map.FindLadder(
+            (int)Math.Round(X), (int)Math.Round(Y));
+        if (near is not null)
+            return near;
+
+        // Nearest ladder by horizontal distance, then vertical overlap.
+        FootholdPhysics.Ladder? best = null;
+        int bestDx = ClimbReachX;
+        foreach (FootholdPhysics.Ladder l in _map.Ladders)
+        {
+            int dx = Math.Abs(l.X - (int)Math.Round(X));
+            if (dx >= bestDx)
+                continue;
+            if ((int)Math.Round(Y) < l.Top - ClimbReachY || (int)Math.Round(Y) > l.Bottom + ClimbReachY)
+                continue;
+            bestDx = dx;
+            best = l;
+        }
+        return best;
+    }
+
+    /// <summary>Horizontal reach for a scripted climb, wider than the client's ±10.</summary>
+    private const int ClimbReachX = 40;
+
+    /// <summary>Vertical padding for that reach; the client's is ±12.</summary>
+    private const int ClimbReachY = 12;
+
+    /// <summary>
+    /// Climb, which is a different move from walking: the character leaves the
+    /// foothold chain and rides a ladder or rope.
+    /// </summary>
+    /// <param name="moveLeft">
+    /// Horizontal intent, kept for the step after the climb ends.
+    /// </param>
+    /// <param name="climb">-1 for up, +1 for down, 0 for neither.</param>
+    /// <remarks>
+    /// The client's ladder motion is its own path (MapleCharacter.cs:541-570):
+    /// it snaps X onto the ladder, moves 1.5px per step vertically, and on
+    /// reaching the top either leaves at the ladder's Y1 (a rope ends there) or
+    /// finds a foothold below and steps onto it (uf == 1). Reimplemented rather
+    /// than quoted because the state machine around it is a WinForms keyboard
+    /// read that does not survive the port.
+    /// </remarks>
+    public void Climb(int moveLeft, int climb) =>
+        ClimbOn(moveLeft, climb, FindLadderForClimb());
+
+    /// <summary>Climb a ladder already chosen by the caller.</summary>
+    public void ClimbOn(int moveLeft, int climb, FootholdPhysics.Ladder? ladder)
+    {
+        Ticks++;
+        VelocityYValue = climb * ClimbSpeedPerStep;
+
+        if (climb == 0)
+        {
+            // Not climbing and not walking: fall.
+            if (OnGround)
+                LeaveGround("walked off the ladder with no direction held");
+            else
+                Fall();
+            return;
+        }
+
+        if (ladder is not { } l)
+        {
+            // Not within reach of one: fall.
+            LeaveGround("walked off the ladder out of reach of it");
+            Fall();
+            return;
+        }
+
+        _ladder = l;
+        ClimbEnterX = _x;
+        _x = l.X;                       // snap to the ladder column
+        ClimbSnappedX = _x;
+        _y += climb * ClimbSpeedPerStep;
+        OnGround = false;
+        _velocityY = 0;                 // climbing is not falling
+
+        ClimbExitX = _x;
+
+        // Reaching the top: a rope ends there, a ladder hands you to a foothold.
+        if (_y <= l.Top && climb < 0)
+        {
+            if (l.UpperFoothold == 0)
+            {
+                _y = l.Top;               // rope: stop at the top of the rope
+                _velocityY = 0;
+            }
+            else
+            {
+                // Look BELOW the ladder's top, not above it. The client asks for
+                // FindBelow(X, Y - 5) — the ledge a climber steps OFF onto is
+                // under the top of the ladder, not over it.
+                //
+                // And it must not be the foothold already underfoot: measured, a
+                // ladder at x=1274 standing on a foothold spanning 1211..1445
+                // with its surface at y=-42 found THAT foothold again, and
+                // `_x = a.X1` dragged the character back to 1211 every tick —
+                // 18,000 steps ending where the walk began. A foothold only
+                // counts as the way off if it is a DIFFERENT one.
+                // The client's own query: the ledge a climber steps OFF onto is
+                // under the top of the ladder. MapleCharacter.cs:556 uses Y - 5.
+                FootholdPhysics.Foot? belowTop =
+                    _map.FindBelow(l.X, (int)l.Top - 5, falling: true);
+
+                string? standing = _foothold?.Id;
+                if (belowTop is { } a && a.Id != standing)
+                {
+                    _foothold = a;
+                    _x = a.X1;
+                    _y = a.Y1;
+                    _velocityY = 0;
+                    OnGround = true;
+                    LeftGroundBecause = null;
+                }
+                else if (belowTop is { } same)
+                {
+                    // The ladder tops out on the ground already under the
+                    // character. Step up onto it where it actually is, rather
+                    // than snapping X back to its far end.
+                    _foothold = same;
+                    _x = l.X;
+                    _y = same.SurfaceAt(l.X) ?? l.Top;
+                    _velocityY = 0;
+                    OnGround = true;
+                }
+                else
+                {
+                    _y = l.Top;           // nothing to step onto; hold the top
+                    _velocityY = 0;
+                }
+            }
+            // _ladder stays set: the character is standing at the end of this
+            // ladder, which Step() treats as a resting state rather than a new
+            // climb request. Clearing it made every tick re-enter the climb.
+            return;
+        }
+
+        // Reaching the bottom: step off onto whatever is below.
+        if (_y >= l.Bottom && climb > 0)
+        {
+            FootholdPhysics.Foot? below = _map.FindBelow(l.X, (int)_y, falling: true);
+            if (below is { } b)
+            {
+                _foothold = b;
+                _x = b.X1;
+                _y = b.Y1;
+            }
+            _velocityY = 0;
+            _ladder = null;
+            return;
+        }
+    }
+
+    /// <summary>
+    /// The ladder the character is currently riding, or null.
+    /// </summary>
+    public FootholdPhysics.Ladder? OnLadder => _ladder;
+
+    private FootholdPhysics.Ladder? _ladder;
+
+    /// <summary>
+    /// Vertical climb speed, per step.
+    /// </summary>
+    /// <remarks>
+    /// The client moves <c>Y -= 1.5f</c> per frame on a held key
+    /// (MapleCharacter.cs:556), and there is no acceleration term — a ladder is
+    /// a fixed rate in both directions.
+    /// </remarks>
+    public const float ClimbSpeedPerStep = 1.5f;
+
+    /// <summary>Vertical speed while climbing. Negative is up.</summary>
+    public float VelocityYValue { get; private set; }
 
     /// <summary>Step off deliberately, as Alt+Down does in the client.</summary>
     public void DropThrough()

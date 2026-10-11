@@ -469,4 +469,10 @@ public sealed class MapSimulateRequest
 
     /// <summary>Drop through the current foothold once, at step N. 0 to never.</summary>
     public int DropAtStep { get; set; }
+
+    /// <summary>
+    /// Climb: -1 up, 1 down, 0 never. Same reasoning as JumpEvery — a walk is a
+    /// script, and the client reads a held key.
+    /// </summary>
+    public int Climb { get; set; }
 }

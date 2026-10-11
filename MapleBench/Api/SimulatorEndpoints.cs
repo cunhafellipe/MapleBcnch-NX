@@ -46,7 +46,21 @@ public static class SimulatorEndpoints
         // character physically cannot cross.
         group.MapPost("/character", (MapSimulateRequest request, MapEditorService maps) =>
             Results.Ok(maps.WalkCharacter(request.Path, request.StartX, request.StartY,
-                request.Direction, request.JumpEvery, request.DropAtStep)));
+                request.Direction, request.JumpEvery, request.DropAtStep, request.Climb)));
+
+        // A single step, with everything it touched. The walk's own output says
+        // WHERE the character ended up, never WHY, and "ended where it started
+        // after 18,000 steps" is not a diagnosis.
+        group.MapGet("/step", (string path, int x, int y, int dir, int climb,
+            MapEditorService maps) =>
+            Results.Ok(maps.StepOnce(path, x, y, dir, climb)));
+
+        // Walk a bounded number of steps and report the DECISION at each one.
+        // /step rebuilds the character per call and so cannot show a sequence;
+        // this keeps one character and returns what Walk() decided each tick.
+        group.MapGet("/trace", (string path, int x, int y, int dir, int climb, int steps,
+            MapEditorService maps) =>
+            Results.Ok(maps.TraceWalk(path, x, y, dir, climb, steps)));
 
         // Why is the character standing where it is? A caller that distrusts the
         // walk's Y needs to see which footholds exist under that X, and this is

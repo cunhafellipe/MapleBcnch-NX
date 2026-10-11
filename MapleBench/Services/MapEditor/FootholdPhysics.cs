@@ -34,6 +34,7 @@ namespace MapleBench.Services.MapEditor;
 public sealed class FootholdPhysics
 {
     private readonly List<Foot> _footholds;
+    private readonly List<Ladder> _ladders = [];
 
     public FootholdPhysics(MapDocument map)
     {
@@ -76,6 +77,36 @@ public sealed class FootholdPhysics
         }
 
         Bounds = ComputeBounds();
+        BuildLadders(map);
+    }
+
+    /// <summary>
+    /// Reads <c>ladderRope/&lt;index&gt;</c> — the shape MapleNecrocer reads from
+    /// the same node (<c>Client/LadderRopes.cs</c>).
+    /// </summary>
+    private void BuildLadders(MapDocument map)
+    {
+        WzNode? root = map.Find("ladderRope");
+        if (root is null)
+            return;
+
+        foreach (WzNode entry in root.Children)
+        {
+            // Read the integers straight off the node. `root` is the
+            // `ladderRope` node itself, so its children are raw nodes rather
+            // than the typed MapLadderRope view, and a missing coordinate makes
+            // the entry unusable rather than the whole map.
+            if (entry.IntegerAt("x") is not { } x
+                || entry.IntegerAt("y1") is not { } y1
+                || entry.IntegerAt("y2") is not { } y2)
+                continue;
+
+            _ladders.Add(new Ladder(
+                (int)x, (int)y1, (int)y2,
+                entry.IntegerAt("l") ?? 0,
+                entry.IntegerAt("uf") ?? 0,
+                entry.IntegerAt("page") ?? 0));
+        }
     }
 
     /// <summary>Every foothold that had usable endpoints.</summary>
@@ -267,6 +298,58 @@ public sealed class FootholdPhysics
 
         return best;
     }
+
+    /// <summary>
+    /// A ladder or rope the character can climb.
+    /// </summary>
+    /// <remarks>
+    /// The shape and the detection box are MapleNecrocer's, from
+    /// <c>Client/LadderRopes.cs</c>:
+    /// <code>
+    /// if ((P.X &gt; L.X - 10) &amp;&amp; (P.X &lt; L.X + 10) &amp;&amp; (P.Y &lt; L.Y2 + 12) &amp;&amp; (P.Y &gt; L.Y1 - 12))
+    /// </code>
+    /// A ±10 X box and ±12 Y padding. The X box is the point: a ladder is a
+    /// column, and the character has to be within arm's reach of it.
+    /// </remarks>
+    public readonly record struct Ladder(
+        int X, int Y1, int Y2, long IsLadder, long UpperFoothold, long Page)
+    {
+        /// <summary>Topmost Y, whichever endpoint is up (Y grows downward).</summary>
+        public int Top => Math.Min(Y1, Y2);
+
+        /// <summary>Bottommost Y.</summary>
+        public int Bottom => Math.Max(Y1, Y2);
+
+        /// <summary>Whether a character may step off the top onto a foothold.</summary>
+        public bool CanExitTop => UpperFoothold != 0;
+    }
+
+    /// <summary>Every ladder and rope on the map.</summary>
+    public IReadOnlyList<Ladder> Ladders => _ladders;
+
+    /// <summary>
+    /// The ladder the character is within reach of at a point, or null.
+    /// </summary>
+    /// <remarks>
+    /// Linear scan, same reasoning as the foothold queries: a map holds tens of
+    /// ladders, not thousands, and the box test has to be exact.
+    /// </remarks>
+    public Ladder? FindLadder(int x, int y)
+    {
+        foreach (Ladder l in _ladders)
+        {
+            if (x > l.X - LadderReachX && x < l.X + LadderReachX
+                && y < l.Bottom + LadderReachY && y > l.Top - LadderReachY)
+                return l;
+        }
+        return null;
+    }
+
+    /// <summary>Half the X reach, as the client measures it (L.X ± 10).</summary>
+    private const int LadderReachX = 10;
+
+    /// <summary>Vertical padding above and below, as the client measures it (±12).</summary>
+    private const int LadderReachY = 12;
 
     private (int, int, int, int)? ComputeBounds()
     {

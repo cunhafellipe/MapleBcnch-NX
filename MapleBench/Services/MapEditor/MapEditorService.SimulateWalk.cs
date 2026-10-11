@@ -30,7 +30,7 @@ public sealed partial class MapEditorService
     /// Walks a real character across a map and reports where it ends up.
     /// </summary>
     public MapWalkRunDto WalkCharacter(string path, int? startX, int? startY, int direction = 1,
-            int jumpEvery = 0, int dropAtStep = 0)
+            int jumpEvery = 0, int dropAtStep = 0, int climb = 0)
     {
         lock (_gate)
         {
@@ -45,6 +45,8 @@ public sealed partial class MapEditorService
                 Direction = dir,
                 JumpEvery = jumpEvery,
                 DropAtStep = dropAtStep,
+                Climb = climb,
+                Ladders = physics.Ladders.Count,
                 Footholds = physics.Footholds.Count,
                 StepSeconds = CharacterPhysics.StepSeconds,
                 Acceleration = CharacterPhysics.Acceleration,
@@ -106,11 +108,26 @@ public sealed partial class MapEditorService
                 else if (dropAtStep > 0 && who.Ticks == dropAtStep - 1)
                     who.DropThrough();
 
-                who.Step(dir);
+                who.Step(dir, climb);
 
                 int x = (int)Math.Round(who.X);
                 if (who.Ticks % SampleEvery == 0)
                     track.Add(new MapWalkPointDto(who.Ticks, x, (int)Math.Round(who.Y)));
+
+                // Airborne AND there is no ladder to catch: the character is
+                // falling past the bottom of the world. Continuing would fly it
+                // across the void at terminal velocity until the tick cap, which
+                // is 18,000 steps of nothing. Measured: a climb attempt that
+                // missed its ladder spent the entire budget drifting.
+                if (!who.OnGround && !LadderInReach(physics, who))
+                {
+                    result.FellOut = true;
+                    result.Reason =
+                        $"the character left the ground at x={x}, y={(int)Math.Round(who.Y)} "
+                        + $"after {who.Ticks} steps and there is no ladder within reach — "
+                        + "it falls out of the map.";
+                    break;
+                }
 
                 if (!who.OnGround)
                 {
@@ -217,6 +234,124 @@ public sealed partial class MapEditorService
     /// reported as falling out of the map, several of them having covered 97% of
     /// the span, because both cases produced the same message.
     /// </remarks>
+    /// <summary>
+    /// Runs one step and reports every value it touched.
+    /// </summary>
+    /// <remarks>
+    /// The walk reports where the character ended up and never why. When a
+    /// 18,000-step walk finishes at its own starting position, "it moved and
+    /// came back" and "it never moved" produce the same report and call for
+    /// opposite fixes. This exists so the difference is observable.
+    /// </remarks>
+    public MapStepProbeDto StepOnce(string path, int x, int y, int dir, int climb)
+    {
+        lock (_gate)
+        {
+            FootholdPhysics physics = new(LoadForReading(path));
+            FootholdPhysics.Foot? start = FindStartFoothold(physics, x, y);
+            if (start is null)
+                return new MapStepProbeDto { Error = $"nothing to stand on at x={x}, y={y}" };
+
+            CharacterPhysics who = new(physics, start.Value, dir);
+            MapStepProbeDto probe = new()
+            {
+                StartX = x,
+                StartY = y,
+                StartFoothold = start.Value.Id,
+                Ladders = physics.Ladders.Count,
+                LadderInReach = physics.Ladders.Count > 0,
+                OnGroundBefore = who.OnGround,
+            };
+
+            foreach (FootholdPhysics.Ladder l in physics.Ladders)
+                probe.LadderList.Add($"{l.X}:{l.Top}-{l.Bottom}");
+
+            who.Step(dir, climb);
+
+            probe.EndX = (int)Math.Round(who.X);
+            probe.EndY = (int)Math.Round(who.Y);
+            probe.Speed = who.Speed;
+            probe.OnGroundAfter = who.OnGround;
+            probe.OnLadderAfter = who.OnLadder is not null;
+            probe.StandingOn = who.StandingOn?.Id;
+            probe.LeftGround = who.LeftGroundBecause;
+            return probe;
+        }
+    }
+
+    /// <summary>
+    /// Walks a bounded number of steps, reporting the decision at each one.
+    /// </summary>
+    /// <remarks>
+    /// <c>StepOnce</c> builds a fresh character per call, so it cannot show a
+    /// sequence — and a sequence is the whole point when a walk ends where it
+    /// started. This keeps one character and returns what <c>Walk</c> decided
+    /// each tick: which foothold it was on, whether it reached the end, and
+    /// whether a wall stopped it.
+    /// </remarks>
+    public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, int steps)
+    {
+        lock (_gate)
+        {
+            FootholdPhysics physics = new(LoadForReading(path));
+            var dto = new MapWalkTraceDto { Ladders = physics.Ladders.Count };
+
+            // The foothold under the point is what the walker lands on, and
+            // climbing starts from whichever foothold the character is ALREADY
+            // standing on — which is not necessarily the one under (x, y).
+            // This used to take the foothold under (x, y) and produced traces
+            // that disagreed with the walk they were meant to explain.
+            FootholdPhysics.Foot? start = FindStartFoothold(physics, x, y);
+            if (start is null)
+            {
+                dto.Error = $"nothing to stand on at x={x}, y={y}";
+                return dto;
+            }
+            dto.StartFoothold = start.Value.Id;
+            dto.StartX = start.Value.X1;
+            dto.StartY = start.Value.Y1;
+
+            CharacterPhysics who = new(physics, start.Value, dir);
+            int n = Math.Clamp(steps, 1, 500);
+            for (int i = 0; i < n; i++)
+            {
+                who.Step(dir, climb);
+                CharacterPhysics.WalkDecision? d = who.LastWalk;
+                dto.Ticks.Add(new MapWalkTraceTick(
+                    i, (int)Math.Round(who.X), (int)Math.Round(who.Y),
+                    who.Speed, who.OnGround, who.OnLadder is not null,
+                    d?.Foothold ?? "", d?.ReachedEnd ?? false,
+                    d?.BlockedByWall ?? false, d?.WallAt,
+                    d?.GroundBelow ?? "", who.LastAction,
+                    who.OnLadder?.X, who.StandingOn?.X1,
+                    who.ClimbEnterX, who.ClimbSnappedX, who.ClimbExitX,
+                    who.LeftGroundBecause));
+            }
+            return dto;
+        }
+    }
+
+    /// <summary>
+    /// Whether a ladder is within reach, using the same wider box the climb uses.
+    /// </summary>
+    /// <remarks>
+    /// Must match <c>CharacterPhysics.FindLadderForClimb</c>. If this test is
+    /// narrower, the walk stops as "fell out" on exactly the maps where a ladder
+    /// is the way onward; if wider, a character nowhere near a ladder keeps
+    /// drifting instead of being told it fell.
+    /// </remarks>
+    private static bool LadderInReach(FootholdPhysics physics, CharacterPhysics who)
+    {
+        int x = (int)Math.Round(who.X);
+        int y = (int)Math.Round(who.Y);
+        foreach (FootholdPhysics.Ladder l in physics.Ladders)
+        {
+            if (Math.Abs(l.X - x) < 40 && y >= l.Top - 12 && y <= l.Bottom + 12)
+                return true;
+        }
+        return false;
+    }
+
     private static bool RanOutOfGround(FootholdPhysics physics, CharacterPhysics who)
     {
         int x = (int)Math.Round(who.X);
@@ -312,6 +447,12 @@ public sealed class MapWalkRunDto
     /// <summary>Step at which it dropped through, 0 for never.</summary>
     public int DropAtStep { get; set; }
 
+    /// <summary>Climb intent used, 0 for never. -1 is up.</summary>
+    public int Climb { get; set; }
+
+    /// <summary>How many ladders and ropes the map carries.</summary>
+    public int Ladders { get; set; }
+
     /// <summary>Footholds on the map.</summary>
     public int Footholds { get; set; }
 
@@ -388,3 +529,42 @@ public sealed class MapWalkRunDto
 /// <param name="X">Map X.</param>
 /// <param name="Y">Map Y.</param>
 public sealed record MapWalkPointDto(long Tick, int X, int Y);
+
+/// <summary>One step, with the values it touched.</summary>
+public sealed class MapStepProbeDto
+{
+    public string Error { get; set; } = "";
+    public int StartX { get; set; }
+    public int StartY { get; set; }
+    public string StartFoothold { get; set; } = "";
+    public int Ladders { get; set; }
+    public bool LadderInReach { get; set; }
+    public List<string> LadderList { get; set; } = [];
+    public bool OnGroundBefore { get; set; }
+    public int EndX { get; set; }
+    public int EndY { get; set; }
+    public float Speed { get; set; }
+    public bool OnGroundAfter { get; set; }
+    public bool OnLadderAfter { get; set; }
+    public string? StandingOn { get; set; }
+    public string? LeftGround { get; set; }
+}
+
+/// <summary>A bounded walk, with the decision at each tick.</summary>
+public sealed class MapWalkTraceDto
+{
+    public string Error { get; set; } = "";
+    public int Ladders { get; set; }
+    public string StartFoothold { get; set; } = "";
+    public int StartX { get; set; }
+    public int StartY { get; set; }
+    public List<MapWalkTraceTick> Ticks { get; set; } = [];
+}
+
+/// <summary>One tick of a traced walk.</summary>
+public sealed record MapWalkTraceTick(
+    int Step, int X, int Y, float Speed, bool OnGround, bool OnLadder,
+    string Foothold, bool ReachedEnd, bool BlockedByWall, int? WallAt,
+    string GroundBelow, string Action,
+    int? LadderX, int? StandingX,
+    float ClimbEnterX, float ClimbSnappedX, float ClimbExitX, string? LeftGround);
