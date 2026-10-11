@@ -39,6 +39,16 @@ AI agent 參與了實作、除錯與驗證的每一個環節——包含大部�
 `JOURNAL/` 記錄了每一輪做了什麼、憑什麼這麼說、以及沒做什麼——
 包含 agent 犯過並自己抓到的錯。這個日誌比提交訊息更值得讀。
 
+### 致謝
+
+本分支的開發基礎來自 **追風技術 陳維克** 提供的 **繁體中文優化版本**，
+以及上游 [xkiro-dev/MapleBench](https://github.com/xkiro-dev/MapleBench)。
+
+沒有那份繁中版本，本分支的介面在地圖生成的工作流程裡根本不會被使用——
+語言是這個分支存在的理由之一（讓 agent 與中文使用者共用同一套工具），
+而那份工作是由前人打下的。這個分支在其上繼續往前：NX 寫回、地圖編輯器、
+自我驗證與 agent 介面。
+
 ## Features
 
 - Browse and edit WZ archive trees, including the reverse-engineered NX format.
