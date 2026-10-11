@@ -9,11 +9,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--gap-4, 16px);
-  padding: var(--gap-4, 16px);
-  /* width:100% matters: the stage is a flex child that otherwise sizes this
-     to its content, which left the verdict column as narrow as the picker. */
+  /* The stage already pads its children (`.stage-body` has its own padding), so
+     adding more here measured 42px narrower than the column: the verdict side
+     lost that width and its definition list collapsed. No padding here.
+  */
+  padding: 0;
   width: 100%;
+  max-width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   box-sizing: border-box;
 }
@@ -56,10 +60,17 @@
   display: grid;
   /* The verdict is the point of this page, so the picker is capped rather than
      proportional: at 3fr/1fr the reason sentence wrapped to one word per line
-     on a 1600px window. minmax keeps the verdict readable at every width. */
-  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+     on a 1600px window.
+     `minmax(0, 1fr)` is load-bearing on the second column. Without it the
+     verdict column sized to its content, the definition list inside it collapsed
+     its second column to zero width, and every value rendered as nothing while
+     the labels still showed. Grid items default to min-content minimum; this
+     column needs permission to shrink and then take the space.
+  */
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
   gap: var(--gap-4, 16px);
   min-height: 0;
+  min-width: 0;
   flex: 1;
 }
 
@@ -132,7 +143,11 @@
 
 .sim-row-src { color: var(--text-dim, #888); font-size: 0.6875rem; flex: none; }
 
-.sim-right { min-height: 0; overflow-y: auto; }
+.sim-right {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
 
 .sim-result { display: flex; flex-direction: column; gap: 14px; }
 
@@ -191,13 +206,15 @@
   border: 1px solid color-mix(in srgb, #f39c12 38%, transparent);
 }
 
+/* The stage's second column is ~570px wide, not the whole window: the section
+ * shell keeps a 250px nav beside it. A two-column definition list inside that
+ * leaves the value column too narrow to read, so each pair is one grid cell
+ * stacked — label above value — which survives any width this can get.
+ */
 .sim-facts {
   display: grid;
-  /* Two columns, not max-content: a `dt` like "Chain segments walked"
-     sized the whole first column to its own width and squeezed the values
-     into a ribbon. Fixed label width, values take the rest. */
-  grid-template-columns: 11rem minmax(0, 1fr);
-  gap: 8px 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
   margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--line, #333);
@@ -206,7 +223,15 @@
   font-size: 0.8125rem;
 }
 
-.sim-facts dt { color: var(--text-dim, #888); }
+.sim-facts dt {
+  color: var(--text-dim, #888);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+}
+
+.sim-facts dt:first-of-type { margin-top: 0; }
 
 .sim-facts dd {
   margin: 0;
@@ -221,4 +246,85 @@
   color: var(--text-dim, #777);
   font-size: 0.75rem;
   font-family: var(--mono, ui-monospace, monospace);
+}
+/* Direction toggle — two buttons, one active. Placed in the header rather than
+ * beside each result because it changes what the whole page means, not one row.
+ */
+.sim-dir {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--line, #333);
+  border-radius: var(--radius, 8px);
+  overflow: hidden;
+  flex: none;
+}
+
+.sim-dir-btn {
+  width: 34px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim, #888);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sim-dir-btn:hover { background: color-mix(in srgb, var(--accent, #3498db) 14%, transparent); }
+
+.sim-dir-btn.on {
+  background: var(--accent, #3498db);
+  color: #fff;
+}
+
+/* The walked path. Drawn in SVG at the map's own aspect ratio so a flat map is
+ * a flat strip and a tall map is tall — stretching either to a fixed box would
+ * misstate the shape, which is the one thing this picture is for.
+ */
+.sim-track {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #333);
+  border-radius: var(--radius, 8px);
+  background: var(--surface, #1a1a1a);
+}
+
+.sim-track-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-dim, #aaa);
+}
+
+.sim-track-svg {
+  width: 100%;
+  max-height: 220px;
+  overflow: visible;
+}
+
+.sim-track-edge {
+  stroke: color-mix(in srgb, var(--text-dim, #888) 45%, transparent);
+  stroke-width: 0.4;
+  stroke-dasharray: 2 2;
+}
+
+.sim-track-line {
+  fill: none;
+  stroke: #ffd93d;
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.sim-track-start { fill: #22c55e; }
+.sim-track-end { fill: #ef4444; }
+
+.sim-track-legend {
+  margin: 0;
+  color: var(--text-dim, #777);
+  font-size: 0.6875rem;
 }

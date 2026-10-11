@@ -445,4 +445,16 @@ public sealed class MapSimulateRequest
 
     /// <summary>Where to start vertically, or null to land on the topmost surface.</summary>
     public int? StartY { get; set; }
+
+    /// <summary>
+    /// Which way to walk: 1 for right, -1 for left, 0 for neither.
+    /// </summary>
+    /// <remarks>
+    /// Without it the character only ever walks right, so half of
+    /// <see cref="CharacterPhysics.Walk"/> — the branch that steps to
+    /// <c>FH.Prev</c> at <c>X &lt;= FH.X1</c> — is unreachable and therefore
+    /// unverified. Measured: a walk started at the map's right edge still went
+    /// right and reported running out of ground.
+    /// </remarks>
+    public int Direction { get; set; } = 1;
 }

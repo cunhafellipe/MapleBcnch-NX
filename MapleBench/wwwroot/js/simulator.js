@@ -54,6 +54,10 @@ export class SimulatorSection {
     this.result = null;
     this.filter = '';
     this.loading = false;
+    // 1 walks left-to-right, -1 the other way. The client supports both and the
+    // two are not symmetric — a chain that runs out on one side can continue on
+    // the other — so the control is on the page rather than implied.
+    this.direction = 1;
   }
 
   async open() {
@@ -81,6 +85,14 @@ export class SimulatorSection {
     }
   }
 
+  /** Switch walking direction, re-running the current map so the change is visible. */
+  async setDirection(dir) {
+    if (this.direction === dir) return;
+    this.direction = dir;
+    this.render();
+    if (this.selected) await this.walk(this.selected);
+  }
+
   matches(map) {
     if (!this.filter) return true;
     return map.path.toLowerCase().includes(this.filter.toLowerCase());
@@ -91,7 +103,14 @@ export class SimulatorSection {
     this.result = null;
     this.render();
     try {
-      this.result = await post('/api/simulate/walk', { path: map.path });
+      // The CHARACTER, not the chain. The chain walk answers "are the links
+      // intact"; this answers "can a character actually cross it", and the
+      // second is the question that matters — /validate already answers the
+      // first.
+      this.result = await post('/api/simulate/character', {
+        path: map.path,
+        direction: this.direction,
+      });
     } catch (err) {
       this.error = err.message;
       toastError(err);
@@ -111,6 +130,18 @@ export class SimulatorSection {
           'Walk a map\'s foothold chain and see whether a character can cross it. ',
           'Nothing here writes — this surface never saves, edits or marks a map dirty.',
         ]),
+      ]),
+      el('div', { class: 'sim-dir' }, [
+        el('button', {
+          class: `sim-dir-btn${this.direction > 0 ? ' on' : ''}`,
+          title: 'Walk from the left edge to the right',
+          onclick: () => this.setDirection(1),
+        }, ['→']),
+        el('button', {
+          class: `sim-dir-btn${this.direction < 0 ? ' on' : ''}`,
+          title: 'Walk from the right edge to the left',
+          onclick: () => this.setDirection(-1),
+        }, ['←']),
       ]),
       el('button', {
         class: 'btn ghost', onclick: () => this.refresh(), title: 'Reload',
@@ -204,37 +235,54 @@ export class SimulatorSection {
 
   renderResult() {
     const r = this.result;
-    const verdict = r.walkable
-      ? (r.conclusive ? 'Walkable' : 'Walkable, but not the whole map')
-      : 'Blocked';
+    const right = (r.direction ?? 1) > 0;
+
+    // Three outcomes, not two. "Reached the edge" and "the chain ran out" are
+    // both ways of getting somewhere, and only the second is a finding.
+    const verdict = r.reachedEdge
+      ? 'Crossed'
+      : r.fellOut
+        ? 'Blocked'
+        : 'Chain ends here';
+
+    // Every field is optional here: a link stub returns before filling any of them,
+// and reading r.ticks.toLocaleString() on that throws and blanks the section.
+// A row with nothing to show is left out.
+    const num = (v) => (v == null ? null : Number(v).toLocaleString());
+    // Each entry stays a PAIR. Spreading it into the list flattened the label
+    // and the value into separate children, which is what made the definition
+    // list render one character per line.
+    const row = (label, value) => (value == null ? null : [label, value]);
 
     const rows = [
-      ['Footholds', r.footholds.toLocaleString()],
-      ['Unusable footholds', r.unusableFootholds.toLocaleString()],
-      ['Chain segments walked', r.steps.toLocaleString()],
-      ['Distance', `${r.distanceWalked.toLocaleString()} / ${r.mapWidth.toLocaleString()} px`],
-      ['Start', `${r.startX}, ${r.startY}  (foothold ${r.startFoothold})`],
-      ['End', `${r.stoppedX}, ${r.stoppedY}  (foothold ${r.stoppedFoothold})`],
-    ];
-
-    if (r.startScannedFrom != null) {
-      rows.push(['Started from', `x=${r.startScannedFrom} — the left edge had only a wall`]);
-    }
+      row('Direction', right ? 'left to right' : 'right to left'),
+      row('Footholds', num(r.footholds)),
+      row('Steps', r.ticks == null ? null : `${num(r.ticks)} frames (${Number(r.seconds).toFixed(1)}s)`),
+      row('Distance', r.distance == null ? null : `${num(r.distance)} / ${num(r.mapWidth)} px`),
+      row('Start', r.startX == null ? null : `${r.startX}, ${r.startY}`),
+      row('End', r.finalX == null ? null : `${r.finalX}, ${r.finalY}`),
+      row('Step size', r.stepSeconds == null ? null : `1/${Math.round(1 / r.stepSeconds)} s`),
+      row('Walk speed', r.acceleration == null ? null : `${r.acceleration} per frame, max ${r.maxWalkSpeed}`),
+    ].filter(Boolean);
 
     return el('div', { class: 'sim-result' }, [
-      el('div', { class: `sim-verdict ${r.walkable ? 'ok' : 'bad'}` }, [
-        icon(r.walkable ? 'check' : 'alert'),
+      el('div', { class: `sim-verdict ${r.fellOut ? 'bad' : 'ok'}` }, [
+        icon(r.fellOut ? 'alert' : 'check'),
         el('div', {}, [
           el('strong', {}, [verdict]),
-          el('div', { class: 'sim-verdict-pct' }, [`${Number(r.percentOfMap ?? 0).toFixed(1)}% of the walkable span`]),
+          el('div', { class: 'sim-verdict-pct' }, [
+            `${Number(r.percentOfMap ?? 0).toFixed(1)}% of the walkable span`,
+          ]),
         ]),
       ]),
 
       el('p', { class: 'sim-reason' }, [r.reason]),
 
-      r.isLinkStub ? el('div', { class: 'sim-stub' }, [
-        icon('info'),
-        `This map is a link stub pointing at '${r.link}'. Its geometry is in that map, not this one.`,
+      r.fellOut ? el('div', { class: 'sim-caveat' }, [
+        icon('alert'),
+        'A character cannot cross this map on foot. The foothold chain links are '
+        + 'intact — /validate says so — but the ground runs out partway. A ladder, '
+        + 'a portal or a jump may bridge it; this walk models none of those.',
       ]) : null,
 
       el('dl', { class: 'sim-facts' }, rows.flatMap(([k, v]) => [
@@ -242,16 +290,50 @@ export class SimulatorSection {
         el('dd', {}, [v]),
       ])),
 
-      !r.conclusive ? el('div', { class: 'sim-caveat' }, [
-        icon('alert'),
-        'This walk models foothold links only. It does not simulate gravity, '
-        + 'jumping, ladders or portals, so a map it calls inconclusive may still be '
-        + 'perfectly playable. Read it as "nothing blocked the chain", not as '
-        + '"the map was fully verified".',
-      ]) : null,
+      r.track?.length && r.bounds ? this.renderTrack(r) : null,
 
-      el('p', { class: 'sim-foot' }, [
-        `map: ${r.path}`,
+      el('p', { class: 'sim-foot' }, [`map: ${r.path}`]),
+    ]);
+  }
+
+  /** The walked path, drawn to scale against the map's own bounds. */
+  renderTrack(r) {
+    const b = r.bounds;
+    if (!b || !r.track?.length) return null;
+
+    const W = 100, H = 34;
+    const spanX = Math.max(1, b.right - b.left);
+    const spanY = Math.max(1, b.bottom - b.top);
+    // Tall maps would make the strip useless, so the box follows the map's own
+    // aspect and is allowed to be tall; the numbers under it say what it is.
+    const boxH = Math.max(H, Math.round((spanY / spanX) * W));
+
+    const px = (x) => ((x - b.left) / spanX) * W;
+    const py = (y) => ((y - b.top) / spanY) * boxH;
+
+    const path = r.track
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+      .map((p) => `${px(p.x).toFixed(2)},${py(p.y).toFixed(2)}`)
+      .join(' ');
+    if (!path) return null;
+
+    return el('div', { class: 'sim-track' }, [
+      el('h3', { class: 'sim-track-title' }, ['Walked path']),
+      el('svg', {
+        class: 'sim-track-svg',
+        viewBox: `0 0 ${W} ${boxH}`,
+        preserveAspectRatio: 'xMidYMid meet',
+      }, [
+        el('line', {
+          x1: 0, y1: py(b.bottom), x2: W, y2: py(b.bottom),
+          class: 'sim-track-edge',
+        }),
+        el('polyline', { points: path, class: 'sim-track-line' }),
+        el('circle', { cx: px(r.startX), cy: py(r.startY), r: 1.4, class: 'sim-track-start' }),
+        el('circle', { cx: px(r.finalX), cy: py(r.finalY), r: 1.4, class: 'sim-track-end' }),
+      ]),
+      el('p', { class: 'sim-track-legend' }, [
+        `green = start, red = end · ${r.track.length} sampled positions`,
       ]),
     ]);
   }

@@ -78,12 +78,18 @@ public sealed class CharacterPhysics
     private float _speed;
     private float _velocityY;
 
-    public CharacterPhysics(FootholdPhysics map, FootholdPhysics.Foot start)
+    public CharacterPhysics(FootholdPhysics map, FootholdPhysics.Foot start, int direction = 1)
     {
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _foothold = start;
-        _x = start.X1;
-        _y = start.Y1;
+        // Start at the end the character walks FROM, which is the opposite of the
+        // end it walks toward: X1 going right, X2 going left. That is what
+        // MapleNecrocer does — its rightward branch traverses X1->X2 and hands
+        // over at X >= FH.X2, its leftward branch traverses X2->X1 and hands
+        // over at X <= FH.X1 (MapleCharacter.cs). Starting anywhere else makes
+        // the very first step count as "already reached the end".
+        _x = direction >= 0 ? start.X1 : start.X2;
+        _y = direction >= 0 ? start.Y1 : start.Y2;
         OnGround = true;
     }
 
@@ -158,17 +164,41 @@ public sealed class CharacterPhysics
         _x += (float)(Sin256(direction) * _speed);
         _y -= (float)(Cos256(direction) * _speed);
 
-        // A wall in the way stops horizontal motion outright.
+        // A wall in the way stops horizontal motion -- but only a wall on the
+        // character's OWN layer. MapleNecrocer compares Z (MapleCharacter.cs:857):
+        //
+        //     WallFH = FootholdTree.Instance.FindWallL(new Vector2(X - 4, Y - 4));
+        //     if ((WallFH != null) && (X >= WallFH.X1) && (BelowFH.Z == WallFH.Z))
+        //         X = WallFH.X1 - 1;
+        //
+        // A map stacks several layers, and a wall two floors up is scenery, not
+        // an obstacle. Without the Z test the character is stopped by walls it
+        // cannot even see -- and on a map with 400+ footholds there are always
+        // some above it.
+        FootholdPhysics.Foot? ground = _map.FindBelow(
+            (int)Math.Round(_x), (int)Math.Round(_y), falling: false);
+
+        // Probed a few pixels AHEAD, not at the body: the wall the character is
+        // about to meet is not yet under it.
+        int ahead = (int)Math.Round(_x) + (moveLeft > 0 ? 4 : -4);
         FootholdPhysics.Foot? wall = moveLeft > 0
-            ? _map.FindWall((int)Math.Round(_x), (int)Math.Round(_y), movingRight: true)
+            ? _map.FindWall(ahead, (int)Math.Round(_y), movingRight: true)
             : moveLeft < 0
-                ? _map.FindWall((int)Math.Round(_x), (int)Math.Round(_y), movingRight: false)
+                ? _map.FindWall(ahead, (int)Math.Round(_y), movingRight: false)
                 : null;
 
-        if (wall is { } w)
+        if (wall is { } w2 && ground is { } g2 && w2.Z == g2.Z)
         {
-            _x = moveLeft > 0 ? w.Left - BodyHalfWidth : w.Right + BodyHalfWidth;
-            _speed = 0;
+            if (moveLeft > 0 && _x >= w2.X1)
+            {
+                _x = w2.X1 - 1;
+                _speed = 0;
+            }
+            else if (moveLeft < 0 && _x <= w2.X1)
+            {
+                _x = w2.X1 + 1;
+                _speed = 0;
+            }
         }
 
         bool reachedEnd = moveLeft >= 0 ? _x >= fh.X2 : _x <= fh.X1;
@@ -178,9 +208,7 @@ public sealed class CharacterPhysics
         // Past the end of this foothold. Take the next one if it exists and is
         // walkable, otherwise the character has run out of ground.
         long nextId = moveLeft >= 0 ? fh.Next : fh.Prev;
-        FootholdPhysics.Foot? next = nextId == 0
-            ? null
-            : FindLinked(nextId, fh, moveLeft >= 0);
+        FootholdPhysics.Foot? next = nextId == 0 ? null : FindLinked(nextId, fh);
 
         if (next is not { IsWall: false } step)
         {
@@ -259,7 +287,7 @@ public sealed class CharacterPhysics
     /// Ids are not unique — 69 maps ship a duplicate — so the adjacency test is
     /// what picks the right one: a real link meets its neighbour at an endpoint.
     /// </remarks>
-    private FootholdPhysics.Foot? FindLinked(long id, FootholdPhysics.Foot from, bool forward)
+    private FootholdPhysics.Foot? FindLinked(long id, FootholdPhysics.Foot from)
     {
         FootholdPhysics.Foot? byId = null;
         foreach (FootholdPhysics.Foot f in _map.Footholds)

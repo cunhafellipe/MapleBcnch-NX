@@ -63,11 +63,16 @@ public sealed class FootholdPhysics
 
             int x1 = (int)rawX1, y1 = (int)rawY1, x2 = (int)rawX2, y2 = (int)rawY2;
 
-            _footholds.Add(new Foot(
+            // Read straight off the node: MapFoothold does not expose `z`, and the
+                // layer test in CharacterPhysics needs it -- a wall on another
+                // floor is scenery, not an obstacle (MapleNecrocer compares Z at
+                // MapleCharacter.cs:857).
+                _footholds.Add(new Foot(
                 x1, y1, x2, y2,
                 fh.Id, fh.Prev ?? 0, fh.Next ?? 0,
                 fh.Layer, fh.Group,
-                fh.CantThrough ?? 0, fh.ForbidFallDown ?? 0));
+                fh.CantThrough ?? 0, fh.ForbidFallDown ?? 0,
+                fh.Node.IntegerAt("z") ?? 0));
         }
 
         Bounds = ComputeBounds();
@@ -93,7 +98,8 @@ public sealed class FootholdPhysics
         int X1, int Y1, int X2, int Y2,
         string Id, long Prev, long Next,
         string Layer, string Group,
-        long CantThrough, long ForbidFallDown)
+        long CantThrough, long ForbidFallDown,
+        long Z)
     {
         /// <summary>Leftmost X, whichever endpoint is left.</summary>
         public int Left => Math.Min(X1, X2);

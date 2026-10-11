@@ -29,16 +29,19 @@ public sealed partial class MapEditorService
     /// <summary>
     /// Walks a real character across a map and reports where it ends up.
     /// </summary>
-    public MapWalkRunDto WalkCharacter(string path, int? startX, int? startY)
+    public MapWalkRunDto WalkCharacter(string path, int? startX, int? startY, int direction = 1)
     {
         lock (_gate)
         {
+            int dir = direction >= 0 ? 1 : -1;
+
             MapDocument map = LoadForReading(path);
             FootholdPhysics physics = new(map);
 
             MapWalkRunDto result = new()
             {
                 Path = path,
+                Direction = dir,
                 Footholds = physics.Footholds.Count,
                 StepSeconds = CharacterPhysics.StepSeconds,
                 Acceleration = CharacterPhysics.Acceleration,
@@ -56,20 +59,24 @@ public sealed partial class MapEditorService
             (int Left, int Top, int Right, int Bottom) bounds = physics.Bounds!.Value;
             result.Bounds = new MapSimulateBoundsDto(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
 
-            FootholdPhysics.Foot? start = FindStartFoothold(physics, startX ?? bounds.Left, startY);
+            // The start is the edge the character walks FROM, so it depends on direction:
+            // walking left has to begin at the right edge or it has nowhere to go.
+            int originX = startX ?? (dir > 0 ? bounds.Left : bounds.Right);
+
+            FootholdPhysics.Foot? start = FindStartFoothold(physics, originX, startY);
             if (start is null)
             {
-                result.Reason = $"Nothing to stand on at x={startX ?? bounds.Left}.";
+                result.Reason = $"Nothing to stand on at x={originX}.";
                 return result;
             }
 
             result.StartX = start.Value.X1;
             result.StartY = start.Value.Y1;
 
-// The character starts ON the foothold, exactly as the client spawns it:
-            // Player.SpawnNew sets FH from FindBelow and starts grounded
+            // The character starts ON the foothold, exactly as the client spawns
+            // it: Player.SpawnNew sets FH from FindBelow and starts grounded
             // (MapleCharacter.cs). No drop, no guess.
-            CharacterPhysics who = new(physics, start.Value);
+            CharacterPhysics who = new(physics, start.Value, dir);
 
             int lastX = int.MinValue;
             int stuckFor = 0;
@@ -83,7 +90,7 @@ public sealed partial class MapEditorService
 
             while (who.Ticks < MaxWalkTicks)
             {
-                who.Step(1);
+                who.Step(dir);
 
                 int x = (int)Math.Round(who.X);
                 if (who.Ticks % SampleEvery == 0)
@@ -91,14 +98,31 @@ public sealed partial class MapEditorService
 
                 if (!who.OnGround)
                 {
-                    // The character left the chain. That is the finding, and it is
-                    // why the walk exists: /validate says the links are intact
-                    // while this says a character cannot continue.
-                    result.FellOut = true;
-                    result.Reason =
-                        $"the character ran out of ground at x={x}, y={(int)Math.Round(who.Y)} "
-                        + $"after {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s) — "
-                        + (who.LeftGroundBecause ?? "it left the foothold chain");
+                    // Reaching the edge and then stepping off it is still arriving:
+                    // the last foothold's far end IS the map's edge. Measured, a
+                    // leftward walk reached x=-546, stepped past the final
+                    // foothold, and was reported as having fallen out.
+                    bool arrived = dir > 0 ? x >= bounds.Right : x <= bounds.Left;
+                    if (arrived)
+                    {
+                        result.ReachedEdge = true;
+                        result.Reason =
+                            $"the character crossed the map {(dir > 0 ? "left to right" : "right to left")} "
+                            + $"in {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s) "
+                            + $"and reached the {(dir > 0 ? "right" : "left")} edge at x={x}.";
+                    }
+                    else
+                    {
+                        // The character left the chain short of the edge. That is
+                        // the finding, and it is why the walk exists: /validate
+                        // says the links are intact while this says a character
+                        // cannot continue.
+                        result.FellOut = true;
+                        result.Reason =
+                            $"the character ran out of ground at x={x}, y={(int)Math.Round(who.Y)} "
+                            + $"after {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s) — "
+                            + (who.LeftGroundBecause ?? "it left the foothold chain");
+                    }
                     break;
                 }
 
@@ -118,12 +142,16 @@ public sealed partial class MapEditorService
                     lastX = x;
                 }
 
-                if (x >= bounds.Right)
+                // The far edge is the one the character is walking TOWARD, which is the
+                // opposite one from where it started.
+                bool crossed = dir > 0 ? x >= bounds.Right : x <= bounds.Left;
+                if (crossed)
                 {
                     result.ReachedEdge = true;
                     result.Reason =
-                        $"the character crossed the map in {who.Ticks} steps "
-                        + $"({who.Ticks * CharacterPhysics.StepSeconds:N1}s) and reached x={x}.";
+                        $"the character crossed the map {(dir > 0 ? "left to right" : "right to left")} "
+                        + $"in {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s) "
+                        + $"and reached x={x}.";
                     break;
                 }
             }
@@ -133,7 +161,7 @@ public sealed partial class MapEditorService
             result.Ticks = who.Ticks;
             result.Seconds = who.Ticks * CharacterPhysics.StepSeconds;
             result.OnGround = who.OnGround;
-            result.Distance = result.FinalX - result.StartX;
+            result.Distance = Math.Abs(result.FinalX - result.StartX);
             result.MapWidth = bounds.Right - bounds.Left;
             result.PercentOfMap = result.MapWidth > 0 ? 100.0 * result.Distance / result.MapWidth : 0;
             result.Track = track;
@@ -221,6 +249,9 @@ public sealed class MapWalkRunDto
 {
     /// <summary>The map that was walked.</summary>
     public string Path { get; set; } = "";
+
+    /// <summary>Which way the character walked: 1 right, -1 left.</summary>
+    public int Direction { get; set; } = 1;
 
     /// <summary>Footholds on the map.</summary>
     public int Footholds { get; set; }

@@ -45,7 +45,7 @@ public static class SimulatorEndpoints
         // one that can catch a map the link chain calls intact but that a
         // character physically cannot cross.
         group.MapPost("/character", (MapSimulateRequest request, MapEditorService maps) =>
-            Results.Ok(maps.WalkCharacter(request.Path, request.StartX, request.StartY)));
+            Results.Ok(maps.WalkCharacter(request.Path, request.StartX, request.StartY, request.Direction)));
 
         // Why is the character standing where it is? A caller that distrusts the
         // walk's Y needs to see which footholds exist under that X, and this is
