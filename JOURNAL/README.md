@@ -46,6 +46,7 @@
 | [2026-10-11-merge](2026-10-11-merge.md) | 合併 GitHub 上的 `wz_asset_*` 與本地的 `wz_archive_*`：唯一的 `Program.cs` 衝突怎麼解、伺服器為何取 `maplebench-assets` |
 | [2026-10-11-simulator](2026-10-11-simulator.md) | 整合 MapleNecrocer 模擬環境：一個**沒做完**的整合。做了 2/14，以及差點把部分成品說成完成的教訓 |
 | [2026-10-11-physics](2026-10-11-physics.md) | 真實角色物理：MapleNecrocer 的實際常數、實測走完一張地圖，以及一個**還沒修的** `FindBelow` 缺陷 |
+| [2026-10-11-physics-blocked](2026-10-11-physics-blocked.md) | **收束**：六次修正全敗。根因不是 bug，是模型錯了——MapleNecrocer 讓角色持有 foothold 沿角度走，而我讓它每步查地面 |
 
 ## 專案文件
 
