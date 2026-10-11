@@ -34,19 +34,21 @@ public static class Program
 
         builder.Services
             .AddSingleton(_ => new MapClient())
+            .AddSingleton(_ => new ArchiveClient())
             .AddMcpServer(options =>
             {
                 options.ServerInfo = new ModelContextProtocol.Protocol.Implementation
                 {
-                    Name = "maplebench-maps",
-                    Version = "1.0.0",
+                    Name = "maplebench",
+                    Version = "1.1.0",
                 };
 
                 options.ServerInstructions = """
-                    Build and edit MapleStory maps (.img) in the archives the
-                    MapleBench backend has open.
+                    Two surfaces over one MapleBench backend: build and edit
+                    maps, and split archives into .img files. Both need the
+                    backend running (MapleBenchX.exe --browser).
 
-                    The order to work in:
+                    AUTHORING MAPS
 
                       1. wz_map_capabilities   what is open and usable
                       2. wz_map_list           find a map, or copy one as a style
@@ -78,6 +80,44 @@ public static class Program
                     A map may be a link stub with no geometry of its own;
                     wz_map_open says so when that happens. Author against the
                     target, not the stub.
+
+                    SPLITTING ARCHIVES INTO .img FILES
+
+                      1. wz_archive_capabilities   backend up? what is open?
+                      2. wz_archive_scan           what is in that folder
+                      3. wz_archive_split          write the .img tree
+                      4. wz_archive_export_img     one node, when you need to
+                                                    check a single file
+
+                    A split client stores data as .wz archives, but most tools
+                    that read MapleStory data — WzImg-MCP, HaCreator, the
+                    reference BeiDou-Client tree — want one .img file per
+                    resource. wz_archive_split is the step between them: it
+                    opens each archive and writes every image node as its own
+                    file, using the backend's own serialiser so the bytes match
+                    what the editor saves.
+
+                    TWO THINGS THAT WASTE A LOT OF TIME IF IGNORED.
+
+                    _Canvas. A category folder often holds both the data
+                    archive and a _Canvas folder beside it, and the data
+                    archive's image nodes hold names, fields and frame lists
+                    that POINT at the sprites. The _Canvas archives hold the
+                    sprites themselves, indexed by asset key — so each of its
+                    nodes serialises to one .img that is most or all of the
+                    archive. Splitting one produces single files in the hundreds
+                    of MB that are archive contents, not resources. Leave
+                    includeCanvas false.
+
+                    SIZE. 67 GB of archives can split into far more than the
+                    drive has room for. Run wz_archive_split with dryRun=true
+                    first to see the count, and limitFiles to trial the path
+                    end to end before committing to a full run.
+
+                    A category root file such as Mob.wz is often 216 bytes: a
+                    PKG1 pointer naming the real split files, not data. The
+                    tools skip these and say so rather than reporting an empty
+                    archive.
                     """;
             })
             .WithToolsFromAssembly()
