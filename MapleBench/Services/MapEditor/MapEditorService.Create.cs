@@ -12,8 +12,8 @@ namespace MapleBench.Services.MapEditor;
 /// <summary>
 /// Creating a map from scratch: a nine-digit id validated and collision-checked
 /// across every open Map archive, the measured minimal shape scaffolded, the
-/// image landed in the archive (and Map&lt;digit&gt; folder) where the client
-/// keeps its maps, and a String.wz row written so the map has a name.
+/// image landed in the archive under its Map&lt;digit&gt; bucket, and a String.wz
+/// row written so the map has a name.
 /// </summary>
 public sealed partial class MapEditorService
 {
@@ -57,44 +57,37 @@ public sealed partial class MapEditorService
             }
 
             // Land where the client keeps its maps: the mount-order-first archive
-            // whose Map/ holds the right Map<digit> folder, else the first that
-            // holds any map folder at all.
+            // whose Map/ holds the right Map<digit> bucket, else the first that
+            // holds any map bucket at all.
             //
-            // Writable means a WzDirectory, and it has to. A .wz and an IMG-folder
-            // mount both store the map in one, and an NX archive stores it as
-            // properties — writing a map into one would mean a second, incompatible
-            // idea of what the file contains, in a format whose whole point is that
-            // it has no directories. NX is refused further down, where the refusal
-            // can say so in a sentence that names the reason.
-            (OpenFile File, WzDirectory MapRoot, string RootPath, WzDirectory? Sub)? target = null;
-            bool sawNonDirectoryRoot = false;
+            // Both shapes are targets, because both are writable — what differs is
+            // only how the new node is attached. A .wz and an IMG-folder mount carry
+            // the bucket in a WzDirectory and the map in a WzImage; an NX archive has
+            // no directory type at all, so Map/Map9 is a WzSubProperty inside the Map
+            // WzImage and the map under it is one too. The bucket is therefore matched
+            // by NAME rather than by class, which is what lets one walk cover both;
+            // the class is consulted only at the moment of attaching.
+            (OpenFile File, WzObject MapRoot, string RootPath, WzObject? Sub)? target = null;
             foreach ((OpenFile file, WzObject mapRoot, string rootPath) in MapRoots())
             {
-                if (mapRoot is not WzDirectory writableRoot)
-                {
-                    sawNonDirectoryRoot = true;
+                if (mapRoot is not WzDirectory && mapRoot is not WzImage)
                     continue;
-                }
-                WzDirectory? sub = ChildrenOf(mapRoot)
-                    .OfType<WzDirectory>()
+                WzObject? sub = ChildrenOf(mapRoot)
                     .FirstOrDefault(d => string.Equals(d.Name, subDirName,
                         StringComparison.OrdinalIgnoreCase));
                 if (sub != null)
                 {
-                    target = (file, writableRoot, rootPath, sub);
+                    target = (file, mapRoot, rootPath, sub);
                     break;
                 }
                 target ??= ChildrenOf(mapRoot).Any(IsMapIdDirectory)
-                    ? (file, writableRoot, rootPath, null)
+                    ? (file, mapRoot, rootPath, null)
                     : target;
             }
             if (target == null)
             {
-                // Two different answers, because they have two different fixes.
-                throw new InvalidOperationException(sawNonDirectoryRoot
-                    ? "The only open Map archives are NX, which stores its maps as properties and has "
-                    + "no directory to put a new one in. Open a .wz or an IMG-folder mount to create one."
-                    : "No open archive holds map images (Map/Map0..Map9). Open the client's Map "
+                throw new InvalidOperationException(
+                    "No open archive holds map images (Map/Map0..Map9). Open the client's Map "
                     + "family — copies, never the live client — before creating a map.");
             }
 
@@ -107,14 +100,13 @@ public sealed partial class MapEditorService
             }
             RefuseLiveClient(targetFile);
 
-            WzDirectory sub2 = target.Value.Sub ?? CreateMapSubDirectory(target.Value, subDirName, result);
+            WzObject bucket = target.Value.Sub
+                ?? CreateMapBucket(target.Value, subDirName, result);
 
-            WzImage image = WzNode.BuildImage(imageName, ScaffoldNodes());
-            image.Changed = true;
-            sub2.AddImage(image);
+            AddMapImage(target.Value.MapRoot, bucket, imageName);
 
             result.Archive = targetFile.Name;
-            result.Path = WzPath.Child(WzPath.Child(target.Value.RootPath, sub2.Name), imageName);
+            result.Path = WzPath.Child(WzPath.Child(target.Value.RootPath, bucket.Name), imageName);
         }
 
         // Save the archive — collision-checked and scaffolded is not created
@@ -135,14 +127,67 @@ public sealed partial class MapEditorService
         return result;
     }
 
-    private static WzDirectory CreateMapSubDirectory(
-        (OpenFile File, WzDirectory MapRoot, string RootPath, WzDirectory? Sub) target,
+    /// <summary>
+    /// Makes the Map&lt;digit&gt; bucket when the archive has none. A WZ root takes a
+    /// <see cref="WzDirectory"/>; an NX Map image takes a
+    /// <see cref="WzSubProperty"/>, because that is the only container an NX
+    /// archive has. Everything downstream addresses the bucket by name, so
+    /// nothing below this point has to know which one it got.
+    /// </summary>
+    private static WzObject CreateMapBucket(
+        (OpenFile File, WzObject MapRoot, string RootPath, WzObject? Sub) target,
         string subDirName, MapCreateResultDto result)
     {
-        WzDirectory sub = new(subDirName, target.File.WzFile);
-        target.MapRoot.AddDirectory(sub);
-        result.Notes.Add($"'{target.File.Name}' had no {subDirName}/ folder; it was created.");
-        return sub;
+        WzObject bucket;
+        if (target.MapRoot is WzDirectory directory)
+        {
+            WzDirectory sub = new(subDirName, target.File.WzFile);
+            directory.AddDirectory(sub);
+            bucket = sub;
+        }
+        else
+        {
+            WzSubProperty sub = new(subDirName);
+            WzSessionService.PropertiesOf(target.MapRoot)!.Add(sub);
+            bucket = sub;
+        }
+
+        result.Notes.Add($"'{target.File.Name}' had no {subDirName}/ bucket; it was created.");
+        return bucket;
+    }
+
+    /// <summary>
+    /// Lands the map in its bucket, in whichever carrier that bucket holds.
+    ///
+    /// <para>The two shapes differ in more than the class. A
+    /// <see cref="WzDirectory"/> owns its images and <c>AddImage</c> wires the
+    /// parent up; an NX <see cref="WzSubProperty"/> is only a property
+    /// collection, so the map is built as a property and appended. The children
+    /// are identical either way — <see cref="WzNode.BuildImage"/> and
+    /// <see cref="WzNode.BuildSubProperty"/> differ only in what holds them.</para>
+    ///
+    /// <para>The enclosing Map image is what the writer walks. Marking the new
+    /// leaf alone would leave the archive clean, and a clean archive is not
+    /// written — the map would report as created and never reach the disk.</para>
+    /// </summary>
+    private static void AddMapImage(WzObject mapRoot, WzObject bucket, string imageName)
+    {
+        if (bucket is WzDirectory directory)
+        {
+            WzImage image = WzNode.BuildImage(imageName, ScaffoldNodes());
+            image.Changed = true;
+            directory.AddImage(image);
+            return;
+        }
+
+        WzSubProperty property = WzNode.BuildSubProperty(imageName, ScaffoldNodes());
+        WzSessionService.PropertiesOf(bucket)!.Add(property);
+
+        // Only WzImage carries Changed; a property has no dirty flag of its own.
+        // Marking the enclosing Map image is what the String.wz row writer does
+        // for the same reason, and it is what makes the archive enumerate as dirty.
+        if (mapRoot is WzImage mapImage)
+            mapImage.Changed = true;
     }
 
     /// <summary>
