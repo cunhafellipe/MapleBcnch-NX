@@ -910,11 +910,16 @@ public static class Endpoints
         // Same bytes, different node class. The per-resource unit is not always
         // a WzImage: skills live at "<group>.img/skill/<id>", a WzImageProperty,
         // which /export/img rejects. See ExportService.ExportNodeAsImg.
-        api.MapGet("/export/node-img", (string path, string? name, ExportService export) =>
-        {
-            (byte[] data, string fileName) = export.ExportNodeAsImg(path, name);
-            return Results.File(data, "application/octet-stream", fileName);
-        });
+        api.MapGet("/export/node-img",
+                    (string path, string? name, HttpResponse response, ExportService export) =>
+                {
+                    (byte[] data, string fileName, string? note) = export.ExportNodeAsImg(path, name);
+                    // The note travels in a header rather than the body: the body is the
+                    // .img, and an agent writing it to disk must get exactly those bytes.
+                    if (note is not null)
+                        response.Headers["X-Export-Note"] = note;
+                    return Results.File(data, "application/octet-stream", fileName);
+                });
 
         api.MapGet("/export/json", (string path, int? depth, ExportService export) =>
         {
@@ -1086,10 +1091,16 @@ public static class Endpoints
             return Results.Json(new ApiError("Access denied.", ex.Message), statusCode: 403);
         }
         catch (Exception ex)
-        {
-            return Results.Json(
-                new ApiError("Something went wrong.", ex.Message), statusCode: 500);
-        }
+                {
+                    // The message alone cost hours here: "Object reference not set to
+                    // an instance of an object" came from four different places while
+                    // chasing 113 failing skills, and none of them were distinguishable
+                    // from the response. The stack goes to the log; the response stays
+                    // short because agents read it.
+                    Console.Error.WriteLine($"[endpoint] {ex}");
+                    return Results.Json(
+                        new ApiError("Something went wrong.", ex.Message), statusCode: 500);
+                }
     }
 }
 

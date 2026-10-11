@@ -111,39 +111,56 @@ public sealed class ExportService
         /// under an extra level.
         /// </para>
         /// </remarks>
-        public (byte[] Data, string FileName) ExportNodeAsImg(string path, string? asName)
-        {
-            lock (_session.Gate)
+        public (byte[] Data, string FileName, string? Note) ExportNodeAsImg(string path, string? asName)
             {
-                WzObject node = _session.Resolve(path);
-                WzImage image;
+                int strippedLinkedCanvases = 0;
+                        int unresolvable = 0;
+                        string? strippedNote = null;
+
+                lock (_session.Gate)
+                {
+                    WzObject node = _session.Resolve(path);
+                    WzImage image;
 
                 if (node is WzImage existing)
                 {
                     image = existing;
                 }
                 else if (node is WzImageProperty subtree)
-                                {
-                                    WzImageProperty clone = subtree.DeepClone();
-                                    image = new WzImage(Stem(asName) ?? Stem(subtree.Name) ?? "node");
+                                                {
+                                                    image = new WzImage(Stem(asName) ?? Stem(subtree.Name) ?? "node");
 
-                                    // The clone's own children become the new image's top level, so
-                                    // the output reads like any other .img (icon, level, info) rather
-                                    // than carrying an extra wrapper level. A leaf property has a null
-                                    // collection, and then there is nothing to lift and the clone
-                                    // itself is the whole content.
-                                    if (clone.WzProperties is { Count: > 0 })
-                                    {
-                                        foreach (WzImageProperty child in clone.WzProperties)
-                                        {
-                                            image.AddProperty(child.DeepClone());
-                                        }
-                                    }
-                                    else
-                                    {
-                                        image.AddProperty(clone);
-                                    }
-                                }
+                                                    // The subtree is NOT cloned wholesale, and that is the whole
+                                                    // point. DeepClone recurses into every descendant, so a
+                                                    // single canvas with no local pixels kills the entire
+                                                    // skill -- MapleLib's clone does imageProp.DeepClone()
+                                                    // on that null and throws. Cloning one child at a time
+                                                    // means the bad canvas costs the canvas and nothing else,
+                                                    // and the skill's level/info/common still get written.
+                                                    //
+                                                    // The clone's own children become the new image's top
+                                                    // level, so the output reads like any other .img rather
+                                                    // than carrying an extra wrapper level.
+                                                    if (subtree.WzProperties is { Count: > 0 } kids)
+                                                    {
+                                                        foreach (WzImageProperty child in kids)
+                                                        {
+                                                            try
+                                                            {
+                                                                image.AddProperty(child.DeepClone());
+                                                            }
+                                                            catch (Exception ex) when (ex is NullReferenceException
+                                                                                       or InvalidCastException)
+                                                            {
+                                                                unresolvable++;
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        image.AddProperty(subtree.DeepClone());
+                                                    }
+                                                }
                 else
                 {
                     throw new InvalidOperationException(
@@ -153,16 +170,117 @@ public sealed class ExportService
 
                 WzSessionService.EnsureParsed(image);
 
-                byte[] data = NxWzExport.SerializeImageAsWz(image);
-                if (data.Length == 0)
-                    throw new InvalidOperationException("The node serialised to zero bytes, so no download was made.");
+                            byte[] data;
+                            try
+                            {
+                                data = NxWzExport.SerializeImageAsWz(image);
+                            }
+                            catch (NullReferenceException)
+                            {
+                                // A canvas that is only an _outlink into a _Canvas archive
+                                // cannot be materialised when that archive is not loaded, and
+                                // MapleLib dereferences the missing reader instead of saying so.
+                                // 113 skills in Skill_00007 are in this state: their icon is a
+                                // 1x1 link into Skill/_Canvas, and the rest of the skill --
+                                // level, info, common -- is perfectly readable. Dropping the
+                                // unresolvable canvas and writing the skill without it is far
+                                // better than losing the skill, but it has to be reported
+                                // rather than passed off as a complete export.
+                                int dropped = DropLinkedCanvases(image);
+                                if (dropped == 0)
+                                    throw;
 
-                string name = Sanitise(asName ?? image.Name ?? "node");
-                if (!name.EndsWith(".img", StringComparison.OrdinalIgnoreCase))
-                    name += ".img";
-                return (data, name);
-            }
-        }
+                                strippedLinkedCanvases = dropped;
+                                data = NxWzExport.SerializeImageAsWz(image);
+                            }
+
+                            if (data.Length == 0)
+                                throw new InvalidOperationException("The node serialised to zero bytes, so no download was made.");
+
+                            string name = Sanitise(asName ?? image.Name ?? "node");
+                            if (!name.EndsWith(".img", StringComparison.OrdinalIgnoreCase))
+                                name += ".img";
+                            if (strippedLinkedCanvases > 0 || unresolvable > 0)
+                                                    {
+                                                        List<string> parts = [];
+                                                        if (unresolvable > 0)
+                                                            parts.Add($"{unresolvable} canvas(s) whose pixels live in a _Canvas archive that is not loaded");
+                                                        if (strippedLinkedCanvases > 0)
+                                                            parts.Add($"{strippedLinkedCanvases} unresolved _Canvas link(s)");
+                                                        strippedNote = string.Join("; ", parts);
+                                                    }
+                            return (data, name, strippedNote);
+                        }
+                    }
+
+                    /// <summary>
+                    /// Removes canvas properties whose pixels live in another archive, so the
+                    /// rest of the node can still be written. Returns how many were dropped.
+                    /// </summary>
+                    private static int DropLinkedCanvases(WzImage image)
+                    {
+                        int dropped = 0;
+                        foreach (WzImageProperty prop in image.WzProperties.OfType<WzImageProperty>().ToList())
+                        {
+                            dropped += DropLinkedCanvases(prop);
+                        }
+                        return dropped;
+                    }
+
+                    private static int DropLinkedCanvases(WzImageProperty property)
+                        {
+                            int dropped = 0;
+
+                            // UOL is MapleStory's pointer type. Touching .WzProperties on one forces
+                            // LinkValue, which is null when the target archive is not loaded, and
+                            // that is an NRE rather than a "not available". These skills are written
+                            // against _Canvas, which is deliberately not opened, so every UOL here
+                            // is unresolvable and gets dropped. Reading it unguarded turned a
+                            // recoverable export failure into a 500 -- the second NRE was mine.
+                            if (property is WzUOLProperty)
+                                return DropUnresolvable(property);
+
+                            if (property is WzCanvasProperty canvas)
+                            {
+                                // _outlink is stored as a short string property next to the canvas
+                                // data. Its presence means the real pixels are elsewhere.
+                                try
+                                {
+                                    if (canvas.WzProperties?["_outlink"] is not null)
+                                    {
+                                        property.Remove();
+                                        return 1;
+                                    }
+                                }
+                                catch (Exception ex) when (ex is NullReferenceException)
+                                {
+                                    return DropUnresolvable(property);
+                                }
+                                return 0;
+                            }
+
+                            try
+                            {
+                                if (property.WzProperties is { } kids)
+                                {
+                                    foreach (WzImageProperty child in kids.OfType<WzImageProperty>().ToList())
+                                    {
+                                        dropped += DropLinkedCanvases(child);
+                                    }
+                                }
+                            }
+                            catch (Exception ex) when (ex is NullReferenceException)
+                            {
+                                return DropUnresolvable(property);
+                            }
+                            return dropped;
+                        }
+
+                        private static int DropUnresolvable(WzImageProperty property)
+                        {
+                            property.Remove();
+                            return 1;
+                        }
 
         /// <summary>The name without a directory or an .img suffix.</summary>
         private static string? Stem(string? value)
