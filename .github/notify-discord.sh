@@ -56,7 +56,11 @@ if [[ "$GITHUB_EVENT_NAME" == "pull_request_target" ]]; then
       fi ;;
     *)                HEADLINE_TAG="PR 動作";      COLOR=9807270 ;;
   esac
-  FOOTER="$ACTOR 提交 · [查看 PR #$PR_NUM]($LINK)"
+  # 同理：PR 事件的 ACTOR 是開 PR 的人。pull_request_target 對 fork 的 PR
+  # 會讓 actor 變成維護者（誰在 base 分支上跑這個 workflow），所以這裡
+  # 改用 head 端身分比較不會指錯人。
+  PR_AUTHOR="$(jq -r '.pull_request.user.login // .sender.login // $ACTOR' "$GITHUB_EVENT_PATH")"
+  FOOTER="$PR_AUTHOR 開了 PR #$PR_NUM · [查看]($LINK)"
 
 else  # push
   COUNT="$(jq '.commits | length' "$GITHUB_EVENT_PATH")"
@@ -70,7 +74,12 @@ else  # push
   VERSION="$SHA7 · $BRANCH"
   COLOR=1752220                  # #1ABC9C 青
   LINK="https://github.com/$REPO/commit/$SHA7"
-  FOOTER="$ACTOR 提交 · [查看這次變更]($LINK)"
+  # ACTOR 是 GITHUB_ACTOR，也就是「誰按了推送」，不是 commit 的 author。
+  # 兩者常常不同：協作者沿用自己機器上的 git 設定送出 commit，metadata
+  # 記的是自己的名字，但推送動作記錄在這個 actor 欄位。寫「推送」而不是
+  # 「提交」，否則會讓人誤以為 actor 就是這些 commit 的作者——
+  # 2026-10-11 就因此讓我把協作者的貢獻誤判成「不存在」。
+  FOOTER="$ACTOR 推送 · [查看這次變更]($LINK)"
 fi
 
 # ─────────────────────────────────────────────────────────────
