@@ -23,7 +23,7 @@ MapleBench is a Windows WZ editor and dependency-aware client importer for Maple
 | **地圖編輯器** | 沒有 | 完整的 map editor：圖層、圖塊、foothold 鏈、傳送門、怪物生成、minimap 重新產生 |
 | **自我驗證** | 存檔前驗證位元組 | `/validate` — 斷鏈、無效引用、link stub、層別不一致。**刻意的壞地圖能被機器抓到** |
 | **批次語意** | 每次編輯一筆 undo | `/batch` — 300 次操作 = **一筆** undo（undo 堆疊只有 200 格） |
-| **Agent 介面** | 無 | `MapleMcp` — 10 個地圖工具的 MCP 伺服器，agent 只經 MCP 就能跑完整流程 |
+| **Agent 介面** | 無 | `MapleMcp` — 41 個工具的 MCP 伺服器（11 地圖 + 8 封裝拆分 + 22 通用資產），agent 只經 MCP 就能跑完整流程 |
 | **繁體中文** | 無 | 全介面繁中，2,321 條翻譯。執行期切換，不需重啟 |
 | **地圖結構規格** | 無 | `docs/MAP-STRUCTURE.md` — 10 張真實地圖解剖出的規格，每條規則都有出處 |
 

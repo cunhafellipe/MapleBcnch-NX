@@ -43,6 +43,7 @@
 | [2026-10-11](2026-10-11.md) | NX 素材調色盤空白的真正原因：容器形狀的八處硬編碼假設 |
 | [2026-10-11-generation](2026-10-11-generation.md) | 讓 Agent 能依提示詞生成地圖：`/validate`、`/batch`，以及一次自我推翻 |
 | [2026-10-11-handover-takeover](2026-10-11-handover-takeover.md) | 接手 `MapleBcnch-NX`：複驗交接內容、冷啟動持久化、foothold 生成器設計 |
+| [2026-10-11-merge](2026-10-11-merge.md) | 合併 GitHub 上的 `wz_asset_*` 與本地的 `wz_archive_*`：唯一的 `Program.cs` 衝突怎麼解、伺服器為何取 `maplebench-assets` |
 
 ## 專案文件
 

@@ -41,24 +41,38 @@
 
 ---
 
-## MCP — 兩個伺服器，各管一件事
+## MCP — 兩個伺服器，通用能力已重疊
 
-### `maplebench-maps`（新版，本專案內）— ✅ 10 個地圖工具
+### `maplebench-assets`（本專案內）— ✅ 41 個工具，三個家族
 
 `MapleMcp/`，用官方 `ModelContextProtocol` SDK 2.2.0。
 專案內路徑：`MapleMcp/bin/Release/net10.0-windows/maple-mcp.exe`
 
-握手實測：
+握手實測（2026-10-11，合併 `wz_asset_*` 與 `wz_archive_*` 後）：
 
 ```
-server  : maplebench-maps v1.0.0
+server  : maplebench-assets v1.4.0
 protocol: 2024-11-05
-tools   : 10
-  wz_map_capabilities  wz_map_list      wz_map_open     wz_map_doc
-  wz_map_node         wz_map_palette   wz_map_place    wz_map_batch
-  wz_map_validate     wz_map_save
-地圖相關工具: 10
+tools   : 41
+  wz_map_*     11  wz_map_capabilities  wz_map_list      wz_map_open
+                   wz_map_doc           wz_map_node      wz_map_palette
+                   wz_map_place         wz_map_batch     wz_map_validate
+                   wz_map_save          wz_map_create
+  wz_archive_*  8  wz_archive_capabilities  wz_archive_scan
+                   wz_archive_open        wz_archive_close
+                   wz_archive_children    wz_archive_node
+                   wz_archive_export_img  wz_archive_split
+  wz_asset_*   22  wz_asset_files / open / open_source / close / save_as
+                   add / delete / rename / transfer / tree / search
+                   node / children / set_value / set_values / undo / history
+                   changes / export_img / export_canvas / replace_canvas
+                   sources
 ```
+
+> 伺服器名稱自 1.3.0 起為 `maplebench-assets`；1.0.0～1.2.0 曾用
+> `maplebench-maps`。若 agent 端有寫死的名稱，請一併更新。
+> 舊的 `maplebench-wz`（另一個 repo，18 個通用工具）仍可同時註冊，
+> 它與本伺服器的 `wz_asset_*` 功能重疊，見下方註記。
 
 **完整流程實測通過**（只經 MCP，不碰 HTTP）：
 從 `capabilities` → `list` → `open` → `palette` → `place` → `validate`
@@ -80,8 +94,11 @@ tools: 18  (wz_status wz_browse wz_get wz_search wz_bulk_math
 `WzClient` 只認 `api/files`、`api/node`、`api/canvas`、`api/children`，
 **一個 mapedit 端點都沒暴露**。
 
-> **兩個可以同時註冊給 agent**：舊的管通用 WZ 節點，
-> 新的管地圖。互不重疊。
+> **重疊狀況**：這句「互不重疊」只對 `wz_map_*` 成立。
+> 2026-10-11 合併後，`maplebench-assets` 多了 22 個 `wz_asset_*` 工具，
+> 覆蓋舊伺服器大部分的通用節點職責。**同時註冊兩個伺服器時，
+> agent 會看到兩組功能相近的工具**；只註冊 `maplebench-assets` 即可涵蓋兩者，
+> 舊的 `maplebench-wz` 可留作備援。
 
 **這個缺口已於 2026-10-11 補上**，方式是新增 `MapleMcp`
 而非修改舊專案——理由見 `JOURNAL/PLAN-MCP-MAPS.md`。

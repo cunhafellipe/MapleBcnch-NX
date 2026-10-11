@@ -25,7 +25,13 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 
 ---
 
-## 10 個工具
+## 41 個工具，三個家族
+
+伺服器名稱 `maplebench-assets`。2026-10-11 合併前只有 10 個 `wz_map_*`；
+之後併入 `wz_archive_*`（.wz 封裝拆成 .img 檔）與 `wz_asset_*`
+（通用 WZ/IMG/NX 節點操作）。
+
+### 地圖 `wz_map_*` — 11 個
 
 | 工具 | 作用 |
 |---|---|
@@ -38,7 +44,27 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 | `wz_map_place` | 放置圖塊／物件／foothold／傳送門 |
 | `wz_map_batch` | 多次編輯 = **單一 undo** |
 | `wz_map_validate` | 檢查地圖規則（斷鏈等） |
+| `wz_map_create` | **在封裝內建立新地圖**（.wz 與 NX 皆可） |
 | `wz_map_save` | 寫回磁碟 |
+
+### 封裝拆分 `wz_archive_*` — 8 個
+
+`capabilities` `scan` `open` `close` `children` `node` `export_img` `split`
+
+把 split client 的 67 GB `.wz` 封裝拆成一個資源一個 `.img`，
+用的是後端自己的序列化器，所以位元組與編輯器存檔一致。
+`_Canvas` 預設不拆（見 `Program.cs` 的說明），磁碟剩餘 < 8 GB 會停。
+
+### 通用資產 `wz_asset_*` — 22 個
+
+`files` `open` `open_source` `close` `save_as` `add` `delete` `rename`
+`transfer` `tree` `search` `node` `children` `set_value` `set_values`
+`undo` `history` `changes` `export_img` `export_canvas`
+`replace_canvas` `sources`
+
+不依賴「目前選中的地圖」，直接操作任意 WZ/IMG/NX 節點。
+`wz_asset_sources` 需要設定 `MAPLEBENCH_SOURCES`；未設定會明確報錯，
+不會假裝成功。
 
 ### 安全設計
 
