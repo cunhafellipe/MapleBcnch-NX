@@ -86,6 +86,44 @@ node dissect.mjs http://127.0.0.1:5302 sample.json 10
 
 ---
 
+## 完整驗收
+
+```bash
+# 1. 起後端並開啟封存
+curl -X POST http://127.0.0.1:5330/api/files/open \
+     -H "Content-Type: application/json" \
+     -d '{"path":"<Map.nx 的絕對路徑>"}'
+
+# 2. 跑
+cd tools/probe
+node acceptance.mjs http://127.0.0.1:5330 acceptance.json
+```
+
+15 項檢查，四段：調色盤誠實性、`/validate` 與 `/batch`、寫入存檔、
+批次歷史塌縮。
+
+> **2026-10-11 實測：15/15 通過。**
+> 調色盤 109/109 有像素、地圖 8 圖層、斷鏈偵測有效、
+> 300 操作→歷史只加一筆、存檔 9.12 秒 verified。
+
+**這支腳本抓過我的 bug**：第一次跑時 batch 那段因為地圖圖層是空的
+而靜默跳過，卻報「11/11 通過」。改成「找不到可編輯節點就算失敗」之後，
+才暴露出斷言寫錯（該比對批次前後的差異，不是絕對值 1）。
+**會靜默跳過的測試比沒有測試更危險。**
+
+---
+
+## MCP 探測
+
+```bash
+node tools/probe/mcp-probe.mjs <path-to>/wz-mcp.exe
+```
+
+真的走 JSON-RPC 握手並列出工具數與工具名。
+報告見 `docs/CLI-AND-MCP.md`。
+
+---
+
 ## 為什麼工具放在這裡而不是各自散落
 
 它們原本在 `追風WZ編輯器/nx-probe/`——一個和舊版專案混在一起的資料夾，
