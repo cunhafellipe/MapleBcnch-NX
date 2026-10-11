@@ -45,6 +45,7 @@
 | [2026-10-11-handover-takeover](2026-10-11-handover-takeover.md) | 接手 `MapleBcnch-NX`：複驗交接內容、冷啟動持久化、foothold 生成器設計 |
 | [2026-10-11-merge](2026-10-11-merge.md) | 合併 GitHub 上的 `wz_asset_*` 與本地的 `wz_archive_*`：唯一的 `Program.cs` 衝突怎麼解、伺服器為何取 `maplebench-assets` |
 | [2026-10-11-simulator](2026-10-11-simulator.md) | 整合 MapleNecrocer 模擬環境：一個**沒做完**的整合。做了 2/14，以及差點把部分成品說成完成的教訓 |
+| [2026-10-11-physics](2026-10-11-physics.md) | 真實角色物理：MapleNecrocer 的實際常數、實測走完一張地圖，以及一個**還沒修的** `FindBelow` 缺陷 |
 
 ## 專案文件
 
