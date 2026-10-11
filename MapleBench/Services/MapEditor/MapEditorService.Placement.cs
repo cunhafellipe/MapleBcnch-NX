@@ -125,9 +125,9 @@ public sealed partial class MapEditorService
         // refusal, not a placement that draws a pink box forever.
         lock (_session.Gate)
         {
-            (WzImage Image, string Path)? set = FindSetImage("Tile", request.Set,
-                new Dictionary<string, (WzImage, string)?>(StringComparer.OrdinalIgnoreCase));
-            if (set?.Image.GetFromPath($"{request.U}/{no.ToString(CultureInfo.InvariantCulture)}") == null)
+            (WzObject Image, string Path)? set = FindSetImage("Tile", request.Set,
+                new Dictionary<string, (WzObject, string)?>(StringComparer.OrdinalIgnoreCase));
+            if (InSet(set?.Image, $"{request.U}/{no.ToString(CultureInfo.InvariantCulture)}") == null)
             {
                 throw new InvalidOperationException(
                     $"Tile/{request.Set}.img/{request.U}/{no} does not resolve in the open session, "
@@ -160,11 +160,11 @@ public sealed partial class MapEditorService
 
         lock (_session.Gate)
         {
-            (WzImage Image, string Path)? set = FindSetImage("Obj", request.Set,
-                new Dictionary<string, (WzImage, string)?>(StringComparer.OrdinalIgnoreCase));
+            (WzObject Image, string Path)? set = FindSetImage("Obj", request.Set,
+                new Dictionary<string, (WzObject, string)?>(StringComparer.OrdinalIgnoreCase));
             string artPath = string.Join('/', new[] { request.L0, request.L1, request.L2, request.L3 }
                 .Where(s => !string.IsNullOrEmpty(s)));
-            if (set?.Image.GetFromPath(artPath) == null)
+            if (InSet(set?.Image, artPath) == null)
             {
                 throw new InvalidOperationException(
                     $"Obj/{request.Set}.img/{artPath} does not resolve in the open session, so "
@@ -218,10 +218,10 @@ public sealed partial class MapEditorService
 
         lock (_session.Gate)
         {
-            (WzImage Image, string Path)? set = FindSetImage("Back", request.Set,
-                new Dictionary<string, (WzImage, string)?>(StringComparer.OrdinalIgnoreCase));
+            (WzObject Image, string Path)? set = FindSetImage("Back", request.Set,
+                new Dictionary<string, (WzObject, string)?>(StringComparer.OrdinalIgnoreCase));
             string branch = ani switch { 1 => "ani", 2 => "spine", _ => "back" };
-            if (set?.Image.GetFromPath($"{branch}/{no.ToString(CultureInfo.InvariantCulture)}") == null)
+            if (InSet(set?.Image, $"{branch}/{no.ToString(CultureInfo.InvariantCulture)}") == null)
             {
                 throw new InvalidOperationException(
                     $"Back/{request.Set}.img/{branch}/{no} does not resolve in the open session, so "
@@ -539,7 +539,7 @@ public sealed partial class MapEditorService
             string what;
             lock (_session.Gate)
             {
-                Dictionary<string, (WzImage, string)?> cache = new(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, (WzObject, string)?> cache = new(StringComparer.OrdinalIgnoreCase);
                 switch (listNode.Name)
                 {
                     case "tile":
@@ -550,8 +550,7 @@ public sealed partial class MapEditorService
                         if (set == null || u == null)
                             throw new InvalidOperationException("The tile has no resolvable set/u.");
                         what = $"Tile/{set}.img/{u}/{no}";
-                        WzImageProperty? art = FindSetImage("Tile", set, cache)?.Image
-                            .GetFromPath($"{u}/{no.ToString(CultureInfo.InvariantCulture)}");
+                        WzImageProperty? art = InSet(FindSetImage("Tile", set, cache)?.Image, $"{u}/{no.ToString(CultureInfo.InvariantCulture)}");
                         artChains = art == null ? null : FindFootholdGeometry(art);
                         break;
                     }
@@ -565,7 +564,7 @@ public sealed partial class MapEditorService
                         if (oS == null || artPath.Length == 0)
                             throw new InvalidOperationException("The object has no resolvable oS/l path.");
                         what = $"Obj/{oS}.img/{artPath}";
-                        WzImageProperty? leaf = FindSetImage("Obj", oS, cache)?.Image.GetFromPath(artPath);
+                        WzImageProperty? leaf = InSet(FindSetImage("Obj", oS, cache)?.Image, artPath);
                         WzImageProperty? frame = leaf != null
                             && leaf.PropertyType is not WzPropertyType.Canvas and not WzPropertyType.UOL
                             ? leaf.WzProperties?.FirstOrDefault(p => p.Name == "0") ?? leaf
@@ -712,7 +711,7 @@ public sealed partial class MapEditorService
             lock (_session.Gate)
             {
                 if (FindSetImage("Tile", request.Ts,
-                        new Dictionary<string, (WzImage, string)?>(StringComparer.OrdinalIgnoreCase)) == null)
+                        new Dictionary<string, (WzObject, string)?>(StringComparer.OrdinalIgnoreCase)) == null)
                 {
                     throw new InvalidOperationException(
                         $"Tile/{request.Ts}.img does not resolve in the open session, so pointing "

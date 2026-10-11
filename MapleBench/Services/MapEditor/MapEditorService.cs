@@ -621,6 +621,143 @@ public sealed partial class MapEditorService
 
     #region Edits
 
+    /// <summary>
+    /// Applies many operations as ONE undoable step.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Why this exists: the undo stack holds 200 entries. A generated floor of
+    /// 300 tiles submitted one call at a time blows past that, and the oldest
+    /// history is silently discarded — the caller then cannot undo what it did,
+    /// and cannot tell that it cannot. Measured: 20 <c>/place</c> calls take
+    /// 0.17s, so the round trips were never the cost; the lost history was.
+    /// </para>
+    /// <para>
+    /// The whole batch collapses into a single history entry by taking the stack
+    /// depth before and after and grouping everything pushed in between. One
+    /// undo then reverts the batch as a unit, which is what "I laid a floor and
+    /// it was wrong" means to a caller.
+    /// </para>
+    /// <para>
+    /// Stop on first failure, and say which operation failed. A half-applied
+    /// batch is worse than a rejected one: the caller would have to work out
+    /// what landed before it could undo, and <see cref="StopOnError"/> plus the
+    /// reported index is what makes the outcome unambiguous.
+    /// </para>
+    /// </remarks>
+    public MapBatchResultDto Batch(MapBatchRequest request)
+    {
+        lock (_gate)
+        {
+            EditorDoc doc = RequireWritable(request.Path);
+            doc.Touched = DateTime.UtcNow;
+
+            MapBatchResultDto result = new()
+            {
+                Path = request.Path,
+                Requested = request.Ops.Count,
+            };
+
+            if (request.Ops.Count == 0)
+            {
+                result.Notes.Add("Nothing to do: the batch was empty.");
+                result.Ok = true;
+                return result;
+            }
+
+            // Snapshot the history so everything this batch pushes can be
+            // regrouped afterwards, whatever the individual ops pushed.
+            int depthBefore = doc.Undo.Count;
+            List<Change> pushed = new();
+
+            for (int i = 0; i < request.Ops.Count; i++)
+            {
+                MapEditOp op = request.Ops[i];
+                try
+                {
+                    MapEditResultDto step = op.Kind switch
+                    {
+                        "setValue" => SetValue(doc, op),
+                        "move" => Move(doc, op),
+                        "moveFoothold" => MoveFoothold(doc, op),
+                        "moveLife" => MoveLife(doc, op),
+                        "delete" => Delete(doc, op),
+                        "setField" => SetField(doc, op),
+                        "moveMany" => MoveMany(doc, op),
+                        "deleteMany" => DeleteMany(doc, op),
+                        "duplicate" => Duplicate(doc, op),
+                        "insertFootholdVertex" => InsertFootholdVertex(doc, op),
+                        "extendFoothold" => ExtendFoothold(doc, op),
+                        "moveLadder" => MoveLadder(doc, op),
+                        "setRect" => SetRect(doc, op),
+                        _ => throw new ArgumentException(UnknownEditKind(op.Kind)),
+                    };
+
+                    result.Applied++;
+                    foreach (int[] addr in step.Placed)
+                        result.Placed.Add(addr);
+                    foreach (string note in step.Notes)
+                        result.Notes.Add($"[{i}] {note}");
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                {
+                    // A rejected op is a sentence about the caller's input, not a
+                    // server fault, so it comes back as data rather than a 500.
+                    result.FailedAt = i;
+                    result.Error = $"Operation {i} ('{op.Kind}') failed: {ex.Message}";
+
+                    if (!request.StopOnError)
+                        continue;
+
+                    // Stop, but keep what already landed as one undoable step so
+                    // the caller can roll the whole attempt back in one call.
+                    result.Partial = result.Applied > 0;
+                    break;
+                }
+            }
+
+            CollapseBatch(doc, depthBefore, request.Label);
+            result.Ok = result.FailedAt < 0;
+            result.UndoDepth = doc.Undo.Count;
+            result.RedoDepth = doc.Redo.Count;
+            result.Dirty = doc.Dirty;
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Folds every history entry a batch pushed back into one, so the batch is a
+    /// single undo step and cannot exhaust the stack on its own.
+    /// </summary>
+    private static void CollapseBatch(EditorDoc doc, int depthBefore, string? label)
+    {
+        int pushed = doc.Undo.Count - depthBefore;
+        if (pushed <= 0)
+            return;
+
+        // The stack holds the newest at the top, so the batch's entries are the
+        // last `pushed` of ToArray() — and they must be replayed oldest-first.
+        Change[] entries = doc.Undo.ToArray();
+        Change[] batch = entries[^pushed..];
+
+        Change[] kept = entries[..^pushed];
+        Change grouped = Change.Group(
+            string.IsNullOrWhiteSpace(label) ? $"batch of {pushed} edits" : label,
+            batch);
+
+        doc.Undo.Clear();
+        for (int i = kept.Length - 1; i >= 0; i--)
+            doc.Undo.Push(kept[i]);
+        doc.Undo.Push(grouped);
+    }
+
+    /// <summary>The op kinds <c>/edit</c> offers, named in one place so the
+    /// refusal text and the switch cannot drift apart.</summary>
+    private static string UnknownEditKind(string kind) =>
+        $"'{kind}' is not an edit this endpoint knows. It offers setValue, setField, " +
+        "move, moveFoothold, moveLife, delete, moveMany, deleteMany, duplicate, " +
+        "insertFootholdVertex, extendFoothold, moveLadder and setRect.";
+
     public MapEditResultDto Edit(MapEditRequest request)
     {
         lock (_gate)
@@ -644,10 +781,7 @@ public sealed partial class MapEditorService
                 "extendFoothold" => ExtendFoothold(doc, op),
                 "moveLadder" => MoveLadder(doc, op),
                 "setRect" => SetRect(doc, op),
-                _ => throw new ArgumentException(
-                    $"'{op.Kind}' is not an edit this endpoint knows. It offers setValue, setField, " +
-                    "move, moveFoothold, moveLife, delete, moveMany, deleteMany, duplicate, " +
-                    "insertFootholdVertex, extendFoothold, moveLadder and setRect."),
+                _ => throw new ArgumentException(UnknownEditKind(op.Kind)),
             };
 
             result.UndoDepth = doc.Undo.Count;
@@ -1300,6 +1434,50 @@ public sealed partial class MapEditorService
                     }
                 }
             }
+
+            // An NX session entry cannot keep pointing at the file it just
+            // replaced: every canvas holds a reference to the NxArchive mapping
+            // it was decoded from plus a bitmap-table index into it, and the
+            // writer copies untouched canvases out of that mapping by index.
+            // Left alone, the second save of this session asked a 34,386-entry
+            // table for index 34415 and the process died.
+            //
+            // Done HERE, after the verification above, not in the save service:
+            // that verification re-resolves the path and compares the tree, and
+            // replacing the session tree first would make it compare against the
+            // file just written rather than against what was written.
+            //
+            // It also sits OUTSIDE the session gate block above. ReopenNx builds
+            // the new tree off-gate by design, but everything after it -- the
+            // reload of the document onto the new tree -- must not run while
+            // every other session request is held up behind a 679 MB conversion.
+            if (IsNx(file) && result.Verified)
+            {
+                result.ReopenMs = _session.ReopenNx(file, file.FilePath);
+
+                // The document was built over the old tree. Reload it from the
+                // reopened archive, or the next edit lands on nodes the session
+                // no longer holds.
+                WzObject reopenedRoot = _session.Resolve(path);
+                if (reopenedRoot is IPropertyContainer)
+                {
+                    WzImage reloadImage = reopenedRoot as WzImage ?? NxMapImage(reopenedRoot);
+                    MapLoadResult afterReopen = MapDocument.Load(reloadImage);
+                    if (afterReopen.Ok)
+                    {
+                        _docs[path] = new EditorDoc(path, afterReopen.Document!, doc.Iv, _session.Generation);
+                    }
+                    else
+                    {
+                        _docs.Remove(path);
+                        result.Differences.Add(
+                            $"The saved map would not reload after reopening the archive: {afterReopen.Reason} "
+                            + "The document was closed.");
+                        result.Verified = false;
+                    }
+                }
+            }
+
             return result;
         }
     }
@@ -1891,7 +2069,7 @@ public sealed partial class MapEditorService
     {
         lock (_session.Gate)
         {
-            Dictionary<string, (WzImage Image, string Path)?> imageCache = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, (WzObject Image, string Path)?> imageCache = new(StringComparer.OrdinalIgnoreCase);
 
             foreach ((string key, ArtRef reference) in art)
             {
@@ -1916,21 +2094,21 @@ public sealed partial class MapEditorService
         }
     }
 
-    private MapArtDto ResolveTile(ArtRef reference, Dictionary<string, (WzImage, string)?> cache)
+    private MapArtDto ResolveTile(ArtRef reference, Dictionary<string, (WzObject, string)?> cache)
     {
-        (WzImage image, string path)? set = FindSetImage("Tile", reference.Set, cache);
+        (WzObject image, string path)? set = FindSetImage("Tile", reference.Set, cache);
         if (set == null)
             return new MapArtDto { Missing = true };
 
-        WzImageProperty? node = set.Value.image.GetFromPath(
+        WzImageProperty? node = InSet(set.Value.image, 
             $"{reference.U}/{reference.No.ToString(CultureInfo.InvariantCulture)}");
         return Meta(node, WzPath.Child(WzPath.Child(set.Value.path, reference.U ?? ""),
             reference.No.ToString(CultureInfo.InvariantCulture)));
     }
 
-    private MapArtDto ResolveObj(ArtRef reference, Dictionary<string, (WzImage, string)?> cache)
+    private MapArtDto ResolveObj(ArtRef reference, Dictionary<string, (WzObject, string)?> cache)
     {
-        (WzImage image, string path)? set = FindSetImage("Obj", reference.Set, cache);
+        (WzObject image, string path)? set = FindSetImage("Obj", reference.Set, cache);
         if (set == null)
             return new MapArtDto { Missing = true };
 
@@ -1938,7 +2116,7 @@ public sealed partial class MapEditorService
         if (!string.IsNullOrEmpty(reference.L3))
             segments.Add(reference.L3);
 
-        WzImageProperty? node = set.Value.image.GetFromPath(string.Join('/', segments));
+        WzImageProperty? node = InSet(set.Value.image, string.Join('/', segments));
         string nodePath = segments.Aggregate(set.Value.path, (parent, name) => WzPath.Child(parent, name));
 
         // The leaf is usually a frame list. Two or more numbered frames make an
@@ -1961,9 +2139,9 @@ public sealed partial class MapEditorService
         return Meta(node, nodePath);
     }
 
-    private MapArtDto ResolveBack(ArtRef reference, Dictionary<string, (WzImage, string)?> cache)
+    private MapArtDto ResolveBack(ArtRef reference, Dictionary<string, (WzObject, string)?> cache)
     {
-        (WzImage image, string path)? set = FindSetImage("Back", reference.Set, cache);
+        (WzObject image, string path)? set = FindSetImage("Back", reference.Set, cache);
         if (set == null)
             return new MapArtDto { Missing = true };
 
@@ -1975,16 +2153,16 @@ public sealed partial class MapEditorService
         // nowhere else still shows something rather than a missing box.
         string branch = reference.Ani != 0 ? "ani" : "back";
         string no = reference.No.ToString(CultureInfo.InvariantCulture);
-        WzImageProperty? node = set.Value.image.GetFromPath($"{branch}/{no}");
+        WzImageProperty? node = InSet(set.Value.image, $"{branch}/{no}");
         string nodePath = WzPath.Child(WzPath.Child(set.Value.path, branch), no);
         if (node == null && reference.Ani != 0)
         {
-            node = set.Value.image.GetFromPath($"back/{no}");
+            node = InSet(set.Value.image, $"back/{no}");
             nodePath = WzPath.Child(WzPath.Child(set.Value.path, "back"), no);
         }
         if (node == null && reference.Ani == 2)
         {
-            node = set.Value.image.GetFromPath($"spine/{no}");
+            node = InSet(set.Value.image, $"spine/{no}");
             nodePath = WzPath.Child(WzPath.Child(set.Value.path, "spine"), no);
         }
 
@@ -2014,12 +2192,12 @@ public sealed partial class MapEditorService
     /// drawable top-level state instead of disappearing behind a name label.
     /// </summary>
     private MapArtDto ResolveLife(
-        ArtRef reference, Dictionary<string, (WzImage, string)?> cache)
+        ArtRef reference, Dictionary<string, (WzObject, string)?> cache)
     {
         string family = string.Equals(reference.U, "n", StringComparison.OrdinalIgnoreCase)
             ? "Npc"
             : "Mob";
-        (WzImage image, string path)? source = FindLifeImage(family, reference.Set, cache);
+        (WzObject image, string path)? source = FindLifeImage(family, reference.Set, cache);
         if (source == null)
             return new MapArtDto { Missing = true };
 
@@ -2029,14 +2207,18 @@ public sealed partial class MapEditorService
 
         foreach (string state in preferred)
         {
-            WzImageProperty? node = source.Value.image.GetFromPath(state);
+            WzImageProperty? node = InSet(source.Value.image, state);
             MapArtDto? art = LifeStateMeta(node, WzPath.Child(source.Value.path, state));
             if (art != null)
                 return art;
         }
 
-        foreach (WzImageProperty node in source.Value.image.WzProperties)
+        // Through ChildrenOf rather than WzProperties: an NX life container is a
+        // property, and asking it for WzProperties is the same empty answer.
+        foreach (WzObject child in ChildrenOf(source.Value.image))
         {
+            if (child is not WzImageProperty node)
+                continue;
             if (string.Equals(node.Name, "info", StringComparison.OrdinalIgnoreCase))
                 continue;
             MapArtDto? art = LifeStateMeta(
@@ -2073,12 +2255,12 @@ public sealed partial class MapEditorService
         return still.Missing ? null : still;
     }
 
-    private (WzImage Image, string Path)? FindLifeImage(
+    private (WzObject Image, string Path)? FindLifeImage(
         string family, string id,
-        Dictionary<string, (WzImage, string)?> cache)
+        Dictionary<string, (WzObject, string)?> cache)
     {
         string cacheKey = "life|" + family + "|" + id;
-        if (cache.TryGetValue(cacheKey, out (WzImage, string)? cached))
+        if (cache.TryGetValue(cacheKey, out (WzObject, string)? cached))
             return cached;
 
         List<string> names = new() { id + ".img" };
@@ -2223,31 +2405,62 @@ public sealed partial class MapEditorService
     /// the client applies. The set name is matched loosely because the client's
     /// own resolution is case-insensitive.
     /// </summary>
-    private (WzImage Image, string Path)? FindSetImage(
-        string kind, string set, Dictionary<string, (WzImage, string)?> cache)
+    /// <remarks>
+    /// The container is a <see cref="WzImage"/> under .wz and a
+    /// <see cref="WzImageProperty"/> under NX, so the tuple carries the
+    /// common base. Callers that walk into it cast; the ones that only check for
+    /// presence do not care which it is.
+    /// </remarks>
+    private (WzObject Image, string Path)? FindSetImage(
+        string kind, string set, Dictionary<string, (WzObject, string)?> cache)
     {
         string cacheKey = kind + "|" + set;
-        if (cache.TryGetValue(cacheKey, out (WzImage, string)? cached))
+        if (cache.TryGetValue(cacheKey, out (WzObject, string)? cached))
             return cached;
 
-        (WzImage, string)? found = null;
+        (WzObject, string)? found = null;
         foreach (OpenFile file in Ordered(_session.SelectRoleSources("Map")))
         {
             WzDirectory? root = _session.RoleRoot(file, "Map");
             if (root == null)
                 continue;
-            foreach (WzDirectory library in root.WzDirectories)
+            // EnumerateChildren rather than WzDirectories: an NX archive holds
+            // Tile/Obj/Back as IMAGES whose set names are properties inside them,
+            // so a directory walk found no library at all and every placement on
+            // NX fell through to "the set could not be resolved".
+            foreach (WzObject library in ChildrenOf(root))
             {
                 if (!string.Equals(library.Name, kind, StringComparison.OrdinalIgnoreCase))
                     continue;
-                WzImage? image = library.GetImageByName(set + ".img");
-                if (image != null)
+                // WzObject, not WzImageProperty: under NX the archive's Tile node
+                // is an IMAGE whose sets are properties inside it, and a guard
+                // that only accepted the property shape skipped the very node the
+                // library lives in -- which is why placement refused a tile the
+                // palette had just listed with a picture.
+                if (library is not WzImage and not WzImageProperty)
+                    continue;
+
+                string libraryPath = WzPath.Child(_session.RoleRootPath(file, "Map"), library.Name);
+
+                // Under .wz a set is an image; under NX it is a property. Either
+                // way the name is the one the caller passed in.
+                foreach (WzObject candidate in ChildrenOf(library))
                 {
-                    WzSessionService.EnsureParsed(image);
-                    found = (image, WzPath.Child(
-                        WzPath.Child(_session.RoleRootPath(file, "Map"), library.Name), image.Name));
+                    if (!string.Equals(candidate.Name, set + ".img", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (candidate is WzImage image)
+                    {
+                        WzSessionService.EnsureParsed(image);
+                        found = (image, WzPath.Child(libraryPath, image.Name));
+                    }
+                    else if (candidate is WzImageProperty property)
+                    {
+                        found = (property, WzPath.Child(libraryPath, property.Name));
+                    }
                     break;
                 }
+                if (found != null)
+                    break;
             }
             if (found != null)
                 break;
@@ -2255,6 +2468,23 @@ public sealed partial class MapEditorService
         cache[cacheKey] = found;
         return found;
     }
+
+    /// <summary>
+    /// Walks into a set container, whichever of the two shapes it is.
+    ///
+    /// <para>Under .wz a set is a <see cref="WzImage"/>; under NX it is a
+    /// <see cref="WzImageProperty"/> inside the archive's <c>Tile</c> image.
+    /// Both carry <c>GetFromPath</c>, so callers would otherwise need a cast at
+    /// every one of them — and every cast is a place the NX shape can be
+    /// forgotten again.</para>
+    /// </summary>
+    private static WzImageProperty? InSet(WzObject? container, string path)
+        => container switch
+        {
+            WzImage image => image.GetFromPath(path),
+            WzImageProperty property => property.GetFromPath(path),
+            _ => null,
+        };
 
     /// <summary>
     /// Size, origin and z for a drawable node. A linking canvas (its pixels are
@@ -2304,7 +2534,54 @@ public sealed partial class MapEditorService
             Oy = origin?.Y?.Value ?? 0,
             Z = z,
             Missing = false,
+            // A node can BE a canvas and still carry no pixels: the NX sets hold
+            // logic sub-nodes (foothold, portal, life) whose canvas is 1x1 or
+            // empty. Meta reports those as present, which is correct for "this
+            // node exists" -- but the palette must not show them as usable art,
+            // or an agent places them and writes a reference to nothing.
+            HasPixels = w > 1 || h > 1,
         };
+    }
+
+    /// <summary>
+    /// True when <paramref name="node"/> is a canvas a client can actually draw:
+    /// it resolves to pixel data of a real size.
+    /// </summary>
+    /// <remarks>
+    /// Kept separate from <see cref="Meta"/>'s <c>Missing</c> on purpose. Missing
+    /// answers "is this node there"; this answers "can I see it". Measured on
+    /// Map.nx: <c>Tile/ancientForest.img</c> holds nine sub-nodes — two foothold,
+    /// one life, four portal, one back — all with w=0, h=0. It listed in the
+    /// palette with a thumbnail, and placing it returned
+    /// "does not resolve in the open session".
+    /// </remarks>
+    private static bool HasDrawablePixels(WzImageProperty? node)
+    {
+        WzCanvasProperty? canvas = node as WzCanvasProperty;
+        if (canvas == null && node is WzUOLProperty uol && uol.LinkValue is WzCanvasProperty linked)
+            canvas = linked;
+        if (canvas == null)
+            return false;
+
+        int w = canvas.PngProperty?.Width ?? 0;
+        int h = canvas.PngProperty?.Height ?? 0;
+        if (w > 1 || h > 1)
+            return true;
+
+        // A 1x1 canvas is the linking placeholder; the pixels live in the target.
+        try
+        {
+            if (canvas.GetLinkedWzImageProperty() is WzCanvasProperty target
+                && !ReferenceEquals(target, canvas))
+                return (target.PngProperty?.Width ?? 0) > 1
+                    || (target.PngProperty?.Height ?? 0) > 1;
+        }
+        catch
+        {
+            // A dangling link has no pixels to offer.
+        }
+
+        return false;
     }
 
     #endregion

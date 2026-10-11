@@ -420,7 +420,76 @@ public sealed class WzSessionService : IDisposable
         _log.LogInformation(
             "Opened {Name} (nx) as {Id}: {Images} images, {Nodes:N0} nodes, {Canvases:N0} canvases",
             file.Name, file.Id, conversion.Images, conversion.Nodes, conversion.Canvases);
+
+
         return file;
+    }
+
+    /// <summary>
+    /// Rebuilds an NX session entry from the file just written, so the tree and
+    /// the mapping it points into are the same bytes.
+    ///
+    /// <para>An NX canvas holds a direct reference to its <see cref="NxArchive"/>
+    /// and a bitmap-table index into it. The writer copies an untouched canvas
+    /// straight out of that mapping by index, so once a save has replaced the
+    /// file, every canvas the session still holds names an index in the OLD
+    /// table while <see cref="OpenFile.WzFile"/> describes the new one. The next
+    /// save asked for index 34415 of a 34,386-entry table and died. Nothing in the
+    /// NX save path reopened the archive; the .wz path does, at Reopen().</para>
+    ///
+    /// <para>Discarding the old conversion first matters as much as building the
+    /// new one: the previous file’s mapping IS the memory.</para>
+    /// </summary>
+    public long ReopenNx(OpenFile file, string path)
+    {
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        ArgumentNullException.ThrowIfNull(file);
+        if (!string.Equals(file.Kind, "nx", StringComparison.Ordinal))
+            throw new InvalidOperationException($"'{file.Name}' is not an NX archive.");
+
+        // Off the gate, for the same reason OpenNx does it and stated in the same
+        // terms: building the tree is minutes of work that no other request can
+        // observe, because nothing has a reference to it yet. Holding the gate
+        // across it blocks every session request -- and in the map editor's save
+        // path the caller already holds it, which is a deadlock rather than a
+        // pause. Only the swap below is guarded.
+        NxConversionResult conversion = ConvertNx(path);
+
+        // Everything the session handed out belonged to the archive just thrown
+        // away. Dropping it releases the mapping and everything built over it.
+        // The PREVIOUS conversion is deliberately NOT disposed here.
+        //
+        // Disposing it looks correct and is not: WzSaveService holds a lock on
+        // the session while it writes, and every canvas in the tree being
+        // written reads its payload through that mapping. Releasing the file
+        // under it took the process down before the bytes were even built.
+        //
+        // The mapping is a native handle on a file the session already had open,
+        // and the old tree becomes garbage the moment nothing references it. The
+        // cost is one archive's memory until the GC gets to it -- which is what
+        // MemoryPressureService and the weak tables in NxNodeOrigin are for.
+        // A leak that is visible beats a use-after-free that is not.
+        // The swap IS guarded: from here the new tree is reachable by other
+        // requests, which is precisely what the gate exists to make atomic.
+        lock (Gate)
+        {
+            file.WzFile = conversion.File;
+            file.NxSource = conversion.Archive;
+            file.NxConversion = conversion;
+            file.FilePath = path;
+
+            // file.Name is deliberately NOT taken from the new tree. The
+            // synthetic WzFile an NX conversion produces is a container the
+            // archive's images hang inside and has no name of its own, so
+            // copying it blanked the entry -- and every role lookup keys off it:
+            // RoleRoot(file, "Map") returned null, the palette emptied and
+            // placement refused every tile. Only the tree and the mapping change
+            // on a reopen; the entry keeps the name the user opened.
+
+            InvalidateResolution();
+        }
+
+        return (long)(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 
     /// <summary>
@@ -1696,6 +1765,24 @@ public sealed class WzSessionService : IDisposable
     /// "go to target" affordance needs.  What is gone is the pretence that the
     /// target's children live at the link's address.
     /// </summary>
+    /// <summary>
+    /// The named children of a container, whichever of the two shapes it is.
+    ///
+    /// <para>A .wz set is a <see cref="WzImage"/>; the same set in an NX archive
+    /// is a <see cref="WzImageProperty"/> inside the archive's <c>Tile</c> image.
+    /// Code that asked for <c>WzProperties</c> directly worked on the first and
+    /// silently returned nothing on the second, which is how an NX client ended up
+    /// with a palette that listed nothing.</para>
+    /// </summary>
+    public static WzPropertyCollection? PropertiesOf(WzObject? container)
+        => container switch
+        {
+            WzImage image => image.WzProperties,
+            WzImageProperty property => property.WzProperties,
+            IPropertyContainer holder => holder.WzProperties,
+            _ => null,
+        };
+
     public IEnumerable<WzObject> EnumerateChildren(WzObject node)
     {
         switch (node)

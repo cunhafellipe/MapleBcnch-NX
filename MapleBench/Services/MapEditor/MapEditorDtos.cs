@@ -302,6 +302,106 @@ public sealed class MapReactorDto
     public string? ReactorName { get; set; }
 }
 
+/// <summary>
+/// Many <see cref="MapEditOp"/>s applied as one undoable step.
+/// </summary>
+/// <remarks>
+/// The undo stack holds 200 entries, so a generated floor submitted one call at
+/// a time discards its own history without saying so. This collapses a batch
+/// into a single entry.
+/// </remarks>
+public sealed class MapBatchRequest
+{
+    public string Path { get; set; } = "";
+    public List<MapEditOp> Ops { get; set; } = new();
+
+    /// <summary>History label. Defaults to "batch of N edits".</summary>
+    public string? Label { get; set; }
+
+    /// <summary>
+    /// Stop at the first failure (default). What already landed stays, as one
+    /// undoable step, so the caller can roll the whole attempt back in one call.
+    /// </summary>
+    public bool StopOnError { get; set; } = true;
+}
+
+/// <summary>What a batch did, and what it could not do.</summary>
+public sealed class MapBatchResultDto
+{
+    public string Path { get; set; } = "";
+
+    /// <summary>True when every requested operation succeeded.</summary>
+    public bool Ok { get; set; }
+
+    public int Requested { get; set; }
+    public int Applied { get; set; }
+
+    /// <summary>Index of the operation that failed, or -1.</summary>
+    public int FailedAt { get; set; } = -1;
+
+    /// <summary>The failure, naming the operation and why.</summary>
+    public string? Error { get; set; }
+
+    /// <summary>Some operations landed before the failure.</summary>
+    public bool Partial { get; set; }
+
+    /// <summary>Addresses of everything the batch created.</summary>
+    public List<int[]> Placed { get; set; } = new();
+
+    public List<string> Notes { get; set; } = new();
+
+    public int UndoDepth { get; set; }
+    public int RedoDepth { get; set; }
+    public bool Dirty { get; set; }
+}
+
+/// <summary>
+/// What <c>/validate</c> found in one map. The census plus every rule broken.
+/// </summary>
+/// <remarks>
+/// Shaped for a generator that has just written a map and needs to know whether
+/// it is shippable. <see cref="Errors"/> are defects that break the map at
+/// runtime — a severed foothold chain, a spawn with nothing to stand on.
+/// <see cref="Warnings"/> are things worth saying that do not break it, such as
+/// a link stub whose geometry lives elsewhere.
+/// </remarks>
+public sealed class MapValidateDto
+{
+    public string Path { get; set; } = "";
+
+    /// <summary>True when <see cref="Errors"/> is empty.</summary>
+    public bool Ok { get; set; }
+
+    public List<string> Errors { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+
+    /// <summary>The map is a stub; the geometry is in <see cref="Link"/>.</summary>
+    public bool IsLinkStub { get; set; }
+    public string? Link { get; set; }
+
+    // ---- census ----
+    public int Footholds { get; set; }
+    public int BrokenChains { get; set; }
+    public int Tiles { get; set; }
+    public int Objects { get; set; }
+    public int Life { get; set; }
+    /// <summary>Spawns whose <c>fh</c> is absent or 0.</summary>
+    public int LifeWithoutFoothold { get; set; }
+    /// <summary>Spawns pointing at a foothold that does not exist.</summary>
+    public int LifeMissingTarget { get; set; }
+    /// <summary>Tiles or objects that cannot resolve to art.</summary>
+    public int UnresolvableRefs { get; set; }
+    public int Portals { get; set; }
+    public int Ladders { get; set; }
+    public int Reactors { get; set; }
+    public int Backgrounds { get; set; }
+
+    /// <summary>The tile sets in use, for a caller choosing a style.</summary>
+    public List<string> TileSets { get; set; } = new();
+
+    public MapBoundsDto? Bounds { get; set; }
+}
+
 /// <summary>One rectangle-shaped zone entry (area, ToolTip, BuffZone, swimArea, ...).</summary>
 public sealed class MapRectDto
 {
@@ -331,7 +431,19 @@ public sealed class MapArtDto
     public int Oy { get; set; }
     /// <summary>The art's own z, used for in-layer ordering of tiles.</summary>
     public int Z { get; set; }
+    /// <summary>The node could not be resolved at all.</summary>
     public bool Missing { get; set; }
+
+    /// <summary>
+    /// The node resolved AND carries pixels a client can draw.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Missing"/>, which answers "is this node there".
+    /// Under NX a logic sub-node (foothold, portal, life) is itself a canvas
+    /// with no pixels in it: present, but undrawable. Measured on Map.nx —
+    /// <c>Tile/ancientForest.img</c> holds nine such entries, all w=0/h=0.
+    /// </remarks>
+    public bool HasPixels { get; set; }
 
     /// <summary>The animation frames, when the art is a numbered-frame list
     /// (2+ frames). Null for still art. Frames are pre-placed at the shared
@@ -502,6 +614,15 @@ public sealed class MapSaveResultDto
     public long ArchiveBytes { get; set; }
     public double Seconds { get; set; }
 
+    /// <summary>Milliseconds spent reopening the saved archive in the session.</summary>
+    /// <remarks>
+    /// Only NX pays this, and only after a successful save: an NX session entry
+    /// has to be rebuilt from the file just written, because every canvas holds an
+    /// index into the mapping it was decoded from. On a large archive that is
+    /// minutes, which is why it is reported separately from the write itself.
+    /// </remarks>
+    public long ReopenMs { get; set; }
+
     /// <summary>The write was read back from the saved archive and its bytes
     /// are exactly the model's bytes — the same claim MapRoundTrip makes.</summary>
     public bool Verified { get; set; }
@@ -604,6 +725,18 @@ public sealed class MapPaletteSetDto
     /// <summary>Session path of a representative drawable (the set's first
     /// entry), for /api/mapedit/thumb. Null when nothing in the set decodes.</summary>
     public string? ThumbPath { get; set; }
+
+    /// <summary>
+    /// How many entries in this set carry pixels a client can actually draw.
+    /// </summary>
+    /// <remarks>
+    /// Zero is the honest signal that a set parses but holds nothing visual.
+    /// Without it the palette listed <c>ancientForest</c> — nine resolvable
+    /// sub-nodes, no pixels between them — with a working thumbnail, and
+    /// placing it failed at write time with nothing to show for the advice.
+    /// A caller generating maps should check this before offering the set.
+    /// </remarks>
+    public int DrawableEntries { get; set; }
 }
 
 public sealed class MapPaletteEntriesDto

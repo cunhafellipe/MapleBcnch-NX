@@ -141,7 +141,10 @@ public sealed class MapAssetService
 
             foreach (Library library in FindLibraries(kind))
             {
-                foreach (WzImage image in library.Directory.WzImages)
+                // Through EnumerateChildren, not WzImages: under NX the library is
+                // an image and its sets are properties, and asking a WzImageProperty
+                // for its images is the same empty answer one level down.
+                foreach (WzObject image in _session.EnumerateChildren(library.Directory))
                 {
                     string name = TrimImg(image.Name);
                     string path = WzPath.Child(library.Path, image.Name);
@@ -196,13 +199,13 @@ public sealed class MapAssetService
 
         lock (_session.Gate)
         {
-            if (_session.Resolve(setPath) is not WzImage image)
+            WzObject? resolved = _session.Resolve(setPath);
+            if (resolved is null)
                 throw new InvalidOperationException($"'{setPath}' is not an asset set.");
+            if (resolved is WzImage parsed) WzSessionService.EnsureParsed(parsed);
+            result.Name = TrimImg(resolved.Name);
 
-            WzSessionService.EnsureParsed(image);
-            result.Name = TrimImg(image.Name);
-
-            foreach (WzImageProperty group in image.WzProperties)
+            foreach (WzImageProperty group in WzSessionService.PropertiesOf(resolved))
             {
                 // "info" is metadata, not art.
                 if (string.Equals(group.Name, "info", StringComparison.OrdinalIgnoreCase))
@@ -261,16 +264,31 @@ public sealed class MapAssetService
     #region Plumbing
 
     /// <summary>One archive's contribution to a library.</summary>
-    private sealed record Library(OpenFile File, WzDirectory Directory, string Path);
+    /// <param name="Directory">
+    /// The <c>Tile</c>/<c>Obj</c>/<c>Back</c> node itself. A
+    /// <see cref="WzDirectory"/> under .wz, a <see cref="WzImageProperty"/>
+    /// under NX — NX models the same tree one level shallower, and a lookup that
+    /// only walked <c>WzDirectories</c> found nothing at all in an NX client.
+    /// </param>
+    private sealed record Library(OpenFile File, WzObject Directory, string Path);
 
     /// <summary>
-    /// <b>Every</b> Tile/, Obj/ or Back/ directory the session holds, in mount
-    /// order — not the first one found.
+    /// <b>Every</b> Tile, Obj or Back library the session holds, in mount order —
+    /// not the first one found.
     ///
     /// Checked at the root of every open archive rather than assuming Map.wz,
     /// because clients disagree about which sibling carries the library and a
     /// v232 client disagrees with itself: Obj is in Map.wz and Map2.wz, Back is
     /// in Map001.wz and Map2.wz.
+    ///
+    /// <b>The container's type is not fixed.</b> In .wz these are directories
+    /// (<c>Tile/</c> holding <c>NightMarketTW.img</c> and 108 others). In NX the
+    /// archive root holds <c>Tile</c> as an <em>image</em>, and the set names are
+    /// properties inside it. Walking only <c>WzDirectories</c> therefore returned
+    /// an empty palette for an NX client — no sets, no entries, nothing to drag —
+    /// while the art itself decoded perfectly. <see cref="WzSessionService.EnumerateChildren"/>
+    /// is the kind-agnostic accessor, and the map editor already depends on it for
+    /// exactly this reason.
     ///
     /// Returning after the first match — what this did — is not a partial answer,
     /// it is a wrong one that cannot be told apart from a right one, because the
@@ -286,14 +304,15 @@ public sealed class MapAssetService
             if (root == null)
                 continue;
 
+            string rootPath = _session.RoleRootPath(file, "Map");
+
             // Every match, not the first: an archive is free to hold the
             // directory more than once, and a listing that silently dropped the
             // second would be the same defect one level down.
-            foreach (WzDirectory match in root.WzDirectories)
+            foreach (WzObject match in _session.EnumerateChildren(root))
             {
                 if (string.Equals(match.Name, kind, StringComparison.OrdinalIgnoreCase))
-                    found.Add(new Library(file, match,
-                        WzPath.Child(_session.RoleRootPath(file, "Map"), match.Name)));
+                    found.Add(new Library(file, match, WzPath.Child(rootPath, match.Name)));
             }
         }
         return found;

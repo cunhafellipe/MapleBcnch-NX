@@ -1,0 +1,1715 @@
+{
+ "analysed": 10,
+ "failures": [],
+ "maps": [
+  {
+   "id": 0,
+   "name": "彩虹岛 : 蘑菇村西入口",
+   "path": "f1/Map/Map0/000000000.img",
+   "bgm": "Bgm00/GoPicnic",
+   "mapMark": "None",
+   "bounds": {
+    "left": -400,
+    "top": -300,
+    "right": 400,
+    "bottom": 300
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 1,
+    "footholds": 13,
+    "ladders": 0,
+    "portals": 1,
+    "life": 0,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 40,
+    "objs": 0
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": "brownBrick",
+     "tiles": 20,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [
+      [
+       "bsc",
+       20
+      ]
+     ],
+     "objPrefix": [],
+     "tileYs": [
+      [
+       "below0",
+       20
+      ]
+     ]
+    },
+    {
+     "index": 1,
+     "ts": "allblackTile",
+     "tiles": 20,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [
+      [
+       "enH1",
+       8
+      ],
+      [
+       "enH0",
+       8
+      ],
+      [
+       "edU",
+       2
+      ],
+      [
+       "edD",
+       2
+      ]
+     ],
+     "objPrefix": [],
+     "tileYs": [
+      [
+       "below0",
+       20
+      ]
+     ]
+    },
+    {
+     "index": 2,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 3,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 13,
+    "orientations": [
+     [
+      "wall",
+      11
+     ],
+     [
+      "flat",
+      2
+     ]
+    ],
+    "hasNext": 12,
+    "yRange": [
+     95,
+     120
+    ]
+   },
+   "objFull": [],
+   "objL1": [],
+   "objL0": [],
+   "life": [],
+   "portalNames": [
+    [
+     "sp",
+     1
+    ]
+   ],
+   "reactorIds": [],
+   "tileSetsUsed": [
+    "brownBrick",
+    "allblackTile"
+   ]
+  },
+  {
+   "id": 101030403,
+   "name": "金银岛 : 东部岩山Ⅳ",
+   "path": "f1/Map/Map1/101030403.img",
+   "bgm": "Bgm00/Nightmare",
+   "mapMark": "Perion",
+   "bounds": {
+    "left": -213,
+    "top": 351,
+    "right": 2013,
+    "bottom": 2680
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 16,
+    "footholds": 145,
+    "ladders": 7,
+    "portals": 14,
+    "life": 40,
+    "reactors": 0,
+    "rects": 4,
+    "tiles": 220,
+    "objs": 87
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": null,
+     "tiles": 0,
+     "objs": 19,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc1",
+       19
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 1,
+     "ts": null,
+     "tiles": 0,
+     "objs": 38,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc1",
+       35
+      ],
+      [
+       "guide",
+       3
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 2,
+     "ts": "dryRock",
+     "tiles": 18,
+     "objs": 22,
+     "backs": 0,
+     "tileU": [
+      [
+       "enH1",
+       5
+      ],
+      [
+       "enH0",
+       5
+      ],
+      [
+       "edU",
+       4
+      ],
+      [
+       "edD",
+       4
+      ]
+     ],
+     "objPrefix": [
+      [
+       "connect",
+       18
+      ],
+      [
+       "acc1",
+       4
+      ]
+     ],
+     "tileYs": [
+      [
+       "below0",
+       18
+      ]
+     ]
+    },
+    {
+     "index": 3,
+     "ts": "dryRock",
+     "tiles": 202,
+     "objs": 8,
+     "backs": 0,
+     "tileU": [
+      [
+       "bsc",
+       141
+      ],
+      [
+       "enH1",
+       22
+      ],
+      [
+       "enH0",
+       21
+      ],
+      [
+       "enV0",
+       7
+      ],
+      [
+       "enV1",
+       6
+      ],
+      [
+       "edD",
+       2
+      ],
+      [
+       "edU",
+       2
+      ],
+      [
+       "slRU",
+       1
+      ]
+     ],
+     "objPrefix": [
+      [
+       "connect",
+       8
+      ]
+     ],
+     "tileYs": [
+      [
+       "below0",
+       202
+      ]
+     ]
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 145,
+    "orientations": [
+     [
+      "slope",
+      81
+     ],
+     [
+      "wall",
+      45
+     ],
+     [
+      "flat",
+      19
+     ]
+    ],
+    "hasNext": 121,
+    "yRange": [
+     694,
+     2580
+    ]
+   },
+   "objFull": [
+    [
+     "acc1",
+     58
+    ],
+    [
+     "connect",
+     26
+    ],
+    [
+     "guide",
+     3
+    ]
+   ],
+   "objL1": [
+    [
+     "artificiality",
+     29
+    ],
+    [
+     "0",
+     26
+    ],
+    [
+     "nature",
+     19
+    ],
+    [
+     "rock",
+     10
+    ],
+    [
+     "bone",
+     3
+    ]
+   ],
+   "objL0": [
+    [
+     "dryRock",
+     61
+    ],
+    [
+     "rope",
+     26
+    ]
+   ],
+   "life": [
+    [
+     "1130100",
+     20
+    ],
+    [
+     "2130100",
+     20
+    ]
+   ],
+   "portalNames": [
+    [
+     "sp",
+     12
+    ],
+    [
+     "in00",
+     1
+    ],
+    [
+     "out00",
+     1
+    ]
+   ],
+   "reactorIds": [],
+   "tileSetsUsed": [
+    "dryRock"
+   ]
+  },
+  {
+   "id": 105040348,
+   "name": "隐藏地图 : 倒塌的巨人城池",
+   "path": "f1/Map/Map1/105040348.img",
+   "bgm": "Bgm00/SleepyWood",
+   "mapMark": "Dungeon",
+   "bounds": null,
+   "counts": {
+    "layers": 0,
+    "backs": 0,
+    "footholds": 0,
+    "ladders": 0,
+    "portals": 0,
+    "life": 0,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 0,
+    "objs": 0
+   },
+   "layers": [],
+   "footholds": {
+    "count": 0,
+    "orientations": [],
+    "hasNext": 0,
+    "yRange": null
+   },
+   "objFull": [],
+   "objL1": [],
+   "objL0": [],
+   "life": [],
+   "portalNames": [],
+   "reactorIds": [],
+   "tileSetsUsed": []
+  },
+  {
+   "id": 108000501,
+   "name": "隐藏地图 : 海盗的试炼场",
+   "path": "f1/Map/Map1/108000501.img",
+   "bgm": "Bgm15/inNautilus",
+   "mapMark": "Nautilus",
+   "bounds": {
+    "left": -402,
+    "top": -300,
+    "right": 3795,
+    "bottom": 298
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 1,
+    "footholds": 95,
+    "ladders": 5,
+    "portals": 1,
+    "life": 16,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 0,
+    "objs": 101
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 1,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 2,
+     "ts": null,
+     "tiles": 0,
+     "objs": 14,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc9",
+       14
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 3,
+     "ts": null,
+     "tiles": 0,
+     "objs": 21,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc9",
+       21
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": null,
+     "tiles": 0,
+     "objs": 52,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc9",
+       37
+      ],
+      [
+       "guild",
+       15
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 14,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc9",
+       14
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 95,
+    "orientations": [
+     [
+      "wall",
+      58
+     ],
+     [
+      "slope",
+      31
+     ],
+     [
+      "flat",
+      6
+     ]
+    ],
+    "hasNext": 72,
+    "yRange": [
+     -158,
+     150
+    ]
+   },
+   "objFull": [
+    [
+     "acc9",
+     86
+    ],
+    [
+     "guild",
+     15
+    ]
+   ],
+   "objL1": [
+    [
+     "etc",
+     34
+    ],
+    [
+     "obj",
+     16
+    ],
+    [
+     "foot4",
+     15
+    ],
+    [
+     "back",
+     14
+    ],
+    [
+     "pipe",
+     14
+    ],
+    [
+     "ani",
+     4
+    ],
+    [
+     "window",
+     4
+    ]
+   ],
+   "objL0": [
+    [
+     "inside",
+     85
+    ],
+    [
+     "syarenian",
+     15
+    ],
+    [
+     "nautilus",
+     1
+    ]
+   ],
+   "life": [
+    [
+     "9001005",
+     15
+    ],
+    [
+     "1072008",
+     1
+    ]
+   ],
+   "portalNames": [
+    [
+     "sp",
+     1
+    ]
+   ],
+   "reactorIds": [],
+   "tileSetsUsed": []
+  },
+  {
+   "id": 130030002,
+   "name": "女皇之路 : 新的启程3",
+   "path": "f1/Map/Map1/130030002.img",
+   "bgm": "Bgm18/RaindropFlower",
+   "mapMark": "Ereb",
+   "bounds": {
+    "left": -1529,
+    "top": -1400,
+    "right": -1,
+    "bottom": 265
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 32,
+    "footholds": 58,
+    "ladders": 4,
+    "portals": 3,
+    "life": 5,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 130,
+    "objs": 29
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 1,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 2,
+     "ts": null,
+     "tiles": 0,
+     "objs": 6,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc11",
+       6
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 3,
+     "ts": "fallenLeaves",
+     "tiles": 130,
+     "objs": 11,
+     "backs": 0,
+     "tileU": [
+      [
+       "bsc",
+       53
+      ],
+      [
+       "enH0",
+       28
+      ],
+      [
+       "enH1",
+       28
+      ],
+      [
+       "edU",
+       10
+      ],
+      [
+       "edD",
+       8
+      ],
+      [
+       "enV1",
+       2
+      ],
+      [
+       "enV0",
+       1
+      ]
+     ],
+     "objPrefix": [
+      [
+       "acc11",
+       11
+      ]
+     ],
+     "tileYs": [
+      [
+       "below0",
+       92
+      ],
+      [
+       "above0",
+       38
+      ]
+     ]
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 12,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "connect",
+       12
+      ]
+     ],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 58,
+    "orientations": [
+     [
+      "wall",
+      42
+     ],
+     [
+      "flat",
+      16
+     ]
+    ],
+    "hasNext": 52,
+    "yRange": [
+     -452,
+     88
+    ]
+   },
+   "objFull": [
+    [
+     "acc11",
+     17
+    ],
+    [
+     "connect",
+     12
+    ]
+   ],
+   "objL1": [
+    [
+     "27",
+     12
+    ],
+    [
+     "nature",
+     11
+    ],
+    [
+     "egg",
+     4
+    ],
+    [
+     "acc",
+     2
+    ]
+   ],
+   "objL0": [
+    [
+     "erebTW",
+     13
+    ],
+    [
+     "rope",
+     12
+    ],
+    [
+     "erebFD",
+     4
+    ]
+   ],
+   "life": [
+    [
+     "9300328",
+     4
+    ],
+    [
+     "1102005",
+     1
+    ]
+   ],
+   "portalNames": [
+    [
+     "sp",
+     1
+    ],
+    [
+     "east00",
+     1
+    ],
+    [
+     "west00",
+     1
+    ]
+   ],
+   "reactorIds": [],
+   "tileSetsUsed": [
+    "fallenLeaves"
+   ]
+  },
+  {
+   "id": 200090052,
+   "name": "航海中 : 开往圣地",
+   "path": "f1/Map/Map2/200090052.img",
+   "bgm": "Bgm18/QueensGarden",
+   "mapMark": "None",
+   "bounds": {
+    "left": -390,
+    "top": -1030,
+    "right": 410,
+    "bottom": -430
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 27,
+    "footholds": 58,
+    "ladders": 0,
+    "portals": 16,
+    "life": 1,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 20,
+    "objs": 4
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 1,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 2,
+     "ts": null,
+     "tiles": 0,
+     "objs": 2,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc11",
+       2
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 3,
+     "ts": null,
+     "tiles": 0,
+     "objs": 2,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc11",
+       2
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": "blackTile",
+     "tiles": 20,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [
+      [
+       "enH1",
+       10
+      ],
+      [
+       "enH0",
+       10
+      ]
+     ],
+     "objPrefix": [],
+     "tileYs": [
+      [
+       "above0",
+       20
+      ]
+     ]
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 58,
+    "orientations": [
+     [
+      "flat",
+      45
+     ],
+     [
+      "wall",
+      13
+     ]
+    ],
+    "hasNext": 50,
+    "yRange": [
+     -1170,
+     -325
+    ]
+   },
+   "objFull": [
+    [
+     "acc11",
+     4
+    ]
+   ],
+   "objL1": [
+    [
+     "ship",
+     4
+    ]
+   ],
+   "objL0": [
+    [
+     "erebTW",
+     4
+    ]
+   ],
+   "life": [
+    [
+     "1100005",
+     1
+    ]
+   ],
+   "portalNames": [
+    [
+     "sp",
+     1
+    ],
+    [
+     "hd00",
+     1
+    ],
+    [
+     "out00",
+     1
+    ],
+    [
+     "out01",
+     1
+    ],
+    [
+     "out02",
+     1
+    ],
+    [
+     "out03",
+     1
+    ],
+    [
+     "out04",
+     1
+    ],
+    [
+     "out05",
+     1
+    ],
+    [
+     "hd01",
+     1
+    ],
+    [
+     "hd02",
+     1
+    ],
+    [
+     "hd03",
+     1
+    ],
+    [
+     "hd04",
+     1
+    ],
+    [
+     "hd05",
+     1
+    ],
+    [
+     "hd06",
+     1
+    ],
+    [
+     "hd07",
+     1
+    ],
+    [
+     "hd08",
+     1
+    ]
+   ],
+   "reactorIds": [],
+   "tileSetsUsed": [
+    "blackTile"
+   ]
+  },
+  {
+   "id": 220060400,
+   "name": "玩具城 : 怪异的回廊",
+   "path": "f1/Map/Map2/220060400.img",
+   "bgm": "Bgm10/BizarreTales",
+   "mapMark": "Ludibrium",
+   "bounds": {
+    "left": -2321,
+    "top": -497,
+    "right": 874,
+    "bottom": 121
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 27,
+    "footholds": 9,
+    "ladders": 0,
+    "portals": 4,
+    "life": 2,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 0,
+    "objs": 29
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 1,
+     "ts": null,
+     "tiles": 0,
+     "objs": 16,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "dungeon2",
+       16
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 2,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 3,
+     "ts": null,
+     "tiles": 0,
+     "objs": 9,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "dungeon2",
+       9
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 4,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "dungeon2",
+       4
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 9,
+    "orientations": [
+     [
+      "wall",
+      9
+     ]
+    ],
+    "hasNext": 8,
+    "yRange": [
+     -16,
+     -16
+    ]
+   },
+   "objFull": [
+    [
+     "dungeon2",
+     29
+    ]
+   ],
+   "objL1": [
+    [
+     "foot2",
+     9
+    ],
+    [
+     "gate",
+     7
+    ],
+    [
+     "acc6",
+     7
+    ],
+    [
+     "acc",
+     6
+    ]
+   ],
+   "objL0": [
+    [
+     "toyCastle2",
+     29
+    ]
+   ],
+   "life": [
+    [
+     "8160000",
+     2
+    ]
+   ],
+   "portalNames": [
+    [
+     "sp",
+     2
+    ],
+    [
+     "out00",
+     1
+    ],
+    [
+     "in00",
+     1
+    ]
+   ],
+   "reactorIds": [],
+   "tileSetsUsed": []
+  },
+  {
+   "id": 230040100,
+   "name": "水下世界 : 深海峡谷2",
+   "path": "f1/Map/Map2/230040100.img",
+   "bgm": "Bgm12/DeepSee",
+   "mapMark": "AquaRoad",
+   "bounds": {
+    "left": -1050,
+    "top": -388,
+    "right": 300,
+    "bottom": 2086
+   },
+   "counts": {
+    "layers": 8,
+    "backs": 17,
+    "footholds": 156,
+    "ladders": 7,
+    "portals": 5,
+    "life": 21,
+    "reactors": 5,
+    "rects": 0,
+    "tiles": 0,
+    "objs": 158
+   },
+   "layers": [
+    {
+     "index": 0,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 1,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 2,
+     "ts": null,
+     "tiles": 0,
+     "objs": 1,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "dungeon2",
+       1
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 3,
+     "ts": null,
+     "tiles": 0,
+     "objs": 13,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "dungeon2",
+       13
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 4,
+     "ts": null,
+     "tiles": 0,
+     "objs": 121,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "dungeon2",
+       102
+      ],
+      [
+       "connect",
+       19
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 5,
+     "ts": null,
+     "tiles": 0,
+     "objs": 23,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [
+      [
+       "acc5",
+       23
+      ]
+     ],
+     "tileYs": []
+    },
+    {
+     "index": 6,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    },
+    {
+     "index": 7,
+     "ts": null,
+     "tiles": 0,
+     "objs": 0,
+     "backs": 0,
+     "tileU": [],
+     "objPrefix": [],
+     "tileYs": []
+    }
+   ],
+   "footholds": {
+    "count": 156,
+    "orientations": [
+     [
+      "slope",
+      142
+     ],
+     [
+      "wall",
+      14
+     ]
+    ],
+    "hasNext": 138,
+    "yRange": [
+     91,
+     1834
+    ]
+   },
+   "objFull": [
+    [
+     "dungeon2",
+     116
+    ],
+    [
+     "acc5",
+     23
+    ],
+    [
+     "connect",
+     19
+    ]
+   ],
+   "objL1": [
+    [
+     "nature",
+     71
+    ],
+    [
+     "waterdrop",
+     23
+    ],
+    [
+     "13",
+     19
+    ],
+    [
+     "acc",
+     17
+    ],
+    [
+     "foot",
+     16
+    ],
+    [
+     "gate",
+     12
+    ]
+   ],
+   "objL0": [
+    [
+     "deepSee",
+     116
+    ],
+    [
+     "aquaRoad",
+     23
+    ],
+    [
+     "rope",
+     19
+    ]
+   ],
+   "life": [
+    [
+     "8140555",
+     11
+    ],
+    [
+     "8140600",
+     10
+    ]
+   ],
+   "portalNames": [
+    [
+     "sp",
+     3
+    ],
+    [
+     "top00",
+     1
+    ],
+    [
+     "under00",
+     1
+    ]
+   ],
+   "reactorIds": [
+    "2302001",
+    "2302001",
+    "2302001",
+    "2302001",
+    "2302001"
+   ],
+   "tileSetsUsed": []
+  },
+  {
+   "id": 240040927,
+   "name": "隐藏地图 : 大海兽 峡谷",
+   "path": "f1/Map/Map2/240040927.img",
+   "bgm": "Bgm14/DragonNest",
+   "mapMark": "Leafre",
+   "bounds": {
+    "left": -1199,
+    "top": -310,
+    "right": 398,
+    "bottom": 1710
+   },
+   "counts": {
+    "layers": 0,
+    "backs": 0,
+    "footholds": 0,
+    "ladders": 0,
+    "portals": 0,
+    "life": 0,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 0,
+    "objs": 0
+   },
+   "layers": [],
+   "footholds": {
+    "count": 0,
+    "orientations": [],
+    "hasNext": 0,
+    "yRange": null
+   },
+   "objFull": [],
+   "objL1": [],
+   "objL0": [],
+   "life": [],
+   "portalNames": [],
+   "reactorIds": [],
+   "tileSetsUsed": []
+  },
+  {
+   "id": 260020658,
+   "name": "莎翁小镇 : 沙尘暴山丘",
+   "path": "f1/Map/Map2/260020658.img",
+   "bgm": "Bgm15/SunsetDesert",
+   "mapMark": "Magatia",
+   "bounds": null,
+   "counts": {
+    "layers": 0,
+    "backs": 0,
+    "footholds": 0,
+    "ladders": 0,
+    "portals": 0,
+    "life": 0,
+    "reactors": 0,
+    "rects": 0,
+    "tiles": 0,
+    "objs": 0
+   },
+   "layers": [],
+   "footholds": {
+    "count": 0,
+    "orientations": [],
+    "hasNext": 0,
+    "yRange": null
+   },
+   "objFull": [],
+   "objL1": [],
+   "objL0": [],
+   "life": [],
+   "portalNames": [],
+   "reactorIds": [],
+   "tileSetsUsed": []
+  }
+ ]
+}

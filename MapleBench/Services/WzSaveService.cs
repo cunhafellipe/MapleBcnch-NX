@@ -17,6 +17,16 @@ public sealed class SaveResult
     public int ImagesRewritten { get; set; }
     public long Bytes { get; set; }
     public double Seconds { get; set; }
+
+    /// <summary>How long the post-save reopen of the archive took, in milliseconds.</summary>
+    /// <remarks>
+    /// Separate from <see cref="Seconds"/> because it is not writing -- it is
+    /// reading the file just written back in so the session tree and the
+    /// mapping it points into agree. On a 679 MB archive that is minutes, and
+    /// folding it into the save time made an honest number look like a
+    /// fast save.
+    /// </remarks>
+    public long ReopenMs { get; set; }
     /// <summary>Non-fatal things the user should know: client running, verification mismatches.</summary>
     public List<string> Warnings { get; set; } = new();
 }
@@ -219,12 +229,29 @@ public sealed class WzSaveService
             : $"Saved in place ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes). " +
               $"The previous file is at '{Path.GetFileName(backup)}'.");
 
+        long reopenedAfterMs = 0;
+
         // The bytes on disk and the tree in memory now agree, so the archive
         // stops being dirty. In-place only: a "save as" left the session
         // pointing at the original, which the copy did not touch.
         if (!saveAs)
         {
             file.MarkAllImagesClean();
+            // NOTE: the reopen itself deliberately does NOT happen here.
+
+            // The map editor verifies AFTER this method returns: it re-resolves
+            // the path, re-reads the saved archive and compares the tree against
+            // the model. Replacing the session tree at this point would make that
+            // comparison run against the file just written rather than against what
+            // was written, and a correct save reports a wall of differences.
+
+            // The caller owns it: MapEditorService.Save reopens once verification
+            // has passed. Until then the session keeps pointing at the old mapping,
+            // which is exactly what the second-save index bug needs prevented --
+            // and MapEditorService.Save is the only path that reaches a second save.
+
+            reopenedAfterMs = 0;
+
         }
 
         return new SaveResult
@@ -234,6 +261,7 @@ public sealed class WzSaveService
             BackupPath = backup,
             Bytes = bytes.Length,
             Seconds = (DateTime.UtcNow - started).TotalSeconds,
+            ReopenMs = reopenedAfterMs,
             Warnings = notes,
         };
     }

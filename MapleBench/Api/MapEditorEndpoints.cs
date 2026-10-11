@@ -38,6 +38,11 @@ public static class MapEditorEndpoints
         group.MapPost("/edit", (MapEditRequest request, MapEditorService maps) =>
             Results.Ok(maps.Edit(request)));
 
+        // Many ops, one undo step. The history holds 200 entries, so a generated
+        // floor sent call-by-call discards its own undo without saying so.
+        group.MapPost("/batch", (MapBatchRequest request, MapEditorService maps) =>
+            Results.Ok(maps.Batch(request)));
+
         group.MapPost("/undo", (MapDocRequest request, MapEditorService maps) =>
             Results.Ok(maps.UndoRedo(request.Path, redo: false)));
 
@@ -52,6 +57,13 @@ public static class MapEditorEndpoints
 
         group.MapPost("/save", (MapDocRequest request, MapEditorService maps) =>
             Results.Ok(maps.Save(request.Path)));
+
+        // Read-only rule check. A generated map looks right on screen and can
+        // still strand the character: a severed foothold chain is invisible
+        // until someone tries to walk it. The rules are written down in
+        // docs/MAP-STRUCTURE.md; this is the executable copy.
+        group.MapPost("/validate", (MapDocRequest request, MapEditorService maps) =>
+            Results.Ok(maps.Validate(request.Path)));
 
         group.MapGet("/portal-icons", (MapEditorService maps) =>
             Results.Ok(maps.PortalIcons()));

@@ -409,3 +409,9 @@ FodyWeavers.xsd
 mbsave-*
 *.TEMP
 *.bak
+
+# Acceptance-run scratch: a copied WZ archive and the run's own report.
+_accept/
+tools/probe/acceptance.json
+tools/probe/i18n-inventory.txt
+tools/visual-check/*.png

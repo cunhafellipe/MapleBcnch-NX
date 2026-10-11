@@ -65,30 +65,107 @@ public sealed partial class MapEditorService
                     }
                     _setThumbPaths[cacheKey] = thumb;
                 }
+
+                // How many entries a client can actually draw. Zero means the set
+                // holds nothing visual — worth knowing before a caller offers it
+                // as a choice. Measured: all 109 Tile sets carry pixels, so
+                // this is a guard rather than a routine correction.
+                int drawable = CountDrawableEntries(kind, set.Path, cacheKey);
+
                 result.Add(new MapPaletteSetDto
                 {
                     Name = set.Name,
                     Path = set.Path,
                     Source = set.Source,
                     ThumbPath = thumb,
+                    DrawableEntries = drawable,
                 });
             }
         }
         return result;
     }
 
+    /// <summary>Counts entries carrying real pixels, memoised beside the thumbnail.</summary>
+    private int CountDrawableEntries(string kind, string setPath, string cacheKey)
+    {
+        if (_setDrawableCounts.TryGetValue(cacheKey, out int cached))
+            return cached;
+
+        int count = 0;
+        try
+        {
+            WzObject? set = _session.Resolve(setPath);
+            if (set is WzImageProperty image)
+            {
+                if (set is WzImage parsed)
+                    WzSessionService.EnsureParsed(parsed);
+                foreach ((WzImageProperty node, string _) in LeafEntries(kind, setPath, image))
+                {
+                    if (HasDrawablePixels(node))
+                        count++;
+                    if (count >= 200)
+                        break;              // a palette row only ever shows a page
+                }
+            }
+        }
+        catch
+        {
+            count = 0;
+        }
+
+        _setDrawableCounts[cacheKey] = count;
+        return count;
+    }
+
+    private readonly Dictionary<string, int> _setDrawableCounts = new(StringComparer.Ordinal);
+
     /// <summary>The first drawable entry of a set — what the set looks like in
     /// the palette grid before it is opened. Caller holds the session gate.</summary>
     private string? RepresentativeThumb(string kind, string setPath)
     {
-        if (_session.Resolve(setPath) is not WzImage image)
+        // A .wz set is a WzImage; under NX the same set is a property inside the
+        // archive's <c>Tile</c> image. Requiring WzImage here made every palette
+        // thumbnail null on NX — the sets listed, and every cell in the grid came
+        // up blank. WzImageProperty is the common denominator: everything the
+        // rest of this method does is property-shaped.
+        WzObject? set = _session.Resolve(setPath);
+        if (set is not WzImageProperty image)
             return null;
-        WzSessionService.EnsureParsed(image);
+        if (set is WzImage parsed)
+            WzSessionService.EnsureParsed(parsed);
 
+        // First entry that is BOTH resolvable and carryable pixels. Asking for
+        // pixels and not merely for presence is the whole point: ancientForest
+        // has nine resolvable entries and zero pixels, and picking by presence
+        // is what handed a caller a thumbnail for something unusable.
+        foreach ((WzImageProperty node, string path) in LeafEntries(kind, setPath, image))
+        {
+            MapArtDto meta = Meta(node, path);
+            if (!meta.Missing && meta.HasPixels)
+                return meta.Path;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Every leaf entry of a set with its session path, in the order the palette
+    /// should offer it.
+    /// </summary>
+    /// <remarks>
+    /// One walk for three kinds, because the thumbnail picker and the drawable
+    /// counter have to agree on what an entry is. When they disagreed — picker by
+    /// presence, counter by presence too — the palette claimed art a set did not
+    /// have. The frames of an animation resolve to their first frame here, which
+    /// is what both callers actually want to draw.
+    /// </remarks>
+    private static IEnumerable<(WzImageProperty Node, string Path)> LeafEntries(
+        string kind, string setPath, WzImageProperty image)
+    {
         switch (kind)
         {
             case "Tile":
-                foreach (WzImageProperty group in image.WzProperties)
+                foreach (WzImageProperty group in WzSessionService.PropertiesOf(image))
                 {
                     if (string.Equals(group.Name, "info", StringComparison.OrdinalIgnoreCase)
                         || group.WzProperties == null)
@@ -97,16 +174,13 @@ public sealed partial class MapEditorService
                     {
                         if (!long.TryParse(entry.Name, NumberStyles.None, CultureInfo.InvariantCulture, out _))
                             continue;
-                        string path = WzPath.Child(WzPath.Child(setPath, group.Name), entry.Name);
-                        MapArtDto meta = Meta(entry, path);
-                        if (!meta.Missing)
-                            return meta.Path;
+                        yield return (entry, WzPath.Child(WzPath.Child(setPath, group.Name), entry.Name));
                     }
                 }
-                return null;
+                break;
 
             case "Obj":
-                foreach (WzImageProperty l0 in image.WzProperties)
+                foreach (WzImageProperty l0 in WzSessionService.PropertiesOf(image))
                 {
                     if (string.Equals(l0.Name, "info", StringComparison.OrdinalIgnoreCase)
                         || l0.WzProperties == null)
@@ -121,25 +195,17 @@ public sealed partial class MapEditorService
                                 continue;
                             string path = WzPath.Child(WzPath.Child(WzPath.Child(
                                 setPath, l0.Name), l1.Name), l2.Name);
-                            WzImageProperty? frame =
-                                l2.PropertyType is WzPropertyType.Canvas or WzPropertyType.UOL
-                                    ? l2
-                                    : l2.WzProperties?.FirstOrDefault(p => p.Name == "0")
-                                        ?? l2.WzProperties?.FirstOrDefault();
-                            string framePath = frame != null && !ReferenceEquals(frame, l2)
-                                ? WzPath.Child(path, frame.Name) : path;
-                            MapArtDto meta = Meta(frame, framePath);
-                            if (!meta.Missing)
-                                return meta.Path;
+                            foreach ((WzImageProperty frame, string framePath) in FirstFrame(l2, path))
+                                yield return (frame, framePath);
                         }
                     }
                 }
-                return null;
+                break;
 
             case "Back":
                 foreach (string branch in new[] { "back", "ani" })
                 {
-                    WzImageProperty? container = image.WzProperties.FirstOrDefault(
+                    WzImageProperty? container = WzSessionService.PropertiesOf(image).FirstOrDefault(
                         p => string.Equals(p.Name, branch, StringComparison.OrdinalIgnoreCase));
                     if (container?.WzProperties == null)
                         continue;
@@ -148,26 +214,31 @@ public sealed partial class MapEditorService
                         if (!long.TryParse(entry.Name, NumberStyles.None, CultureInfo.InvariantCulture, out _))
                             continue;
                         string path = WzPath.Child(WzPath.Child(setPath, container.Name), entry.Name);
-                        WzImageProperty? frame = entry;
-                        string framePath = path;
-                        if (entry.PropertyType is not WzPropertyType.Canvas and not WzPropertyType.UOL)
-                        {
-                            frame = entry.WzProperties?.FirstOrDefault(p => p.Name == "0")
-                                ?? entry.WzProperties?.FirstOrDefault();
-                            if (frame == null)
-                                continue;
-                            framePath = WzPath.Child(path, frame.Name);
-                        }
-                        MapArtDto meta = Meta(frame, framePath);
-                        if (!meta.Missing)
-                            return meta.Path;
+                        foreach ((WzImageProperty frame, string framePath) in FirstFrame(entry, path))
+                            yield return (frame, framePath);
                     }
                 }
-                return null;
-
-            default:
-                return null;
+                break;
         }
+    }
+
+    /// <summary>
+    /// A leaf resolved to the frame that carries its pixels: itself when it is
+    /// already a canvas or a UOL, otherwise its <c>0</c> frame.
+    /// </summary>
+    private static IEnumerable<(WzImageProperty Node, string Path)> FirstFrame(
+        WzImageProperty entry, string path)
+    {
+        if (entry.PropertyType is WzPropertyType.Canvas or WzPropertyType.UOL)
+        {
+            yield return (entry, path);
+            yield break;
+        }
+
+        WzImageProperty? frame = entry.WzProperties?.FirstOrDefault(p => p.Name == "0")
+            ?? entry.WzProperties?.FirstOrDefault();
+        if (frame != null)
+            yield return (frame, WzPath.Child(path, frame.Name));
     }
 
     public MapPaletteEntriesDto PaletteEntries(string kind, string setPath, int limit)
@@ -175,22 +246,23 @@ public sealed partial class MapEditorService
         MapPaletteEntriesDto result = new() { Kind = kind, Path = setPath };
         lock (_session.Gate)
         {
-            if (_session.Resolve(setPath) is not WzImage image)
+            WzObject? resolved = _session.Resolve(setPath);
+            if (resolved is null)
                 throw new InvalidOperationException($"'{setPath}' is not an asset set image.");
-            WzSessionService.EnsureParsed(image);
-            result.Set = image.Name.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
-                ? image.Name[..^4] : image.Name;
+            if (resolved is WzImage parsed) WzSessionService.EnsureParsed(parsed);
+            result.Set = resolved.Name.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
+                ? resolved.Name[..^4] : resolved.Name;
 
             switch (kind)
             {
                 case "Tile":
-                    ReadTileEntries(image, setPath, result, limit);
+                    ReadTileEntries(resolved, setPath, result, limit);
                     break;
                 case "Obj":
-                    ReadObjEntries(image, setPath, result, limit);
+                    ReadObjEntries(resolved, setPath, result, limit);
                     break;
                 case "Back":
-                    ReadBackEntries(image, setPath, result, limit);
+                    ReadBackEntries(resolved, setPath, result, limit);
                     break;
                 default:
                     throw new ArgumentException($"'{kind}' is not a palette kind.");
@@ -202,9 +274,9 @@ public sealed partial class MapEditorService
     /// <summary>Tile/&lt;set&gt;.img/&lt;u&gt;/&lt;no&gt; — u is one of the 11
     /// measured variants, no is the index, and the canvas may carry its own
     /// foothold Convex (the auto-foothold mechanism).</summary>
-    private static void ReadTileEntries(WzImage image, string setPath, MapPaletteEntriesDto result, int limit)
+    private static void ReadTileEntries(WzObject image, string setPath, MapPaletteEntriesDto result, int limit)
     {
-        foreach (WzImageProperty group in image.WzProperties)
+        foreach (WzImageProperty group in WzSessionService.PropertiesOf(image))
         {
             if (string.Equals(group.Name, "info", StringComparison.OrdinalIgnoreCase)
                 || group.WzProperties == null)
@@ -238,9 +310,9 @@ public sealed partial class MapEditorService
     /// <summary>Obj/&lt;set&gt;.img/&lt;l0&gt;/&lt;l1&gt;/&lt;l2&gt;[/&lt;l3&gt;]
     /// — the leaf is a frame list; frame 0 is the thumbnail and the placement
     /// preview.</summary>
-    private static void ReadObjEntries(WzImage image, string setPath, MapPaletteEntriesDto result, int limit)
+    private static void ReadObjEntries(WzObject image, string setPath, MapPaletteEntriesDto result, int limit)
     {
-        foreach (WzImageProperty l0 in image.WzProperties)
+        foreach (WzImageProperty l0 in WzSessionService.PropertiesOf(image))
         {
             if (string.Equals(l0.Name, "info", StringComparison.OrdinalIgnoreCase)
                 || l0.WzProperties == null)
@@ -323,11 +395,11 @@ public sealed partial class MapEditorService
 
     /// <summary>Back/&lt;set&gt;.img/{back,ani,spine}/&lt;no&gt; — which branch a
     /// placement draws from is its own <c>ani</c> flag (0/1/2), not the set's.</summary>
-    private static void ReadBackEntries(WzImage image, string setPath, MapPaletteEntriesDto result, int limit)
+    private static void ReadBackEntries(WzObject image, string setPath, MapPaletteEntriesDto result, int limit)
     {
         foreach ((string branch, long ani) in new[] { ("back", 0L), ("ani", 1L), ("spine", 2L) })
         {
-            WzImageProperty? container = image.WzProperties.FirstOrDefault(
+            WzImageProperty? container = WzSessionService.PropertiesOf(image).FirstOrDefault(
                 p => string.Equals(p.Name, branch, StringComparison.OrdinalIgnoreCase));
             if (container?.WzProperties == null)
                 continue;
@@ -399,7 +471,8 @@ public sealed partial class MapEditorService
                 string imageName = id.ToString("D7", CultureInfo.InvariantCulture) + ".img";
                 foreach ((OpenFile file, WzDirectory root) in libraries)
                 {
-                    WzImage? image = root.GetImageByName(imageName);
+                    WzObject? image = _session.EnumerateChildren(root)
+                        .FirstOrDefault(c => string.Equals(c.Name, imageName, StringComparison.OrdinalIgnoreCase));
                     if (image != null)
                     {
                         iconPath = WzPath.Join(
@@ -434,7 +507,10 @@ public sealed partial class MapEditorService
             }
             dto.Available = true;
             string? q = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
-            foreach (WzImage image in library.Value.Root.WzImages)
+            // EnumerateChildren rather than WzImages: in NX the life and reactor
+            // archives hold their .img sets as properties, so an image-only walk
+            // returned nothing and the palette reported the family unavailable.
+            foreach (WzObject image in _session.EnumerateChildren(library.Value.Root))
             {
                 string stem = image.Name.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
                     ? image.Name[..^4] : image.Name;

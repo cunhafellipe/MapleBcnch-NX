@@ -65,7 +65,8 @@
          left. Cash Shop and Mobs are sections inside it now rather than
          top-level buttons, so adding Database, Skills and NPCs does not grow
          this row every time. -->
-    <div class="mode-switch" role="group" aria-label="Editor mode">
+    <div class="mode-switch" role="group" aria-label="Editor mode"
+         data-i18n-attr="aria-label:Editor mode">
       <button id="mode-explorer" aria-pressed="true" data-i18n-attr="data-tip:Browse and edit any WZ node · Ctrl 1" data-tip="Browse and edit any WZ node · Ctrl 1" data-i18n="Explorer">Explorer</button>
       <button id="mode-sections" aria-pressed="false" data-i18n-attr="data-tip:Focused editors · Ctrl 2" data-tip="Focused editors · Ctrl 2" data-i18n="Editors">Editors</button>
     </div>
@@ -83,9 +84,11 @@
            anything is open — so the one thing you want *while* editing was the
            one thing you had to close your work to reach. -->
       <button class="btn btn-sm btn-ghost topbar-import" id="btn-import"
-              data-tip="Import from another client · Ctrl I" aria-label="Import from another client"></button>
+              data-tip="Import from another client · Ctrl I" aria-label="Import from another client"
+              data-i18n-attr="data-tip:Import from another client · Ctrl I;aria-label:Import from another client"></button>
       <button class="btn btn-sm btn-ghost topbar-import" id="btn-dual" hidden
-              data-tip="Open another client beside this one" aria-label="Open Dual Client View"></button>
+              data-tip="Open another client beside this one" aria-label="Open Dual Client View"
+              data-i18n-attr="data-tip:Open another client beside this one;aria-label:Open Dual Client View"></button>
       <button class="btn btn-icon btn-ghost" id="btn-more" data-i18n-attr="data-tip:Theme, shortcuts and more;aria-label:More" data-tip="Theme, shortcuts and more" aria-label="More"></button>
       <!-- The label says the language it switches TO, not the one in use: a
            button reading 繁中 while the app is in English can only mean "click
@@ -98,16 +101,21 @@
   <!-- ============ WORKSPACE ============ -->
   <div class="workspace" id="workspace" data-mode="explorer">
 
-    <nav class="rail" aria-label="Panels">
-      <button id="rail-files"   aria-label="Files" aria-pressed="true"  data-tip="Files — again to collapse · Ctrl B" data-tip-placement="right"></button>
+    <nav class="rail" aria-label="Panels" data-i18n-attr="aria-label:Panels">
+      <button id="rail-files"   aria-label="Files" aria-pressed="true"  data-tip="Files — again to collapse · Ctrl B" data-tip-placement="right"
+          data-i18n-attr="aria-label:Files;data-tip:Files — again to collapse · Ctrl B"></button>
       <!-- Now a tab like its neighbours: search results are a panel that stays
            open, so this latches instead of opening a dialog that the first
            click on a result destroyed. -->
-      <button id="rail-search"  aria-label="Find names or values in open archives" aria-pressed="false" data-tip="Find names or values in open archives · Ctrl Shift F" data-tip-placement="right"></button>
-      <button id="rail-pinned"  aria-label="Pinned nodes" aria-pressed="false" data-tip="Pinned nodes · Ctrl D to pin" data-tip-placement="right"></button>
-      <button id="rail-changes" aria-label="Unsaved changes" aria-pressed="false" data-tip="Unsaved changes" data-tip-placement="right"></button>
+      <button id="rail-search"  aria-label="Find names or values in open archives" aria-pressed="false" data-tip="Find names or values in open archives · Ctrl Shift F" data-tip-placement="right"
+              data-i18n-attr="aria-label:Find names or values in open archives;data-tip:Find names or values in open archives · Ctrl Shift F"></button>
+      <button id="rail-pinned"  aria-label="Pinned nodes" aria-pressed="false" data-tip="Pinned nodes · Ctrl D to pin" data-tip-placement="right"
+              data-i18n-attr="aria-label:Pinned nodes;data-tip:Pinned nodes · Ctrl D to pin"></button>
+      <button id="rail-changes" aria-label="Unsaved changes" aria-pressed="false" data-tip="Unsaved changes" data-tip-placement="right"
+              data-i18n-attr="aria-label:Unsaved changes;data-tip:Unsaved changes"></button>
       <span class="rail-spacer"></span>
-      <button id="rail-open" aria-label="Open client or archive" data-tip="Open client or archive · Ctrl O" data-tip-placement="right"></button>
+      <button id="rail-open" aria-label="Open client or archive" data-tip="Open client or archive · Ctrl O" data-tip-placement="right"
+              data-i18n-attr="aria-label:Open client or archive;data-tip:Open client or archive · Ctrl O"></button>
     </nav>
 
     <!-- ---- SIDE PANEL ---- -->
@@ -121,7 +129,8 @@
         <div class="input-wrap">
           <span id="filter-icon" class="in-icon" aria-hidden="true"></span>
           <input class="field-input" id="tree-filter" type="search"
-                 placeholder="Filter tree" aria-label="Filter tree" autocomplete="off">
+                 placeholder="Filter tree" aria-label="Filter tree" autocomplete="off"
+                 data-i18n-attr="placeholder:Filter tree;aria-label:Filter tree">
         </div>
         <div class="type-chips" id="type-chips"></div>
       </div>
@@ -135,6 +144,7 @@
       <div class="tree-scroll" id="tree-scroll">
         <div class="tree-sizer" id="tree-sizer">
           <div class="tree-rows" id="tree-rows" role="tree" aria-label="WZ file structure"
+               data-i18n-attr="aria-label:WZ file structure"
                aria-multiselectable="true" tabindex="0"></div>
         </div>
         <!-- Pinned and Unsaved changes get their own hosts and are hidden when
@@ -175,11 +185,13 @@
 
   <!-- ============ STATUS BAR ============ -->
   <footer class="statusbar">
-    <button class="status-item status-path" id="status-path" data-tip="Copy this path" data-tip-placement="top"></button>
+    <button class="status-item status-path" id="status-path" data-tip="Copy this path" data-tip-placement="top"
+              data-i18n-attr="data-tip:Copy this path"></button>
     <span class="status-spacer"></span>
     <span class="status-item num" id="status-counts"></span>
     <span class="status-item" id="status-version"></span>
-    <button class="status-item" id="status-help" data-tip="Keyboard shortcuts · ?" data-tip-placement="top" data-i18n="? shortcuts">? shortcuts</button>
+    <button class="status-item" id="status-help" data-tip="Keyboard shortcuts · ?" data-tip-placement="top" data-i18n="? shortcuts"
+              data-i18n-attr="data-tip:Keyboard shortcuts · ?">? shortcuts</button>
   </footer>
 </div>
 
@@ -187,11 +199,12 @@
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <div class="palette" id="palette">
-  <div class="palette-box" role="dialog" aria-label="Command palette">
+  <div class="palette-box" role="dialog" aria-label="Command palette"
+     data-i18n-attr="aria-label:Command palette">
     <div class="palette-head">
       <span id="palette-icon" aria-hidden="true"></span>
       <input class="palette-input" id="palette-input" type="text" autocomplete="off" spellcheck="false"
-             placeholder="Go to a node or command">
+             placeholder="Go to a node or command" data-i18n-attr="placeholder:Go to a node or command">
     </div>
     <div class="palette-list" id="palette-list" role="listbox"></div>
     <div class="palette-foot">
