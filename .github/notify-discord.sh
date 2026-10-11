@@ -59,7 +59,12 @@ if [[ "$GITHUB_EVENT_NAME" == "pull_request_target" ]]; then
   # 同理：PR 事件的 ACTOR 是開 PR 的人。pull_request_target 對 fork 的 PR
   # 會讓 actor 變成維護者（誰在 base 分支上跑這個 workflow），所以這裡
   # 改用 head 端身分比較不會指錯人。
-  PR_AUTHOR="$(jq -r '.pull_request.user.login // .sender.login // $ACTOR' "$GITHUB_EVENT_PATH")"
+  #
+  # ACTOR 用 --arg 傳入而不是寫在過濾式裡：單引號會擋住 shell 展開，
+  # 寫成 '... // $ACTOR' 會讓 jq 拿到一個未定義的變數並編譯失敗，
+  # 整則 PR 通知就發不出去。
+  PR_AUTHOR="$(jq -r --arg actor "$ACTOR" \
+    '.pull_request.user.login // .sender.login // $actor' "$GITHUB_EVENT_PATH")"
   FOOTER="$PR_AUTHOR 開了 PR #$PR_NUM · [查看]($LINK)"
 
 else  # push

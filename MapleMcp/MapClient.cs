@@ -129,7 +129,8 @@ public sealed class MapClient
         throw new BackendError($"{route} -> HTTP {(int)res.StatusCode}: {detail}");
     }
 
-    private static string? ExtractMessage(string body)
+    /// <summary>Shared with ArchiveClient: the backend's own sentence, or null.</summary>
+    internal static string? ExtractMessage(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
             return null;

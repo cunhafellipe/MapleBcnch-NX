@@ -230,6 +230,23 @@ class App {
     }
   }
 
+  /** Loads the Simulator once, on demand. Same contract as the map editor. */
+  async ensureSimulator() {
+    if (this.simulator) return this.simulator;
+    if (!this.simulatorLoad) {
+      this.simulatorLoad = import('./simulator.js').then(({ SimulatorSection }) => {
+        this.simulator = new SimulatorSection({ host: this.sections.stageFor('simulator'), app: this });
+        return this.simulator;
+      });
+    }
+    try {
+      return await this.simulatorLoad;
+    } catch (error) {
+      this.simulatorLoad = null;
+      throw error;
+    }
+  }
+
   /* ============================================================
      BOOT
      ============================================================ */

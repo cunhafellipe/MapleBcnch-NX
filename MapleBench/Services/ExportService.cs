@@ -239,11 +239,17 @@ public sealed class ExportService
                     /// never attached to the session, so the recovery pass that removes
                     /// unresolvable nodes can only damage this copy.
                     /// </remarks>
-                    private static WzImage CloneForExport(WzImage source)
-                    {
-                        WzImage copy = new(source.Name);
-                        if (source.WzProperties is not { Count: > 0 } kids)
-                            return copy;
+private static WzImage CloneForExport(WzImage source)
+        {
+            WzImage copy = new(source.Name);
+            if (source.WzProperties is not { Count: > 0 } kids)
+            {
+                // An image with no children serialises to zero bytes and the caller
+                // says so. Saying "no child could be copied" here would blame the
+                // copy for something the source already was.
+                throw new InvalidOperationException(
+                    $"'{source.Name}' has no children, so there is nothing to export.");
+            }
 
                         int copied = 0;
                         foreach (WzImageProperty child in kids)

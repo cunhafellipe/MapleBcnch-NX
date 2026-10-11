@@ -107,17 +107,14 @@ public sealed class ArchiveClient
     }
 
     /// <summary>The backend's own sentence, when it sent one.</summary>
-    private static string? ExtractMessage(string body)
-    {
-        try
-        {
-            return JsonNode.Parse(body)?["message"]?.GetValue<string>();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    /// <remarks>
+    /// MapClient owns this because it already had it, and a second copy here was
+    /// weaker: JsonNode.Parse("") throws ArgumentNullException, not JsonException,
+    /// so an empty error body escaped the catch and replaced the refusal we were
+    /// trying to report with an unrelated crash. Sharing one implementation is
+    /// what keeps that from drifting back.
+    /// </remarks>
+    private static string? ExtractMessage(string body) => MapClient.ExtractMessage(body);
 
     /// <summary>Fetches serialised bytes for a node — here, one .img.</summary>
     public async Task<byte[]> GetBytesAsync(string route, CancellationToken ct = default)

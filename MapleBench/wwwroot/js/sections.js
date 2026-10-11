@@ -80,6 +80,18 @@ const SECTIONS = [
     blurb: 'Open a map, see it drawn — backgrounds, tiles, objects, overlays — make small safe ' +
            'edits, and save through the byte-identical round-trip model.',
   },
+  {
+    // Separate from the map editor on purpose: the editor answers "what does this
+    // map contain and how do I change it", this one answers "could a character
+    // actually cross it". Nothing here writes.
+    id: 'simulator',
+    label: 'Simulator',
+    icon: 'play',
+    archive: 'Map002.wz',
+    blurb: 'Walk a map\'s foothold chain and see whether a character can cross it. '
+         + 'A map can look right and still strand you halfway across — this walks the '
+         + 'chain and says where it stops. Read-only.',
+  },
 ];
 
 const REAL = SECTIONS.filter((section) => !section.soon).map((section) => section.id);
@@ -412,6 +424,39 @@ export class Sections {
 
     if (this.active === 'strings') {
       await this.app.strings.open();
+      return;
+    }
+
+    if (this.active === 'simulator') {
+      const stage = this.stageFor('simulator');
+      const first = !this.app.simulator;
+      // Always clear before mounting: the section appends its own root to this
+      // stage, so a busy panel left behind from a previous visit stacks above
+      // it instead of being replaced.
+      if (first) {
+        clear(stage);
+        stage.className = 'stage-body';
+        stage.append(busyPanel({
+          title: t('Opening Simulator'),
+          note: t('Reading the maps the backend has open.'),
+          rows: 3,
+        }));
+      }
+      try {
+        const simulator = await this.app.ensureSimulator();
+        clear(stage);
+        stage.className = 'stage-body';
+        stage.append(simulator.root);
+        await simulator.open();
+      } catch (error) {
+        clear(stage);
+        stage.className = 'stage-body';
+        stage.append(emptyState(
+          'alert', t('Simulator did not load'),
+          error?.message ?? t('The simulator files could not be read.'),
+          el('button', { class: 'btn btn-primary', onclick: () => this.open('simulator') },
+            icon('refresh', { size: 15 }), t('Try again'))));
+      }
       return;
     }
 
