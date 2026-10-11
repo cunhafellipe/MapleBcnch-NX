@@ -116,11 +116,36 @@ node acceptance.mjs http://127.0.0.1:5330 acceptance.json
 ## MCP 探測
 
 ```bash
-node tools/probe/mcp-probe.mjs <path-to>/wz-mcp.exe
+node tools/probe/mcp-probe.mjs <path-to>/maple-mcp.exe
 ```
 
 真的走 JSON-RPC 握手並列出工具數與工具名。
 報告見 `docs/CLI-AND-MCP.md`。
+
+---
+
+## MCP 完整流程驗收
+
+```bash
+# 1. 啟動後端並開啟地圖封存（預設 5340）
+# 2. 跑
+node tools/probe/mcp-flow.mjs \
+     MapleMcp/bin/Release/net10.0-windows/maple-mcp.exe \
+     "<Map.nx 的絕對路徑>"
+```
+
+**只經 MCP**，全程不碰 HTTP API——這是「agent 真的能用」的證明，
+而不是「端點回 200」的證明。
+
+> **2026-10-11 實測：ALL PASSED**（14 項）
+> capabilities → list → open → palette → place → validate
+> → batch（300 操作、歷史 10→11）→ save
+
+**這支腳本教會我的事**：探測 batch 時我寫的探針沒帶 `commit=true`，
+於是讀回自己的預覽、找不到可寫節點，一度誤以為 MCP 壞了。
+後來才發現真正的問題是**容器不能編輯、只能編輯葉節點**——
+於是補了 `wz_map_node` 工具讓 agent 能自己找到葉節點。
+**測試失敗三次，前兩次都是測試本身錯。**
 
 ---
 

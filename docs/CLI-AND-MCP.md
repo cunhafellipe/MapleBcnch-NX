@@ -41,50 +41,50 @@
 
 ---
 
-## MCP — 18 個工具，0 個能操作地圖
+## MCP — 兩個伺服器，各管一件事
 
-`agent-wz/dist/WzMcp/wz-mcp.exe`（38 KB C#，官方 `ModelContextProtocol` SDK）
+### `maplebench-maps`（新版，本專案內）— ✅ 10 個地圖工具
 
-握手結果：
+`MapleMcp/`，用官方 `ModelContextProtocol` SDK 2.2.0。
+專案內路徑：`MapleMcp/bin/Release/net10.0-windows/maple-mcp.exe`
+
+握手實測：
 
 ```
-server  : maplebench-wz v1.0.0
+server  : maplebench-maps v1.0.0
 protocol: 2024-11-05
-tools   : 18
+tools   : 10
+  wz_map_capabilities  wz_map_list      wz_map_open     wz_map_doc
+  wz_map_node         wz_map_palette   wz_map_place    wz_map_batch
+  wz_map_validate     wz_map_save
+地圖相關工具: 10
 ```
 
-工具清單：
+**完整流程實測通過**（只經 MCP，不碰 HTTP）：
+從 `capabilities` → `list` → `open` → `palette` → `place` → `validate`
+→ `batch`（300 操作、歷史只加一筆）→ `save`，全部 PASS。
+詳見 `MapleMcp/README.md`。
+
+### `maplebench-wz`（舊版，另一個 repo）— 18 個通用工具
+
+`追風WZ編輯器/agent-wz/dist/WzMcp/wz-mcp.exe`
 
 ```
-wz_status      wz_browse      wz_get         wz_search
-wz_bulk_math   wz_edit_node   wz_replace     wz_save
-wz_close       wz_changes     wz_undo        wz_render
-wz_export      wz_hash        wz_diff        wz_transfer_preview
-wz_inventory   wz_verify      wz_run_plan
+tools: 18  (wz_status wz_browse wz_get wz_search wz_bulk_math
+           wz_edit_node wz_replace wz_save wz_close wz_changes
+           wz_undo wz_render wz_export wz_hash wz_diff
+           wz_transfer_preview wz_inventory wz_verify wz_run_plan)
+地圖相關工具: 0
 ```
 
-**沒有一個能操作地圖。**
+`WzClient` 只認 `api/files`、`api/node`、`api/canvas`、`api/children`，
+**一個 mapedit 端點都沒暴露**。
 
-`WzCli/WzClient.cs` 只認四個 API 前綴：
+> **兩個可以同時註冊給 agent**：舊的管通用 WZ 節點，
+> 新的管地圖。互不重疊。
 
-```
-api/files   api/node   api/canvas   api/children
-```
-
-而新版有 **31 個地圖端點**（`/api/mapedit/*`），MCP 一個都沒暴露：
-
-```
-capabilities  maps  open  doc  close  edit  batch  undo  redo
-node  save  validate  portal-icons  history  palette/preview
-changes  palette/sets  palette/entries  palette/life
-palette/reactors  thumb  place  foothold-chain  auto-foothold
-set-layer-ts  minimap/plan  minimap/regenerate  create
-```
-
-> **對「讓 agent 生成地圖」這個目標，這是最大的缺口。**
-> Agent 現在連地圖清單都列不出來，更別說生成。
-> 上一輪做的 `/validate` `/batch` `/place` 都只有 HTTP 介面，
-> MCP 呼叫方看不到。
+**這個缺口已於 2026-10-11 補上**，方式是新增 `MapleMcp`
+而非修改舊專案——理由見 `JOURNAL/PLAN-MCP-MAPS.md`。
 
 ---
 
@@ -110,11 +110,12 @@ CLI 的 `WzClient` 走的 `api/node`、`api/files` 在新版**依然存在**
 
 ## 要補的（依優先順序）
 
-| # | 項目 | 工作量 | 理由 |
+| # | 項目 | 工作量 | 狀態 |
 |---|---|---|---|
-| 1 | **MCP 加 5–6 個地圖工具** | 中 | `wz_map_list` `wz_map_open` `wz_map_place` `wz_map_batch` `wz_map_validate` `wz_map_save`。**最高優先**：沒有它，agent 只能用 HTTP 原始呼叫 |
-| 2 | CLI 地圖命令改用 mapedit | 中 | `tilefit` 等 4 個改走新版端點；或明確標示只支援 .wz |
-| 3 | 把 CLI/MCP 搬進新版 repo | 大 | 目前它們在另一個 git repo，等於兩套 codebase |
+| 1 | **MCP 加地圖工具** | 中 | ✅ **已完成** — `MapleMcp`，10 個工具，實測通過 |
+| 2 | foothold 生成器 | 大 | 🔴 下一個。素材不帶幾何（實測 25 Tile / 12 Obj set 全無），需從輪廓算鏈 |
+| 3 | CLI 地圖命令改用 mapedit | 中 | ⏸ `tilefit` 等 4 個仍走舊的 `back/*/bS`，對 NX 不適用 |
+| 4 | 把 CLI/MCP 搬進新版 repo | 大 | ⏸ 舊 `WzMcp` 仍在另一個 repo，但可與新版同時註冊使用 |
 
 ---
 

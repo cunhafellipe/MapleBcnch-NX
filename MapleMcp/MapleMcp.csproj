@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The map-facing MCP surface. Deliberately separate from the older WzMcp
+    (which lives in a different repository) because that one reaches only
+    api/files, api/node, api/canvas and api/children. This server talks to the
+    31 mapedit endpoints, which is the only way an agent can author a map.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>maple-mcp</AssemblyName>
+    <RootNamespace>MapleMcp</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same version the older WzMcp pins, so a client that speaks one speaks
+         both and there is exactly one SDK on this machine to reason about. -->
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>
