@@ -101,6 +101,7 @@ export class SimulatorSection {
   async walk(map) {
     this.selected = map;
     this.result = null;
+    this.advice = null;
     this.render();
     try {
       // The CHARACTER, not the chain. The chain walk answers "are the links
@@ -111,6 +112,18 @@ export class SimulatorSection {
         path: map.path,
         direction: this.direction,
       });
+
+      // When the walk stops, ask what to change. "Blocked" is a fact an agent
+      // cannot act on; "extend foothold 38 to x=-1250" is a task.
+      if (this.result.fellOut) {
+        try {
+          this.advice = await get(
+            `/api/simulate/advice?path=${encodeURIComponent(map.path)}`
+            + `&x=${this.result.finalX}&y=${this.result.finalY}&dir=${this.direction}`);
+        } catch { /* advice is a bonus, not the verdict */ }
+      } else {
+        this.advice = null;
+      }
     } catch (err) {
       this.error = err.message;
       toastError(err);
@@ -277,6 +290,14 @@ export class SimulatorSection {
       ]),
 
       el('p', { class: 'sim-reason' }, [r.reason]),
+
+      this.advice ? el('div', { class: 'sim-advice' }, [
+        icon('info'),
+        el('div', {}, [
+          el('strong', {}, [this.advice.problem]),
+          el('p', {}, [this.advice.suggestion]),
+        ]),
+      ]) : null,
 
       r.fellOut ? el('div', { class: 'sim-caveat' }, [
         icon('alert'),

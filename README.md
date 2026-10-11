@@ -58,11 +58,12 @@ MapleBench is a Windows WZ editor and dependency-aware client importer for Maple
 | **地圖編輯器** | 沒有 | 完整的 map editor：圖層、圖塊、foothold 鏈、傳送門、怪物生成、minimap 重新產生 |
 | **自我驗證** | 存檔前驗證位元組 | `/validate` — 斷鏈、無效引用、link stub、層別不一致。**刻意的壞地圖能被機器抓到** |
 | **批次語意** | 每次編輯一筆 undo | `/batch` — 300 次操作 = **一筆** undo（undo 堆疊只有 200 格） |
-| **Agent 介面** | 無 | `MapleMcp` — 41 個工具的 MCP 伺服器（11 地圖 + 8 封裝拆分 + 22 通用資產），agent 只經 MCP 就能跑完整流程 |
+| **Agent 介面** | 無 | `MapleMcp` — 47 個工具的 MCP 伺服器（17 地圖 + 8 封裝拆分 + 22 通用資產），agent 只經 MCP 就能跑完整流程 |
 | **通用資產操作**（g9502995） | 無 | 22 個 `wz_asset_*` 工具：任意 WZ/IMG/NX 節點的開啟、新增、刪除、改名、搜尋、匯出、上傳 canvas、撤銷 |
 | **NX 內建地圖**（g9502995） | 無 | 可直接在 NX 封裝裡建立新地圖——原本所有 NX 目標都會被錯誤地拒絕 |
 | **繁體中文** | 無 | 全介面繁中，2,321 條翻譯。執行期切換，不需重啟 |
 | **地圖結構規格** | 無 | `docs/MAP-STRUCTURE.md` — 10 張真實地圖解剖出的規格，每條規則都有出處 |
+| **可玩性模擬** | 無 | 模擬器：用客戶端物理走一遍地圖，驗證角色走不走得過去；鏈完整但地面中斷的地圖，`/validate` 抓不到 |
 
 ### 協作方式
 

@@ -181,11 +181,13 @@ ok('simulator reachable', simCaps.available === true,
 const right = (await api('/api/simulate/character', { path: MAP, direction: 1 })).json;
 const left = (await api('/api/simulate/character', { path: MAP, direction: -1 })).json;
 
-// Whatever the outcome, the verdict has to be one of the four the endpoint
-// documents. A walk that returns neither crossed, blocked nor ended is a bug in
-// the reporting, not in the map, and the two are indistinguishable without this.
+// Whatever the outcome, the verdict has to be one the endpoint documents.
+// Walking into a portal is arriving somewhere, not crossing this map — it is
+// its own verdict and was missing here, so a map that exits correctly read as
+// "other" and failed the check that exists to catch exactly that.
 const verdictOf = (r) =>
   r.reachedEdge ? 'crossed'
+  : r.reachedPortal ? 'portal'
   : r.fellOut ? 'blocked'
   : r.chainEndedShort ? 'chain-ended'
   : 'other';
@@ -222,6 +224,18 @@ ok('character walk is not a relabelled chain walk',
    Math.abs(Number(chain.percentOfMap) - Number(right.percentOfMap)) > 0.01
      || chain.steps !== right.ticks,
    `chain ${chain.steps} steps vs character ${right.ticks} steps`);
+
+// Every blocked verdict must be able to say what to change. A report an agent
+// cannot act on is not a result — the whole point of running the walk is to get
+// from "this map is broken" to "extend foothold N".
+if (right.fellOut) {
+  const advice = (await api(
+    `/api/simulate/advice?path=${encodeURIComponent(MAP)}&x=${right.finalX}&y=${right.finalY}&dir=1`
+  )).json;
+  ok('a blocked map can be advised on',
+     !!advice.suggestion && advice.suggestion.length > 20,
+     `${advice.problem} -> ${(advice.suggestion ?? '').slice(0, 80)}`);
+}
 
 writeFileSync(out, JSON.stringify({ base, failed, checks }, null, 1));
 console.log(`\n${checks.length - failed}/${checks.length} passed`);

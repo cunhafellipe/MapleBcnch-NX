@@ -372,6 +372,68 @@ public sealed partial class MapEditorService
     }
 
     /// <summary>
+    /// Where the character and every spawn are, for drawing over the map.
+    /// </summary>
+    /// <remarks>
+    /// The simulator answers whether a map works; this answers where to LOOK.
+    /// A verdict with no position on the map is one the reader has to trust
+    /// rather than check, and "trust but verify" is the whole reason the
+    /// simulator exists.
+    /// </remarks>
+    public MapCastDto CastMap(string path, int? spawnX, int? spawnY, int seed, int steps)
+    {
+        lock (_gate)
+        {
+            MapDocument doc = LoadForReading(path);
+            FootholdPhysics physics = new(doc);
+            MapCastDto cast = new()
+            {
+                Seed = seed,
+                Footholds = physics.Footholds.Count,
+                Ladders = physics.Ladders.Count,
+                Portals = physics.Portals.Count(p => p.IsExit),
+            };
+
+            cast.LadderSpans = physics.Ladders
+                .Select(l => new MapCastLadderDto(l.X, l.Top, l.Bottom, l.IsLadder != 0))
+                .ToList();
+
+            cast.PortalSpans = physics.Portals
+                .Select(p => new MapCastPortalDto(p.Name, p.ToName, p.ToMap, p.X, p.Y, p.IsExit))
+                .ToList();
+
+            // The character: walk it once and keep the track.
+            FootholdPhysics.Foot? start =
+                FindStartFoothold(physics, spawnX ?? (physics.Bounds?.Left ?? 0), spawnY);
+            if (start is not null)
+            {
+                CharacterPhysics who = new(physics, start.Value, 1);
+                int n = Math.Clamp(steps, 1, 4000);
+                for (int i = 0; i < n && who.OnGround; i++)
+                {
+                    who.Step(1, 0);
+                    cast.Track.Add(new MapCastPointDto((int)Math.Round(who.X), (int)Math.Round(who.Y)));
+                }
+                cast.CharacterEnd = new MapCastPointDto(
+                    (int)Math.Round(who.X), (int)Math.Round(who.Y));
+                cast.CharacterVerdict = who.OnGround ? "crossed" : "left the chain";
+            }
+
+            // Every spawn, walked far enough to see whether it holds.
+            foreach (MapLife life in doc.Life)
+            {
+                int lx = (int)(life.X ?? 0);
+                int ly = (int)(life.Cy ?? life.Y ?? 0);
+                cast.Spawns.Add(new MapCastSpawnDto(
+                    life.Id ?? life.Key ?? "?", (life.Type ?? "m") == "n" ? "npc" : "mob",
+                    lx, ly, physics.FindBelow(lx, ly, falling: false) is not null));
+            }
+
+            return cast;
+        }
+    }
+
+    /// <summary>
     /// Whether a ladder is within reach, using the same wider box the climb uses.
     /// </summary>
     /// <remarks>
@@ -446,6 +508,92 @@ public sealed partial class MapEditorService
                 : mob2.LeftGroundBecause ?? "the spawn left its chain";
 
             return dto;
+        }
+    }
+
+    /// <summary>
+    /// Turns a walk that stopped into something an agent can act on.
+    /// </summary>
+    /// <remarks>
+    /// "the character stopped" is a fact but not a task. What the caller needs
+    /// is the specific foothold to extend, the direction that would close the
+    /// gap, and the distance — because the difference between "this map is
+    /// broken" and "extend foothold 12 by 40px" is the difference between a
+    /// report and a repair.
+    /// </remarks>
+    public MapAdviceDto Advise(string path, int x, int y, int direction)
+    {
+        lock (_gate)
+        {
+            FootholdPhysics physics = new(LoadForReading(path));
+            var advice = new MapAdviceDto { Path = path, AtX = x, AtY = y, Direction = direction };
+
+            FootholdPhysics.Foot? here = physics.FindBelow(x, y, falling: false)
+                ?? physics.FindBelow(x, y, falling: true);
+            if (here is not { } found)
+            {
+                advice.Problem = "there is no foothold at or below this point";
+                advice.Suggestion =
+                    "Draw ground here first: without a foothold a character has nothing to stand on, "
+                    + "and anything placed above it will be unreachable.";
+                return advice;
+            }
+
+            long nextId = direction > 0 ? found.Next : found.Prev;
+            advice.LastFoothold = found.Id;
+            advice.NextId = nextId;
+
+            if (nextId == 0)
+            {
+                advice.Problem = $"foothold {found.Id} ends the chain with no {(direction > 0 ? "next" : "previous")} foothold";
+                advice.Suggestion =
+                    $"Extend foothold {found.Id} to x={(direction > 0 ? found.Right + 80 : found.Left - 80)} "
+                    + $"(it currently ends at x={(direction > 0 ? found.Right : found.Left)}), or add a "
+                    + $"foothold there. Check the map is not meant to end here — if it is, the rest of "
+                    + "the level is reached by a ladder, a portal or a jump.";
+                return advice;
+            }
+
+            bool? nextIsWall = null;
+            foreach (FootholdPhysics.Foot f in physics.Footholds)
+            {
+                if (long.TryParse(f.Id, out long fid) && fid == nextId)
+                {
+                    nextIsWall = f.IsWall;
+                    break;
+                }
+            }
+
+            if (nextIsWall == true)
+            {
+                advice.Problem = $"foothold {found.Id} points at {nextId}, which is a vertical wall";
+                advice.Suggestion =
+                    $"A wall is not walkable ground. Foothold {found.Id} ends at "
+                    + $"x={(direction > 0 ? found.Right : found.Left)}; put a horizontal foothold from there "
+                    + "toward where the walk was heading, or leave it and let the ladder or portal take over.";
+                return advice;
+            }
+
+            // The link names a foothold that does not exist.
+            bool exists = false;
+            foreach (FootholdPhysics.Foot f in physics.Footholds)
+            {
+                if (long.TryParse(f.Id, out long fid) && fid == nextId) { exists = true; break; }
+            }
+
+            if (!exists)
+            {
+                advice.Problem = $"foothold {found.Id} points at {nextId}, which does not exist on this map";
+                advice.Suggestion =
+                    $"That is a broken link, not a gap. Either create foothold {nextId} or change "
+                    + $"foothold {found.Id}'s link to 0 so the chain ends cleanly there.";
+                return advice;
+            }
+
+            advice.Problem = "the chain is intact here";
+            advice.Suggestion =
+                $"Foothold {found.Id} links correctly to {nextId}. Nothing to repair at this point.";
+            return advice;
         }
     }
 
@@ -704,4 +852,37 @@ public sealed class MapMobPatrolDto
     public int MaxDistance { get; set; }
     public bool StayedOnMap { get; set; }
     public string Reason { get; set; } = "";
+}
+
+/// <summary>Everything needed to draw a map and what stands on it.</summary>
+public sealed class MapCastDto
+{
+    public int Seed { get; set; }
+    public int Footholds { get; set; }
+    public int Ladders { get; set; }
+    public int Portals { get; set; }
+    public List<MapCastLadderDto> LadderSpans { get; set; } = [];
+    public List<MapCastPortalDto> PortalSpans { get; set; } = [];
+    public List<MapCastPointDto> Track { get; set; } = [];
+    public MapCastPointDto? CharacterEnd { get; set; }
+    public string CharacterVerdict { get; set; } = "";
+    public List<MapCastSpawnDto> Spawns { get; set; } = [];
+}
+
+public sealed record MapCastLadderDto(int X, int Top, int Bottom, bool IsLadder);
+public sealed record MapCastPortalDto(string Name, string ToName, long ToMap, int X, int Y, bool IsExit);
+public sealed record MapCastPointDto(int X, int Y);
+public sealed record MapCastSpawnDto(string Id, string Kind, int X, int Y, bool HasGround);
+
+/// <summary>What to do about a walk that stopped.</summary>
+public sealed class MapAdviceDto
+{
+    public string Path { get; set; } = "";
+    public int AtX { get; set; }
+    public int AtY { get; set; }
+    public int Direction { get; set; }
+    public string Problem { get; set; } = "";
+    public string Suggestion { get; set; } = "";
+    public string LastFoothold { get; set; } = "";
+    public long NextId { get; set; }
 }

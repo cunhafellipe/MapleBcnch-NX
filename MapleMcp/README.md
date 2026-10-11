@@ -25,11 +25,11 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 
 ---
 
-## 41 個工具，三個家族
+## 47 個工具，四個家族
 
-伺服器名稱 `maplebench-assets`。2026-10-11 合併前只有 10 個 `wz_map_*`；
-之後併入 `wz_archive_*`（.wz 封裝拆成 .img 檔）與 `wz_asset_*`
-（通用 WZ/IMG/NX 節點操作）。
+伺服器名稱 `maplebench-assets`。2026-10-11 合併後有 41 個工具；
+2026-10-12 模擬器完成，再加 6 個 `wz_map_simulate*` 與
+`wz_map_patrol_mob` / `wz_map_cast` / `wz_map_advise` / `wz_map_ground`。
 
 ### 地圖 `wz_map_*` — 11 個
 
@@ -65,6 +65,24 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 不依賴「目前選中的地圖」，直接操作任意 WZ/IMG/NX 節點。
 `wz_asset_sources` 需要設定 `MAPLEBENCH_SOURCES`；未設定會明確報錯，
 不會假裝成功。
+
+### 模擬器 `wz_map_simulate*` — 6 個
+
+| 工具 | 作用 |
+|---|---|
+| `wz_map_simulate` | 用客戶端物理走一張地圖，回報走到哪、卡在哪 |
+| `wz_map_simulate_batch` | 一次跑多張，只列走不過去的 |
+| `wz_map_patrol_mob` | 讓怪物巡邏一段，種子固定可重現 |
+| `wz_map_cast` | 取得繪製所需：角色軌跡、梯子、門、每個生成點 |
+| `wz_map_advise` | 給定卡住的位置，說明該延伸哪個 foothold 多遠 |
+| `wz_map_ground` | 查某個點下面有什麼 foothold、哪裡是牆 |
+
+**與 `wz_map_validate` 的差別**：validate 檢查規則，
+這些檢查**角色實際會遇到什麼**。鏈完整但地面中斷的地圖，
+validate 說沒問題，這裡會說走不過去——那才是缺口。
+
+**為什麼種子是參數**：同種子必然重播同一次巡邏。
+一個每次答案都不同的問題不是問題。
 
 ### 安全設計
 

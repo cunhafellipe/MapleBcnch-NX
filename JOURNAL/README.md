@@ -49,6 +49,7 @@
 | [2026-10-11-physics-blocked](2026-10-11-physics-blocked.md) | **收束**：六次修正全敗。根因不是 bug，是模型錯了——MapleNecrocer 讓角色持有 foothold 沿角度走，而我讓它每步查地面 |
 | [2026-10-11-physics-verified](2026-10-11-physics-verified.md) | ✅ **換掉模型後驗收通過**：20 張真實地圖，最大偏差 4px。附常數出處、實測數據，以及還沒驗的三件事 |
 | [2026-10-12-stage-a](2026-10-12-stage-a.md) | ✅ **階段 A 驗收**：100 張雙向 200 次行走最大偏差 3px、`acceptance.mjs` 23/23，以及三個被抓到的真實缺陷 |
+| [2026-10-12-simulator-complete](2026-10-12-simulator-complete.md) | ✅ **模擬器完成**：梯子、傳送門、怪物巡邏、6 個 MCP 工具、失敗建議。200 次零誤差，34/34 掉落地圖都有修復建議 |
 
 ## 專案文件
 

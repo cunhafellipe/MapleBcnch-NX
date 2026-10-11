@@ -48,6 +48,18 @@ public static class SimulatorEndpoints
             Results.Ok(maps.WalkCharacter(request.Path, request.StartX, request.StartY,
                 request.Direction, request.JumpEvery, request.DropAtStep, request.Climb)));
 
+        // Turn "the character stopped" into "extend foothold 12 by 80px". A fact an
+        // agent cannot act on is a report, not a result.
+        group.MapGet("/advice", (string path, int x, int y, int dir,
+            MapEditorService maps) =>
+            Results.Ok(maps.Advise(path, x, y, dir)));
+
+        // Everything needed to draw a map and what stands on it. The simulator
+        // answers WHETHER a map works; this answers where to LOOK at it.
+        group.MapGet("/cast", (string path, int? spawnX, int? spawnY, int seed, int steps,
+            MapEditorService maps) =>
+            Results.Ok(maps.CastMap(path, spawnX, spawnY, seed, steps)));
+
         // Mobs and NPCs patrol their own foothold chain. Seeded, so a map's answer
         // is the same twice — MapleNecrocer's are not, which is the whole reason
         // this endpoint exists rather than a recommendation to watch them.

@@ -328,3 +328,24 @@
   color: var(--text-dim, #777);
   font-size: 0.6875rem;
 }
+
+/* The repair, not the verdict. /advice turns "blocked" into a specific
+ * foothold and a specific coordinate, which is the part an agent can act on.
+ */
+.sim-advice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius, 8px);
+  background: color-mix(in srgb, #3498db 12%, transparent);
+  border: 1px solid color-mix(in srgb, #3498db 40%, transparent);
+}
+
+.sim-advice strong { display: block; font-size: 0.8125rem; margin-bottom: 3px; }
+
+.sim-advice p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
