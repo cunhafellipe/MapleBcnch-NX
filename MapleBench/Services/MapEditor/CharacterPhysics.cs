@@ -245,8 +245,14 @@ public sealed class CharacterPhysics
                 && _y >= (g.SurfaceAt((int)Math.Round(_x)) ?? int.MaxValue) - 3)
             {
                 _foothold = g;
-                _x = g.X1;
-                _y = g.Y1;
+                // Land ON the surface, not a pixel under it. The sub-step
+                // advances in whole pixels but the surface is interpolated, so
+                // the feet can settle up to a pixel BELOW it -- and a later
+                // FindBelow, which only accepts surfaces at or above Y, then
+                // cannot see the ground the character is standing on and reports
+                // it as having fallen out. Measured: after a jump the character
+                // stood at y=369 on a surface of y=368 and was called lost.
+                _y = g.SurfaceAt((int)Math.Round(_x)) ?? _y;
                 _velocityY = 0;
                 OnGround = true;
                 LeftGroundBecause = null;

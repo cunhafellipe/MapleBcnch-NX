@@ -12,6 +12,10 @@
 //   B  the three features added this round (validate / batch / reopen-save)
 //   C  persistence: restart the process, read the file back from disk
 //   D  regression: the rules in docs/MAP-STRUCTURE.md still hold
+//   E  the simulator: a character walks the map under the client's physics,
+//      which is the only thing here that can answer whether the LINKS being
+//      intact still leaves ground under the character's feet. Runs last
+//      because it is read-only and must not disturb what C saved.
 
 import { writeFileSync } from 'node:fs';
 
@@ -164,6 +168,60 @@ ok('map still valid after the whole run', finalCheck.ok === true,
 const save = (await api('/api/mapedit/save', { path: MAP })).json;
 ok('save verifies', save.verified === true,
    `${Number(save.seconds).toFixed(2)}s reopenMs=${save.reopenMs} diffs=${(save.differences||[]).length}`);
+
+// ------------------------------------------------------------- E. simulator
+// The character walk is the only thing here that answers a question /validate
+// cannot: the links can be intact while there is no ground under the character.
+// It is read-only, so it runs after the save rather than instead of it.
+console.log('\n=== E. 角色模擬 ===');
+const simCaps = (await api('/api/simulate/capabilities')).json;
+ok('simulator reachable', simCaps.available === true,
+   `archives=${(simCaps.mapArchives || []).join(',')} maps=${simCaps.mapCount}`);
+
+const right = (await api('/api/simulate/character', { path: MAP, direction: 1 })).json;
+const left = (await api('/api/simulate/character', { path: MAP, direction: -1 })).json;
+
+// Whatever the outcome, the verdict has to be one of the four the endpoint
+// documents. A walk that returns neither crossed, blocked nor ended is a bug in
+// the reporting, not in the map, and the two are indistinguishable without this.
+const verdictOf = (r) =>
+  r.reachedEdge ? 'crossed'
+  : r.fellOut ? 'blocked'
+  : r.chainEndedShort ? 'chain-ended'
+  : 'other';
+
+ok('walk right returns a known verdict', verdictOf(right) !== 'other',
+   `${verdictOf(right)} pct=${Number(right.percentOfMap).toFixed(1)} ticks=${right.ticks}`);
+ok('walk left returns a known verdict', verdictOf(left) !== 'other',
+   `${verdictOf(left)} pct=${Number(left.percentOfMap).toFixed(1)} ticks=${left.ticks}`);
+
+// The physics constants are echoed so a result can be reproduced. If they drift,
+// a walk that passed last week is not comparable to one that passes today.
+ok('walk reports the client constants', right.stepSeconds > 0 && right.maxWalkSpeed > 0,
+   `step=1/${Math.round(1 / right.stepSeconds)}s accel=${right.acceleration} max=${right.maxWalkSpeed}`);
+
+// A link stub has no geometry. Saying "walkable" about one would be a lie, so
+// the endpoint has to refuse it rather than answer with a zero.
+const stub = right.ticks === 0 && right.footholds === 0;
+ok('a map with no foothold is not called walkable', !(stub && right.reachedEdge),
+   stub ? 'link stub, refused' : `${right.footholds} footholds`);
+
+// The jump and drop paths exist on the character; without this they would be
+// code no run ever reaches.
+const jumped = (await api('/api/simulate/character', { path: MAP, direction: 1, jumpEvery: 60 })).json;
+ok('jump path runs without error', typeof jumped.ticks === 'number',
+   `jumpEvery=60 ticks=${jumped.ticks} verdict=${verdictOf(jumped)}`);
+const dropped = (await api('/api/simulate/character', { path: MAP, direction: 1, dropAtStep: 120 })).json;
+ok('drop-through path runs without error', typeof dropped.ticks === 'number',
+   `dropAtStep=120 ticks=${dropped.ticks} verdict=${verdictOf(dropped)}`);
+
+// The chain walk and the character walk must not be the same thing wearing
+// different names. If they ever agree on every map, one of them is lying.
+const chain = (await api('/api/simulate/walk', { path: MAP })).json;
+ok('character walk is not a relabelled chain walk',
+   Math.abs(Number(chain.percentOfMap) - Number(right.percentOfMap)) > 0.01
+     || chain.steps !== right.ticks,
+   `chain ${chain.steps} steps vs character ${right.ticks} steps`);
 
 writeFileSync(out, JSON.stringify({ base, failed, checks }, null, 1));
 console.log(`\n${checks.length - failed}/${checks.length} passed`);

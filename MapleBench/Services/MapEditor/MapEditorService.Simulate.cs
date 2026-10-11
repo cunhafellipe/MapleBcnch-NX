@@ -457,4 +457,16 @@ public sealed class MapSimulateRequest
     /// right and reported running out of ground.
     /// </remarks>
     public int Direction { get; set; } = 1;
+
+    /// <summary>Jump every N steps, 0 to never jump.</summary>
+    /// <remarks>
+    /// The client jumps on LeftAlt (MapleCharacter.cs:533). There is no
+    /// "press" here — a walk is a script, not a player — so the closest honest
+    /// equivalent is a cadence, and it has to be explicit: a map that needs a
+    /// jump to be crossed is a different finding from one that does not.
+    /// </remarks>
+    public int JumpEvery { get; set; }
+
+    /// <summary>Drop through the current foothold once, at step N. 0 to never.</summary>
+    public int DropAtStep { get; set; }
 }

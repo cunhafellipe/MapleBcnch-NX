@@ -209,7 +209,13 @@ public sealed class FootholdPhysics
                 continue;
             if (f.SurfaceAtExact(x) is not { } sy)
                 continue;
-            if (sy < y)
+            // One pixel of slack, and only for a GROUNDED query. The feet rest
+            // ON a surface, but the sub-step that put them there advances in whole
+            // pixels while the surface is interpolated, so they can settle a
+            // fraction under it. A strict test then cannot see the ground the
+            // character is standing on. Measured: after a jump it stood at y=369
+            // on a surface of y=368 and was reported as having fallen out.
+            if (sy < y - (falling ? 0 : 1))
                 continue;
 
             if (best is null)

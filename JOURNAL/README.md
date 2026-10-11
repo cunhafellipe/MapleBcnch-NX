@@ -48,6 +48,7 @@
 | [2026-10-11-physics](2026-10-11-physics.md) | 真實角色物理：MapleNecrocer 的實際常數、實測走完一張地圖，以及一個**還沒修的** `FindBelow` 缺陷 |
 | [2026-10-11-physics-blocked](2026-10-11-physics-blocked.md) | **收束**：六次修正全敗。根因不是 bug，是模型錯了——MapleNecrocer 讓角色持有 foothold 沿角度走，而我讓它每步查地面 |
 | [2026-10-11-physics-verified](2026-10-11-physics-verified.md) | ✅ **換掉模型後驗收通過**：20 張真實地圖，最大偏差 4px。附常數出處、實測數據，以及還沒驗的三件事 |
+| [2026-10-12-stage-a](2026-10-12-stage-a.md) | ✅ **階段 A 驗收**：100 張雙向 200 次行走最大偏差 3px、`acceptance.mjs` 23/23，以及三個被抓到的真實缺陷 |
 
 ## 專案文件
 
