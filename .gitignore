@@ -415,3 +415,4 @@ _accept/
 tools/probe/acceptance.json
 tools/probe/i18n-inventory.txt
 tools/visual-check/*.png
+tools/probe/acc.json

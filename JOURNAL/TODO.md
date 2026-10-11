@@ -15,10 +15,10 @@
 |---|---|---|
 | P0-1 | `PaletteSets` 像素驗證（`drawableEntries`） | ✅ 109/109 |
 | P0-2 | `/validate` 地圖規則檢查 | ✅ 實測能抓斷鏈與無效引用 |
-| P1-1 | `/batch` 批量端點（單一 undo） | ✅ 300 操作 → undoDepth=1 |
+| P1-1 | `/batch` 批量端點（單一 undo） | ✅ 300 操作 → 歷史只加一筆 |
 | P1-2 | **foothold 生成器**（從輪廓算鏈） | 🔴 **下一個做這個** |
 | P2-1 | 範本機制 | ⏸ 原料已齊（5366 張地圖） |
-| P2-2 | MCP server | ⏸ |
+| P2-2 | **MCP 地圖伺服器** | ✅ **已完成** — `MapleMcp`，10 工具，實測 ALL PASSED |
 
 **為什麼 P1-2 是下一個**：實測發現 `/auto-foothold` 依賴素材自帶的 Convex 幾何，
 而真實的 `Map.nx` 裡**沒有任何素材帶這個東西**（掃 25 個 Tile set、12 個 Obj set，
@@ -143,7 +143,7 @@ Character.nx  0.3s   ws=3.48GB
 
 ## P2 — 已知但未處理
 
-### 3. NX 與 .wz 同時開啟只取第一種表示法
+### 3. NX 與 .wz 同時開啟只取第一種表示法 — ❓ **需要產品決定**
 
 `MapEditorService.MapRoots` 在找到第一種表示法後 `yield break`。
 同一個 session 開了 `Map.nx` 和 `Map.wz`，`.wz` 兄弟檔會被跳過。
