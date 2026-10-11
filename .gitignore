@@ -416,3 +416,6 @@ tools/probe/acceptance.json
 tools/probe/i18n-inventory.txt
 tools/visual-check/*.png
 tools/probe/acc.json
+
+# Local test data: a copy of Map.nx used for simulator runs.
+.simdata/
