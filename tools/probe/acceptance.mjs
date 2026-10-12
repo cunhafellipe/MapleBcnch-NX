@@ -72,7 +72,18 @@ if (af) {
 
 // ------------------------------------------------------------- B. new work
 console.log('\n=== B. 本輪新增的三項 ===');
-const MAP = 'f1/Map/Map0/000000001.img';
+// The archive's mount id is assigned per session (f1 on the machine this was
+// written on, f6 here), so it is read from the API rather than hardcoded. A
+// hardcoded prefix made every downstream check fail with a bare 404 that read
+// like a product bug and was not one.
+const mapList = (await api('/api/mapedit/maps?limit=50')).json;
+const MOUNT = mapList.maps?.[0]?.path?.split('/')[0];
+if (!MOUNT) {
+  console.error('\nFATAL: no map archive is open, so the mount prefix is unknown.');
+  writeFileSync(out, JSON.stringify({ base, failed: checks.length, checks }, null, 1));
+  process.exit(2);
+}
+const MAP = `${MOUNT}/Map/Map0/000000001.img`;
 
 const opened = await api('/api/mapedit/open', { path: MAP });
 ok('map opens', opened.status === 200 && opened.json.layers?.length > 0,
@@ -270,7 +281,7 @@ const mulberry32 = (a) => () => {
 // One segment means the character stopped on the first foothold it reached.
 {
   const t = (await api('/api/simulate/trace?path=' +
-    encodeURIComponent('f1/Map/Map6/610030510.img') +
+    encodeURIComponent(`${MOUNT}/Map/Map6/610030510.img`) +
     '&x=0&y=0&dir=1&climb=0&steps=300&jumpEvery=0&dropAtStep=0')).json;
   const seq = [];
   for (const k of (t.ticks ?? [])) {

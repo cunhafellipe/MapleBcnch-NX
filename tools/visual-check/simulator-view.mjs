@@ -115,12 +115,16 @@ await new Promise((r) => setTimeout(r, 18000));
 // The picker caps at 400 options and says "search to narrow" -- but it only
 // searches the first 2,000 maps it fetched, so the search box is the only way
 // to reach the other 3,366. Type into it exactly as a user would.
+// Which map to walk. Overridable so the same script can prove the fix on more
+// than one map -- a renderer that works on one map proves nothing.
+const MAP_ID = process.env.SIM_MAP ?? '109050001';
+
 const searched = await evaluate(`(() => {
   const box = document.querySelector('.sim-search');
   if (!box) return 'NO SEARCH BOX';
-  box.value = '109050001';
+  box.value = ${JSON.stringify(MAP_ID)};
   box.dispatchEvent(new Event('input', { bubbles: true }));
-  return 'typed 109050001';
+  return 'typed ' + ${JSON.stringify(MAP_ID)};
 })()`);
 console.log('search:', searched);
 await new Promise((r) => setTimeout(r, 2500));
@@ -131,35 +135,41 @@ const picked2 = await evaluate(`(() => {
   const s = [...document.querySelectorAll('select')]
     .find(x => [...x.options].some(o => /\\/Map\\/Map\\d+\\/\\d+\\.img$/.test(o.value)));
   if (!s) return 'NO MAP SELECT';
-  // A map measured to have 49 footholds and a ladder. Picking a map with no
-  // footholds proves nothing -- the walk correctly reports "nothing to stand
-  // on" and the canvas stays empty, which looks identical to a broken viewer.
-  const want = 'f6/Map/Map1/109050001.img';
-  const opt = [...s.options].find(o => o.value === want);
+  const opt = [...s.options].find(o => o.textContent.trim().startsWith(${JSON.stringify(MAP_ID)}));
   if (!opt) return 'NOT FOUND after search; options=' +
     JSON.stringify([...s.options].map(o => o.textContent.trim()).slice(0, 6));
-  s.value = want;
+  s.value = opt.value;
   s.dispatchEvent(new Event('change', { bubbles: true }));
   return 'selected: ' + opt.textContent.trim() + ' (value=' + opt.value + ')';
 })()`);
 console.log('map:', picked2);
 await new Promise((r) => setTimeout(r, 30000));
 
-// Canvas pixels, not just presence: a blank canvas and a drawn one look the
-// same in a screenshot at a glance but not in a pixel count.
+// Canvas pixels, not just presence. But paintedPct alone lies: the view fills
+// the background first, so a map with zero art scores 100%. What separates
+// "art drawn" from "empty background" is how many DISTINCT colours are on it --
+// a blank canvas is one or two, real map art is hundreds. Both are reported so
+// a regression cannot hide behind a full-looking percentage.
 const painted = await evaluate(`(() => {
   const c = [...document.querySelectorAll('canvas')].map(cv => {
-    let painted = 0, total = 0;
     try {
       const ctx = cv.getContext('2d');
       const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
-      total = d.length / 4;
+      let opaque = 0, total = d.length / 4;
+      const colours = new Set();
       for (let i = 0; i < d.length; i += 4) {
-        if (d[i+3] > 0 && !(d[i]===0 && d[i+1]===0 && d[i+2]===0 && d[i+3]===0)) painted++;
+        if (d[i+3] > 0) {
+          opaque++;
+          colours.add((d[i]>>3<<16) | (d[i+1]>>3<<8) | (d[i+2]>>3));
+        }
       }
+      return {
+        w: cv.width, h: cv.height,
+        paintedPct: +(100*opaque/Math.max(total,1)).toFixed(2),
+        distinctColours: colours.size,
+        visible: !!(cv.offsetWidth || cv.offsetHeight),
+      };
     } catch (e) { return { w: cv.width, h: cv.height, err: String(e).slice(0,80) }; }
-    return { w: cv.width, h: cv.height, paintedPct: +(100*painted/Math.max(total,1)).toFixed(2),
-             visible: !!(cv.offsetWidth || cv.offsetHeight) };
   });
   return JSON.stringify(c);
 })()`);
