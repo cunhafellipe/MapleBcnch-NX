@@ -242,6 +242,20 @@ public sealed class CharacterPhysics
                 return;
             }
 
+            // Falling does NOT stop horizontal motion. MapleCharacter.cs:824
+            // gates the walk block on `FaceDir == Right && SpeedL == 0 && !InLadder`
+            // and :839 on `!FH.IsWall()` -- neither mentions JumpState -- so a
+            // character walking off a ledge keeps drifting sideways the whole way
+            // down, decelerating at Decceleration the entire time.
+            //
+            // This method was purely vertical. The gap was invisible because it
+            // only shows past the edge of a chain, where the character froze
+            // in mid-air at the moment it stepped off. That is also why
+            // ClimbReachX had been widened to 40 to catch ladders 18px away:
+            // the character stopped at the foothold's end because it was never
+            // moving horizontally, not because the ladder box was too narrow.
+            DriftWhileFalling(moveLeft);
+
             Fall();
             return;
         }
@@ -393,6 +407,44 @@ public sealed class CharacterPhysics
         _lastGroundId = step.Id;
     }
 
+    /// <summary>
+    /// Keep walking sideways while falling, and shed speed the way the client does.
+    /// </summary>
+    /// <remarks>
+    /// MapleCharacter.cs:824-843 runs the whole walk block whenever a direction
+    /// is held, and its only guards are <c>!InLadder</c> and <c>!FH.IsWall()</c>.
+    /// There is no JumpState test anywhere in it, so a falling character is still
+    /// being steered: it moves along the direction it last held and decelerates
+    /// at the usual 0.25 per frame (the <c>else</c> branch at :727-730).
+    ///
+    /// Y is left alone here. The client moves Y through the gravity integrator in
+    /// <c>JumperSprite.DoMove</c>, which is the vertical half and runs on the same
+    /// tick; <see cref="Fall"/> is that half.
+    /// </remarks>
+    private void DriftWhileFalling(int moveLeft)
+    {
+        if (moveLeft == 0)
+        {
+            // MapleCharacter.cs:727-730 — released input bleeds speed off even
+            // mid-air, so the drift dies out instead of carrying to the ground.
+            if (_speed > 0) _speed = Math.Max(0, _speed - Decceleration);
+            else if (_speed < 0) _speed = Math.Min(0, _speed + Decceleration);
+            if (_speed == 0)
+                return;
+        }
+        else
+        {
+            // :718 / :735 — a falling character does not build speed, only sheds it.
+            if (_speed > 0) _speed = Math.Max(0, _speed - Decceleration);
+            else if (_speed < 0) _speed = Math.Min(0, _speed + Decceleration);
+            moveLeft = Math.Sign(_speed);
+            if (_speed == 0)
+                return;
+        }
+
+        _x += _speed * moveLeft;
+    }
+
     /// <summary>Advance a fall and look for the ground, as the client does.</summary>
     private void Fall()
     {
@@ -499,43 +551,29 @@ public sealed class CharacterPhysics
     public bool Rising { get; private set; }
 
     /// <summary>
-    /// The ladder to climb, using a wider box than the client's.
+    /// The ladder to climb, using the client's box.
     /// </summary>
     /// <remarks>
-    /// The client reaches ±10 in X (LadderRopes.cs:18-27), which is right for a
-    /// player steering with a key. A walk is a script that arrives wherever the
-    /// chain ended, and chains routinely stop short of the column they serve:
-    /// measured, a ladder at x=1274 with the chain stopping at x=1256. Keeping
-    /// the client's box would mean the climb is unreachable on exactly the maps
-    /// where a ladder is the way onward — which is every map that has one.
+    /// LadderRopes.cs:19: <c>P.X &gt; L.X - 10 &amp;&amp; P.X &lt; L.X + 10 &amp;&amp; P.Y &lt; L.Y2 + 12
+    /// &amp;&amp; P.Y &gt; L.Y1 - 12</c>.
+    ///
+    /// This used to widen X to 40 and take the nearest ladder by distance. The
+    /// justification in the old comment was a measurement — a ladder at x=1274
+    /// with the chain ending at x=1256, 18px short — but that measurement was
+    /// evidence of a bug in this file, not a property of the data: the character
+    /// stopped at the chain's end because <see cref="DriftWhileFalling"/> did not
+    /// exist, so it never drifted the last 18px toward the ladder. The client
+    /// keeps moving and catches the ladder on its own box.
+    ///
+    /// With the drift in place the client's box is enough, and a widened one would
+    /// let a character climb a ladder it is visibly nowhere near.
     /// </remarks>
     private FootholdPhysics.Ladder? FindLadderForClimb()
     {
-        FootholdPhysics.Ladder? near = _map.FindLadder(
-            (int)Math.Round(X), (int)Math.Round(Y));
-        if (near is not null)
-            return near;
-
-        // Nearest ladder by horizontal distance, then vertical overlap.
-        FootholdPhysics.Ladder? best = null;
-        int bestDx = ClimbReachX;
-        foreach (FootholdPhysics.Ladder l in _map.Ladders)
-        {
-            int dx = Math.Abs(l.X - (int)Math.Round(X));
-            if (dx >= bestDx)
-                continue;
-            if ((int)Math.Round(Y) < l.Top - ClimbReachY || (int)Math.Round(Y) > l.Bottom + ClimbReachY)
-                continue;
-            bestDx = dx;
-            best = l;
-        }
-        return best;
+        return _map.FindLadder((int)Math.Round(X), (int)Math.Round(Y));
     }
 
-    /// <summary>Horizontal reach for a scripted climb, wider than the client's ±10.</summary>
-    private const int ClimbReachX = 40;
-
-    /// <summary>Vertical padding for that reach; the client's is ±12.</summary>
+    /// <summary>Vertical padding for the climb box; the client's is ±12.</summary>
     private const int ClimbReachY = 12;
 
     /// <summary>
