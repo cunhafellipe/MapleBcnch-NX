@@ -62,6 +62,7 @@
 | [2026-10-12-0941-client-parity-plan](2026-10-12-0941-client-parity-plan.md) | 客戶端對齊計畫：消除 28 項差距。判準是「他有的我就要有」——**雙向**的 |
 | [2026-10-12-0941-mob-ai-parity](2026-10-12-0941-mob-ai-parity.md) | 怪物 AI 對齊：**刪掉**憑空的仇恨判定與重生（客戶端都沒有），修正擲骰頻率、rx0/rx1 適用範圍、受擊反轉 |
 | **[2026-10-12-1010-parity-25-plan](2026-10-12-1010-parity-25-plan.md)** | **剩餘 25 項對齊計畫**：D 憑空機制 → A 牆與邊界 → B 梯子 → C 怪物 → E 精度。含驗收門檻與兩個踩過的坑 |
+| **[2026-10-12-1025-audit-itself-is-wrong](2026-10-12-1025-audit-itself-is-wrong.md)** | **審計本身是錯的**：`FindWallL` 客戶端永遠不成立，我卻列為差距。修正判準：**先確認客戶端會執行，再對齊**。查證途中實測 VR 邊界四邊全錯（最大 231px） |
 | [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器的技術細節與設計決策 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
