@@ -75,15 +75,55 @@ export class WalkViewer {
   async load(path) {
     this.path = path;
 
+    // The map must be open before /api/mapedit/doc will answer: documents do
+    // not survive a restart or an eviction, and the endpoint refuses a path it
+    // has never seen. Fetching doc without opening first returned 404, this.doc
+    // stayed null, and every tile silently vanished -- the walk drew bare
+    // geometry on an empty background and looked like a map that had no art.
+    // Opening is idempotent, so doing it on every walk is safe and it also
+    // re-opens after the server drops the document.
+    try {
+      const openRes = await fetch('/api/mapedit/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      if (!openRes.ok) {
+        throw new Error(`${openRes.status} ${await openRes.text()}`);
+      }
+    } catch (err) {
+      // Art is a bonus; the verdict above is the answer. A map that will not
+      // open for drawing still walks, so this is recorded, not thrown.
+      this.docError = err.message;
+    }
+
     const [geoRes, docRes] = await Promise.all([
       fetch(`/api/simulate/geometry?path=${encodeURIComponent(path)}`),
       fetch(`/api/mapedit/doc?path=${encodeURIComponent(path)}`),
     ]);
     if (!geoRes.ok) throw new Error(`${geoRes.status} ${geoRes.statusText}`);
 
-    this.geometry = await geoRes.json();
+    // The API serializes camelCase (Program.cs sets JsonNamingPolicy.CamelCase
+    // for every response), but the drawing code below was written against the
+    // C# property names -- so `g.Footholds` was undefined and layout() threw
+    // "g.Footholds is not iterable". Normalised once here, at the boundary,
+    // rather than renaming every read site: one place to keep in sync with the
+    // wire format, and the drawing code keeps the names the DTO declares.
+    const geo = await geoRes.json();
+    this.geometry = {
+      ...geo,
+      Footholds: geo.footholds ?? geo.Footholds ?? [],
+      Ladders: geo.ladders ?? geo.Ladders ?? [],
+      Portals: geo.portals ?? geo.Portals ?? [],
+      Bounds: geo.bounds ?? geo.Bounds ?? null,
+    };
 
+    // A missing doc used to be a silent blank map. Keep the reason: "no art"
+    // and "the walk is broken" look identical from the outside.
     this.doc = docRes.ok ? await docRes.json() : null;
+    if (!this.doc) {
+      this.docError ||= `map document unavailable (${docRes.status} ${docRes.statusText})`;
+    }
     this.images = new Map();
     if (this.doc) this.loadArt(this.doc);
 

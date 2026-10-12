@@ -10,6 +10,9 @@ import { writeFileSync } from 'node:fs';
 
 const [, , url, out, waitMsArg, clickSel] = process.argv;
 const waitMs = Number(waitMsArg ?? 12000);
+// CDP_PORT lets several checks run against browsers on different ports without
+// editing the script. Defaults to 9222, which is what the README documents.
+const PORT = process.env.CDP_PORT ?? '9222';
 if (!url || !out) {
   console.error('usage: node shot.mjs <url> <outPng> [waitMs] [clickSelector]');
   process.exit(2);
@@ -19,13 +22,13 @@ if (!url || !out) {
 async function findPage() {
   for (let i = 0; i < 60; i++) {
     try {
-      const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
+      const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
       const page = list.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
       if (page) return page;
     } catch { /* browser not up yet */ }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error('no debuggable page on :9222');
+  throw new Error(`no debuggable page on :${PORT}`);
 }
 
 const page = await findPage();
