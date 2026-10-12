@@ -78,6 +78,23 @@ public sealed class CharacterPhysics
     /// <summary>How far below the feet the fall probe reaches (MapleCharacter.cs:876).</summary>
     public const int FallProbeSlack = 6;
 
+    /// <summary>
+    /// The band inside the map where walking stops (MapleCharacter.cs:777, :829).
+    /// </summary>
+    public const int EdgeMargin = 20;
+
+    /// <summary>How far ahead and up the ground probe looks (MapleCharacter.cs:802).</summary>
+    public const int GroundProbeAhead = 10;
+
+    /// <summary>How far up that probe sits (MapleCharacter.cs:802, Y - 5).</summary>
+    public const int GroundProbeUp = 5;
+
+    /// <summary>How far ahead the wall probe looks (MapleCharacter.cs:803, X + 4).</summary>
+    public const int WallProbeAhead = 4;
+
+    /// <summary>How far up the wall probe sits (MapleCharacter.cs:803, Y - 4).</summary>
+    public const int WallProbeUp = 4;
+
     /// <summary>Radians per angle unit, for the client's 256-step angle scale.</summary>
     private const float PiConv256 = -40.743665431f;
 
@@ -86,6 +103,16 @@ public sealed class CharacterPhysics
 
     private readonly FootholdPhysics _map;
     private FootholdPhysics.Foot? _foothold;
+
+    /// <summary>
+    /// The map rectangle, or null when the map has no walkable extent.
+    /// </summary>
+    /// <remarks>
+    /// Read from the map's <c>info</c> node, not derived from the footholds —
+    /// MapleMap.cs:171-196 takes VRLeft/VRTop/VRRight/VRBottom when they are
+    /// present, and those are usually wider than the geometry.
+    /// </remarks>
+    private (int Left, int Top, int Right, int Bottom)? _bounds;
     private float _x;
     private float _y;
     private float _speed;
@@ -104,6 +131,7 @@ public sealed class CharacterPhysics
     public CharacterPhysics(FootholdPhysics map, FootholdPhysics.Foot start, int direction = 1)
     {
         _map = map ?? throw new ArgumentNullException(nameof(map));
+        _bounds = map.Bounds;
         _foothold = start;
         // Start at the end the character walks FROM, which is the opposite of the
         // end it walks toward: X1 going right, X2 going left. That is what
@@ -293,6 +321,25 @@ public sealed class CharacterPhysics
             return;
         }
 
+        // MapleCharacter.cs:777 (left) and :829 (right):
+        //
+        //     if ((X < Map.Left + 20) || (Attack) && (JumpState == jsNone))
+        //         SpeedL = 0;
+        //     if ((X > Map.Right - 20) || (Attack) && (JumpState == jsNone))
+        //         SpeedR = 0;
+        //
+        // Twenty pixels of margin INSIDE the map rectangle, and the walk simply
+        // stops there — it does not fall off and it does not wrap. The client has
+        // no vertical counterpart: a character that misses every foothold keeps
+        // falling forever, because FindBelow returns (99999, 99999) and the
+        // landing test can never be satisfied. This port had no boundary at all,
+        // which is why walks ran to the tick budget off the end of a map.
+        if (_bounds is { } bd)
+        {
+            if (moveLeft < 0 && _x < bd.Left + EdgeMargin) _speed = 0;
+            else if (moveLeft > 0 && _x > bd.Right - EdgeMargin) _speed = 0;
+        }
+
         int direction = Angle256(fh.X1, fh.Y1, fh.X2, fh.Y2);
 
         // The client's own expression: Sin/Cos of the foothold's direction, not a
@@ -311,28 +358,50 @@ public sealed class CharacterPhysics
         // an obstacle. Without the Z test the character is stopped by walls it
         // cannot even see -- and on a map with 400+ footholds there are always
         // some above it.
-        FootholdPhysics.Foot? ground = _map.FindBelow(
-            (int)Math.Round(_x), (int)Math.Round(_y), falling: false);
+        // MapleCharacter.cs:801-807 (right) and :853-859 (left), together:
+        //
+        //     Below = FootholdTree.Instance.FindBelow(new Vector2(X + 10, Y - 5), ref BelowFH);
+        //     WallFH = FootholdTree.Instance.FindWallR(new Vector2(X + 4, Y - 4));
+        //     if ((WallFH != null) && (X <= WallFH.X1) && (BelowFH.Z == WallFH.Z))
+        //     {
+        //         X = WallFH.X1 + 1;
+        //         SpeedR = 0;
+        //     }
+        //
+        // Three things this port had wrong, and all three changed the result:
+        //
+        //   the probe is AHEAD and 5px UP, not under the feet. The wall the
+        //   character is about to meet is not yet beneath it.
+        //
+        //   the wall probe is 4px UP as well — Y - 4, not Y. On a slope that
+        //   shifts when the wall starts blocking.
+        //
+        //   the Z compared is the Z of the ground ten pixels AHEAD, not of the
+        //   ground underfoot. Those are different floors on a layered map, and
+        //   the question the client asks is "is that wall on the floor I am
+        //   about to walk onto" — not "is it on the floor I am standing on".
+        int leadX = (int)Math.Round(_x) + (moveLeft > 0 ? 10 : -10);
+        int leadY = (int)Math.Round(_y) - GroundProbeUp;
+        FootholdPhysics.Foot? leadGround = _map.FindBelow(leadX, leadY, falling: true);
 
-        // Probed a few pixels AHEAD, not at the body: the wall the character is
-        // about to meet is not yet under it.
-        int ahead = (int)Math.Round(_x) + (moveLeft > 0 ? 4 : -4);
+        int wallX = (int)Math.Round(_x) + (moveLeft > 0 ? 4 : -4);
+        int wallY = (int)Math.Round(_y) - WallProbeUp;
         FootholdPhysics.Foot? wall = moveLeft > 0
-            ? _map.FindWall(ahead, (int)Math.Round(_y), movingRight: true)
+            ? _map.FindWall(wallX, wallY, movingRight: true)
             : moveLeft < 0
-                ? _map.FindWall(ahead, (int)Math.Round(_y), movingRight: false)
+                ? _map.FindWall(wallX, wallY, movingRight: false)
                 : null;
 
-        if (wall is { } w2 && ground is { } g2 && w2.Z == g2.Z)
+        if (wall is { } w2 && leadGround is { } g2 && w2.Z == g2.Z)
         {
-            if (moveLeft > 0 && _x >= w2.X1)
-            {
-                _x = w2.X1 - 1;
-                _speed = 0;
-            }
-            else if (moveLeft < 0 && _x <= w2.X1)
+            if (moveLeft > 0 && _x <= w2.X1)
             {
                 _x = w2.X1 + 1;
+                _speed = 0;
+            }
+            else if (moveLeft < 0 && _x >= w2.X1)
+            {
+                _x = w2.X1 - 1;
                 _speed = 0;
             }
         }
@@ -352,12 +421,18 @@ public sealed class CharacterPhysics
         // TEN pixels past the chain's end before it counts as off it.
         // Treating arrival at the end as leaving put the character into a
         // fall on the final frame of every chain.
-        const float EdgeSlack = 10f;
+        // MapleCharacter.cs:845-847 right, :793-795 left. The slack is NOT
+        // symmetric: right is X2 + 5, left is X1 - 10. Using one number for both
+        // gave the rightward walk five pixels of tolerance it should not have,
+        // which is long enough to step onto a foothold that is already falling
+        // away underneath.
+        const float RightSlack = 5f;
+        const float LeftSlack = 10f;
 
         long leadId = moveLeft >= 0 ? fh.Next : fh.Prev;
         float fallEdge = moveLeft >= 0 ? 999999f : -999999f;
         if (leadId == 0)
-            fallEdge = moveLeft >= 0 ? fh.X2 + EdgeSlack : fh.X1 - EdgeSlack;
+            fallEdge = moveLeft >= 0 ? fh.X2 + RightSlack : fh.X1 - LeftSlack;
 
         // A wall dropping away on the far side is the real edge.
         FootholdPhysics.Foot? lead = leadId == 0 ? null : FindById(leadId, fh);
@@ -380,7 +455,7 @@ public sealed class CharacterPhysics
             ReachedEnd = reachedEnd,
             BlockedByWall = wall is { } wb && _x <= wb.X1 + 1,
             WallAt = wall?.X1,
-            GroundBelow = ground?.Id,
+            GroundBelow = leadGround?.Id,
         };
 
         // HANDOVER — gated on POSITION, not on reaching the chain's end.
@@ -441,6 +516,9 @@ public sealed class CharacterPhysics
         _x = moveLeft >= 0 ? step.X1 : step.X2;
         _y = moveLeft >= 0 ? step.Y1 : step.Y2;
         _lastGroundId = step.Id;
+        // MapleCharacter.cs:863-868 also writes Z there. It is a derived render
+        // depth (`FH.Z * 100000 + 60000`), and this port keeps the layer index
+        // on the foothold instead, so there is nothing to update.
     }
 
     /// <summary>

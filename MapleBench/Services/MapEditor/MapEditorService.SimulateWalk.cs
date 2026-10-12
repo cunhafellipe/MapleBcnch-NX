@@ -167,30 +167,20 @@ public sealed partial class MapEditorService
                 if (who.Ticks % SampleEvery == 0)
                     track.Add(new MapWalkPointDto(who.Ticks, x, (int)Math.Round(who.Y)));
 
-                // Airborne AND there is no ladder to catch: the character is
-                // falling past the bottom of the world. Continuing would fly it
-                // across the void at terminal velocity until the tick cap, which
-                // is 18,000 steps of nothing. Measured: a climb attempt that
-                // missed its ladder spent the entire budget drifting.
-                // A fall that will not land runs forever. Bound it: after a
-                // couple of seconds of falling with nothing to catch, there is
-                // nothing to wait for.
-                // The client has no "the fall has gone on too long" rule:
-                // jsFalling just keeps applying gravity (SpriteEngine.cs:1594).
-                // What it DOES have is a floor -- the camera is clamped to the
-                // map, and a character below it is off the map. Compare against
-                // the map's own bottom rather than counting frames: a frame
-                // count measures time, and the question is about place.
-                if (who.Y > bounds.Bottom + FallMargin)
-                {
-                    result.FellOut = true;
-                    result.Reason =
-                        $"the character fell to y={(int)Math.Round(who.Y)}, past the map's "
-                        + $"lowest foothold at y={bounds.Bottom}. It walked off the edge at "
-                        + $"x={x} and there was nothing below.";
-                    break;
-                }
-
+                // Airborne AND there is no ladder to catch.
+                //
+                // This is the whole of the client's out-of-world rule, and it is
+                // worth being precise about what is NOT here. MapleCharacter.cs
+                // has no vertical boundary and no fall timer: jsFalling applies
+                // gravity forever (SpriteEngine.cs:1594), and the landing test
+                // `Y >= Below.Y - 3` can never pass once FindBelow has returned
+                // (99999, 99999) (Footholds.cs:107). A character in the real game
+                // simply keeps falling.
+                //
+                // The horizontal boundary is the only one the client has, and
+                // CharacterPhysics enforces it (MapleCharacter.cs:777, :829).
+                // A simulator has to stop somewhere, and "no ladder in reach" is
+                // a fact about the map rather than an invented threshold.
                 if (!who.OnGround && !LadderInReach(physics, who))
                 {
                     result.FellOut = true;
@@ -274,13 +264,37 @@ public sealed partial class MapEditorService
                 {
                     if (++stuckFor >= StuckTicks)
                     {
-                        result.Stuck = true;
-                        result.Reason =
-                            $"the character stopped moving at x={x}, y={(int)Math.Round(who.Y)} "
-                            + $"after {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s). "
-                            + "It is standing on ground it cannot walk off — a step it cannot climb, "
-                            + "or a wall it is pressed against. Nothing fell out of the world; the way "
-                            + "simply ends here.";
+                        // Standing at the map's own wall is ARRIVING, not stuck.
+                        // MapleCharacter.cs:777 and :829 stop the walk 20px inside
+                        // the map rectangle, so a character walking into the far
+                        // wall simply stops there — that is the boundary working,
+                        // not a blockage. Before the boundary existed this test
+                        // fired 2,777 times across the client and called every one
+                        // of them a fault.
+                        bool atMapEdge = x >= bounds.Right - CharacterPhysics.EdgeMargin - 1
+                                      || x <= bounds.Left + CharacterPhysics.EdgeMargin + 1;
+
+                        if (atMapEdge)
+                        {
+                            result.ReachedEdge = true;
+                            result.Reason =
+                                $"the character walked to the {(dir > 0 ? "right" : "left")} wall of the "
+                                + $"map at x={x}, y={(int)Math.Round(who.Y)}, in {who.Ticks} steps "
+                                + $"({who.Ticks * CharacterPhysics.StepSeconds:N1}s). The boundary is "
+                                + $"{CharacterPhysics.EdgeMargin}px inside the map rectangle "
+                                + $"({bounds.Left}..{bounds.Right}), as MapleCharacter.cs:777 does; "
+                                + "the way ends there because that is the edge of the map.";
+                        }
+                        else
+                        {
+                            result.Stuck = true;
+                            result.Reason =
+                                $"the character stopped moving at x={x}, y={(int)Math.Round(who.Y)} "
+                                + $"after {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s). "
+                                + "It is standing on ground it cannot walk off — a step it cannot climb, "
+                                + "or a wall it is pressed against. Nothing fell out of the world; the way "
+                                + "simply ends here.";
+                        }
                         break;
                     }
                 }
@@ -745,17 +759,6 @@ public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, 
             return advice;
         }
     }
-
-    /// <summary>
-    /// How far below the map's lowest foothold a character may get before the
-    /// walk calls it a fall out of the world.
-    /// </summary>
-    /// <remarks>
-    /// One screen's worth. The client has no equivalent constant — it clamps the
-    /// camera and lets the character keep falling — so this is ours, and the
-    /// number that matters is not "how long" but "how far past the ground".
-    /// </remarks>
-    private const int FallMargin = 400;
 
     private static bool LadderInReach(FootholdPhysics physics, CharacterPhysics who)
     {
