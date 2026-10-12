@@ -257,7 +257,38 @@ public sealed class CharacterPhysics
             }
         }
 
-        bool reachedEnd = moveLeft >= 0 ? _x >= fh.X2 : _x <= fh.X1;
+        // MapleNecrocer's FallEdge, in its own shape (MapleCharacter.cs:793-801
+        // left, :845-852 right):
+        //
+        //     FallEdge = -999999;                 // never fires
+        //     if (FH.Prev == null)                // at the chain's end
+        //         FallEdge = FH.X1 - 10;
+        //     if ((FH.Prev != null) && (FH.Prev.IsWall()) && (FH.Prev.Y1 > Y))
+        //         FallEdge = FH.X1;
+        //     if ((JumpState == jsNone) && (X < FallEdge))
+        //         JumpState = jsFalling;
+        //
+        // The default is what my version got wrong: the character steps
+        // TEN pixels past the chain's end before it counts as off it.
+        // Treating arrival at the end as leaving put the character into a
+        // fall on the final frame of every chain.
+        const float EdgeSlack = 10f;
+
+        long leadId = moveLeft >= 0 ? fh.Next : fh.Prev;
+        float fallEdge = moveLeft >= 0 ? 999999f : -999999f;
+        if (leadId == 0)
+            fallEdge = moveLeft >= 0 ? fh.X2 + EdgeSlack : fh.X1 - EdgeSlack;
+
+        // A wall dropping away on the far side is the real edge.
+        FootholdPhysics.Foot? lead = leadId == 0 ? null : FindById(leadId);
+        if (lead is { IsWall: true } lw)
+        {
+            float wallTop = moveLeft >= 0 ? lw.Y2 : lw.Y1;
+            if (wallTop > _y)
+                fallEdge = moveLeft >= 0 ? fh.X2 : fh.X1;
+        }
+
+        bool reachedEnd = moveLeft >= 0 ? _x > fallEdge : _x < fallEdge;
 
         // What the step decided, for a caller that cannot otherwise tell a
         // character that stood still from one that walked and was reset.
@@ -585,6 +616,17 @@ public sealed class CharacterPhysics
     /// Ids are not unique — 69 maps ship a duplicate — so the adjacency test is
     /// what picks the right one: a real link meets its neighbour at an endpoint.
     /// </remarks>
+    /// <summary>The foothold with this id, or null.</summary>
+    private FootholdPhysics.Foot? FindById(long id)
+    {
+        foreach (FootholdPhysics.Foot f in _map.Footholds)
+        {
+            if (long.TryParse(f.Id, out long fid) && fid == id)
+                return f;
+        }
+        return null;
+    }
+
     private FootholdPhysics.Foot? FindLinked(long id, FootholdPhysics.Foot from)
     {
         FootholdPhysics.Foot? byId = null;

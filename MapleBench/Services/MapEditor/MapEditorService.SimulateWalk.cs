@@ -118,7 +118,6 @@ public sealed partial class MapEditorService
 
             int lastX = int.MinValue;
             int stuckFor = 0;
-            int airborne = 0;
             const int StuckTicks = 30;   // half a second without progress
 
             // Sampled as it happens, not reconstructed afterwards: a walk is
@@ -176,14 +175,19 @@ public sealed partial class MapEditorService
                 // A fall that will not land runs forever. Bound it: after a
                 // couple of seconds of falling with nothing to catch, there is
                 // nothing to wait for.
-                airborne = who.OnGround ? 0 : airborne + 1;
-                if (airborne > MaxFallFrames)
+                // The client has no "the fall has gone on too long" rule:
+                // jsFalling just keeps applying gravity (SpriteEngine.cs:1594).
+                // What it DOES have is a floor -- the camera is clamped to the
+                // map, and a character below it is off the map. Compare against
+                // the map's own bottom rather than counting frames: a frame
+                // count measures time, and the question is about place.
+                if (who.Y > bounds.Bottom + FallMargin)
                 {
                     result.FellOut = true;
                     result.Reason =
-                        $"the character fell for {MaxFallFrames} frames from x={x}, "
-                        + $"y={(int)Math.Round(who.Y)} without reaching ground. "
-                        + "There is no foothold below it anywhere along that fall.";
+                        $"the character fell to y={(int)Math.Round(who.Y)}, past the map's "
+                        + $"lowest foothold at y={bounds.Bottom}. It walked off the edge at "
+                        + $"x={x} and there was nothing below.";
                     break;
                 }
 
@@ -691,17 +695,15 @@ public sealed partial class MapEditorService
     }
 
     /// <summary>
-    /// How many frames a character may spend falling before the walk stops.
+    /// How far below the map's lowest foothold a character may get before the
+    /// walk calls it a fall out of the world.
     /// </summary>
     /// <remarks>
-    /// A fall that will land is short — the terminal velocity is 8px per frame
-    /// and a map is 2,000px tall at most. A fall that will NOT land never ends,
-    /// and without this the walk spends its whole budget drifting sideways in
-    /// empty air. Measured on 610030510: 97 frames of walking, then 303 of
-    /// falling with the position frozen, and the run still reported success
-    /// because it never set any failure flag.
+    /// One screen's worth. The client has no equivalent constant — it clamps the
+    /// camera and lets the character keep falling — so this is ours, and the
+    /// number that matters is not "how long" but "how far past the ground".
     /// </remarks>
-    private const int MaxFallFrames = 120;
+    private const int FallMargin = 400;
 
     private static bool LadderInReach(FootholdPhysics physics, CharacterPhysics who)
     {
