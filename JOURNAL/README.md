@@ -61,6 +61,7 @@
 | [PLAN-SIMULATOR-2.md](PLAN-SIMULATOR-2.md) | **下一輪計畫**：修 18,000 幀（診斷優先，不推理）、同步主目錄、推送 |
 | [2026-10-12-0941-client-parity-plan](2026-10-12-0941-client-parity-plan.md) | 客戶端對齊計畫：消除 28 項差距。判準是「他有的我就要有」——**雙向**的 |
 | [2026-10-12-0941-mob-ai-parity](2026-10-12-0941-mob-ai-parity.md) | 怪物 AI 對齊：**刪掉**憑空的仇恨判定與重生（客戶端都沒有），修正擲骰頻率、rx0/rx1 適用範圍、受擊反轉 |
+| **[2026-10-12-1010-parity-25-plan](2026-10-12-1010-parity-25-plan.md)** | **剩餘 25 項對齊計畫**：D 憑空機制 → A 牆與邊界 → B 梯子 → C 怪物 → E 精度。含驗收門檻與兩個踩過的坑 |
 | [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器的技術細節與設計決策 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
