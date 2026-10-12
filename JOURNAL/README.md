@@ -68,6 +68,7 @@
 | **[2026-10-12-1030-audit-verification](2026-10-12-1030-audit-verification.md)** | **驗證審計清單**：6 項裁決 4 項為假。發現清單漏掉最嚴重的一項——`Fall()` 缺水平位移，它還掩蓋了 `ClimbReachX=40` 那個「量測過的補丁」 |
 | **[2026-10-12-1055-p0-handover](2026-10-12-1055-p0-handover.md)** | 🔴 **P0**：交接被掛在 `reachedEnd` 上，鏈中間永假——角色走過一段 foothold 就不會再前進。所有測試都綠燈。修正後 acceptance **24/24**（`save verifies` 也好了） |
 | **[2026-10-12-1110-engineering-analysis](2026-10-12-1110-engineering-analysis.md)** | **工程分析**：客戶端的三個設計決定 vs 我的三個結構性偏離。回答「照抄能否達成相同效果」——289 行裡只有 8 處鍵盤依賴。**結論：驗收規則比照抄更重要** |
+| **[2026-10-12-1305-step1-verification-rules](2026-10-12-1305-step1-verification-rules.md)** | **第 1 步完成**：驗收終於能看見「沒動」。規則改了三次才對（距離/段數/時間全是錯的訊號），最後用幾何檢查。抓到一個假行走：宣稱走完 100% 卻站在 51px 的 foothold 上 |
 | [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器的技術細節與設計決策 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
