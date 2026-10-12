@@ -360,7 +360,7 @@ public sealed class CharacterPhysics
             fallEdge = moveLeft >= 0 ? fh.X2 + EdgeSlack : fh.X1 - EdgeSlack;
 
         // A wall dropping away on the far side is the real edge.
-        FootholdPhysics.Foot? lead = leadId == 0 ? null : FindById(leadId);
+        FootholdPhysics.Foot? lead = leadId == 0 ? null : FindById(leadId, fh);
         if (lead is { IsWall: true } lw)
         {
             float wallTop = moveLeft >= 0 ? lw.Y2 : lw.Y1;
@@ -416,7 +416,18 @@ public sealed class CharacterPhysics
             // or "the chain ended" is decided by reachedEnd, which knows where
             // the chain's own boundary is.
             if (!reachedEnd)
+            {
+                // Past this foothold's end, mid-chain, with no neighbour to take.
+                // Returning and keeping `fh` let X run on regardless: the character
+                // kept moving along a foothold whose extent had already ended.
+                // The client has no such state — it either takes FH.Next/Prev or,
+                // past FallEdge, goes to jsFalling.
+                leftGround = true;
+                LeaveGround(moveLeft >= 0
+                    ? $"foothold {fh.Id} ends at x={fh.X2} and no foothold at id {nextId} meets it"
+                    : $"foothold {fh.Id} ends at x={fh.X1} and no foothold at id {fh.Prev} meets it");
                 return;
+            }
 
             leftGround = true;
             LeaveGround(
@@ -799,11 +810,11 @@ public sealed class CharacterPhysics
     /// what picks the right one: a real link meets its neighbour at an endpoint.
     /// </remarks>
     /// <summary>The foothold with this id, or null.</summary>
-    private FootholdPhysics.Foot? FindById(long id)
+    private FootholdPhysics.Foot? FindById(long id, FootholdPhysics.Foot from)
     {
         foreach (FootholdPhysics.Foot f in _map.Footholds)
         {
-            if (long.TryParse(f.Id, out long fid) && fid == id)
+            if (long.TryParse(f.Id, out long fid) && fid == id && Meets(from, f))
                 return f;
         }
         return null;
@@ -811,17 +822,22 @@ public sealed class CharacterPhysics
 
     private FootholdPhysics.Foot? FindLinked(long id, FootholdPhysics.Foot from)
     {
-        FootholdPhysics.Foot? byId = null;
+        // Ids are unique only WITHIN a layer/group, not across the map — the
+        // flattened list repeats numbers. The client never looks an id up at all:
+        // CreateFootholds resolves the link while building the chain and stores it
+        // as an object reference, so a link that does not meet its neighbour never
+        // becomes one.
+        //
+        // Returning `byId` when nothing meets meant the character could adopt a
+        // foothold from another floor, and since nothing clamped X to the current
+        // foothold's extent it would then "walk" along it for the rest of its
+        // budget. Measured: reported standing on 14 (x=0..51) while X ran to 721.
         foreach (FootholdPhysics.Foot f in _map.Footholds)
         {
-            if (!long.TryParse(f.Id, out long fid) || fid != id)
-                continue;
-
-            byId ??= f;
-            if (Meets(from, f))
+            if (long.TryParse(f.Id, out long fid) && fid == id && Meets(from, f))
                 return f;
         }
-        return byId;
+        return null;
     }
 
     /// <summary>Whether two footholds share an endpoint, as linked ones do.</summary>

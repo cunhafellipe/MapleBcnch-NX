@@ -16,6 +16,8 @@
 //      which is the only thing here that can answer whether the LINKS being
 //      intact still leaves ground under the character's feet. Runs last
 //      because it is read-only and must not disturb what C saved.
+//   F  did it go anywhere: the checks that catch a walk which SUCCEEDS and
+//      moves nowhere. Written after four bugs passed every other section.
 
 import { writeFileSync } from 'node:fs';
 
@@ -235,6 +237,176 @@ if (right.fellOut) {
   ok('a blocked map can be advised on',
      !!advice.suggestion && advice.suggestion.length > 20,
      `${advice.problem} -> ${(advice.suggestion ?? '').slice(0, 80)}`);
+}
+
+// ------------------------------------------------------- F. did it go anywhere
+//
+// Everything above asks whether a request SUCCEEDS. This section asks whether
+// the character actually MOVED, because four bugs in a row passed every other
+// check while the character stood still:
+//
+//   18,000 frames   23/23 passed
+//   jump peaked 0.3px   23/23 passed
+//   handover gated on reachedEnd   23/23 passed
+//
+// A green suite meant nothing because none of it could see the difference
+// between "walked" and "returned without error". These three rules can.
+
+console.log('\n=== F. 有沒有真的走 ===');
+
+// Deterministic sample so a failure can be re-run.
+const SAMPLE_SEED = 20261012;
+const SAMPLE_N = 120;
+
+const mulberry32 = (a) => () => {
+  a |= 0; a = (a + 0x6D2B79F5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+// F1 — a walk across a multi-segment chain must cross more than one foothold.
+// Measured on f1/Map/Map6/610030510.img: 4 segments after the fix, 1 before it.
+// One segment means the character stopped on the first foothold it reached.
+{
+  const t = (await api('/api/simulate/trace?path=' +
+    encodeURIComponent('f1/Map/Map6/610030510.img') +
+    '&x=0&y=0&dir=1&climb=0&steps=300&jumpEvery=0&dropAtStep=0')).json;
+  const seq = [];
+  for (const k of (t.ticks ?? [])) {
+    if (seq[seq.length - 1] !== k.foothold) seq.push(k.foothold);
+  }
+  const segments = new Set(seq).size;
+  const span = t.ticks?.length ? Math.abs(t.ticks.at(-1).x - t.ticks[0].x) : 0;
+  ok('a walk crosses more than one foothold', segments > 1 && span > 200,
+     `${segments} segments, ${span}px  ${seq.slice(0, 6).join('→')}`);
+}
+
+// F2 — across the fleet, walks must cross MORE THAN ONE foothold and keep
+// crossing. Measured against the handover bug on 2026-10-12: that build moved
+// 748px and reported pct=8.3 (and 91.7 the other way), which looks exactly
+// like a healthy walk. Distance alone cannot tell "advanced along the chain"
+// from "paced back and forth on one foothold", because a character that keeps
+// stepping past a foothold's end and snapping back nets out the same X.
+//
+// So the fleet rules count SEGMENTS, not pixels. Both numbers are reported:
+// the pixels because a regression there still matters, the segments because
+// they are what actually has signal.
+const listAll = (await api('/api/simulate/maps?limit=2000')).json;
+const allPaths = (listAll.maps ?? []).map((m) => m.path).sort();
+const rnd = mulberry32(SAMPLE_SEED);
+const pool = allPaths.slice();
+for (let i = pool.length - 1; i > 0; i--) {          // Fisher-Yates, seeded
+  const j = Math.floor(rnd() * (i + 1));
+  [pool[i], pool[j]] = [pool[j], pool[i]];
+}
+const samplePaths = pool.slice(0, Math.min(SAMPLE_N, pool.length));
+
+{
+  const walks = [];
+  let traceBudget = 120;          // /trace caps at 500 steps; sample the segment count
+  for (const p of samplePaths) {
+    const r = (await api('/api/simulate/character',
+      { path: p, direction: 1, climb: -1 })).json;
+    if (r.footholds === 0) continue;                  // link stub: nothing to walk
+    const width = Math.max(1, r.bounds.right - r.bounds.left);
+    const w = { path: p, ticks: r.ticks, footholds: r.footholds,
+                pct: Math.abs(r.finalX - r.startX) / width * 100,
+                // "Arrived" means crossed the map or entered a portal. A walk
+                // that stopped because it ran out of ground said so, and that is
+                // a legitimate answer when the chain really ends there.
+                claimsArrival: !!(r.reachedEdge || r.reachedPortal) };
+
+    if (traceBudget-- > 0) {
+      const t = (await api('/api/simulate/trace?path=' + encodeURIComponent(p) +
+        '&x=0&y=0&dir=1&climb=0&steps=300&jumpEvery=0&dropAtStep=0')).json;
+      if (t.ticks?.length) {
+        const seq = [];
+        for (const k of t.ticks) if (seq[seq.length - 1] !== k.foothold) seq.push(k.foothold);
+        w.segments = new Set(seq).size;
+        w.chain = t.ticks.length;
+      }
+    }
+    walks.push(w);
+  }
+
+  const ticked = walks.filter((w) => w.ticks !== undefined);
+  const median = ticked.map((w) => w.ticks).sort((a, b) => a - b)[
+    Math.floor(ticked.length / 2)] ?? 0;
+  ok('walks actually travel (median ticks)', walks.length >= 40 && median >= 40,
+     `${walks.length} maps, median=${median} ticks, max=${Math.max(...ticked.map((w) => w.ticks))}`);
+
+  // THE rule, and it took three attempts to state correctly.
+  //
+  //   v1  "a walk that crossed one foothold did not move"    → false alarm:
+  //       a map whose whole floor is one 750px segment is legitimate
+  //   v2  "...and claimed arrival"                             → still false:
+  //       same map, same long segment, legitimately reaches the edge
+  //   v3  "...and did not take too many ticks"                 → still false:
+  //       a long segment takes a long time; ticks measure the map, not the bug
+  //
+  // The signal is not distance, segment count or duration. It is a direct
+  // geometric check: is the character actually where the foothold it says it is
+  // standing on? On the broken build it reported x=749 while sitting on a
+  // foothold that ends at x=51 — probe confirmed 27 underneath at x=300.
+  // That is checkable, needs no threshold, and cannot misfire on a real map.
+  const measured = walks.filter((w) => w.segments !== undefined);
+  const checked = [];
+  for (const w of measured.slice(0, 40)) {
+    const t = (await api('/api/simulate/trace?path=' + encodeURIComponent(w.path) +
+      '&x=0&y=0&dir=1&climb=0&steps=300&jumpEvery=0&dropAtStep=0')).json;
+    const tk = t.ticks ?? [];
+    if (!tk.length) continue;
+    // Only a frame where the character is ON GROUND. A trace that ends mid-fall
+    // (action=fall, onGround=false) has no foothold under it by definition —
+    // checking those flagged three healthy maps for being airborne.
+    let end = null;
+    for (let i = tk.length - 1; i >= 0; i--) {
+      if (tk[i].onGround && tk[i].action === 'walk' && tk[i].foothold) { end = tk[i]; break; }
+    }
+    if (!end) continue;
+    const endX = end.x, endY = end.y, endId = end.foothold;
+    const pr = (await api('/api/simulate/probe?path=' + encodeURIComponent(w.path) +
+      `&x=${endX}&y=${endY}`)).json;
+    const under = (pr.covering ?? []).some((c) => c.id === endId);
+    checked.push({ ...w, endX, endY, endId, under });
+  }
+  const floating = checked.filter((w) => !w.under);
+  ok('a walk ends standing on the foothold it names', floating.length === 0,
+     floating.length === 0
+       ? `${checked.length} walks verified against /probe`
+       : `NOT UNDER ITS OWN FOOTHOLD: ${floating.slice(0, 3).map((w) => `${w.path.split('/').pop()} x=${w.endX} on ${w.endId}`).join(', ')}`);
+
+  // Both directions, because they are separate code paths with separate edge
+  // constants (MapleCharacter.cs:795 left is X1-10, :847 right is X2+5). Same
+  // honesty rule: a one-foothold walk is only a defect if it claims arrival.
+  let leftStuck = 0, rightStuck = 0, leftShort = 0, rightShort = 0;
+  for (const p of samplePaths.slice(0, 30)) {
+    for (const dir of [1, -1]) {
+      const r = (await api('/api/simulate/character',
+        { path: p, direction: dir, climb: -1 })).json;
+      if (r.footholds <= 8) continue;
+      if (r.ticks <= 10) (dir > 0 ? () => rightShort++ : () => leftShort++)();
+      if (!(r.reachedEdge || r.reachedPortal)) continue;
+
+      const t = (await api('/api/simulate/trace?path=' + encodeURIComponent(p) +
+        '&x=0&y=0&dir=' + dir + '&climb=0&steps=300&jumpEvery=0&dropAtStep=0')).json;
+      const tk = t.ticks ?? [];
+      let end = null;
+      for (let i = tk.length - 1; i >= 0; i--) {
+        if (tk[i].onGround && tk[i].action === 'walk' && tk[i].foothold) { end = tk[i]; break; }
+      }
+      if (!end) continue;
+      const pr = (await api('/api/simulate/probe?path=' + encodeURIComponent(p) +
+        `&x=${end.x}&y=${end.y}`)).json;
+      const under = (pr.covering ?? []).some((c) => c.id === end.foothold);
+      if (!under) (dir > 0 ? () => rightStuck++ : () => leftStuck++)();
+    }
+  }
+  ok('both directions end on real ground', rightStuck === 0 && leftStuck === 0,
+     `right=${rightStuck} left=${leftStuck} ended somewhere /probe disagrees with`);
+  ok('both directions behave alike', Math.abs(rightShort - leftShort) <= 6,
+     `right=${rightShort} left=${leftShort} stopped within 10 ticks`);
 }
 
 writeFileSync(out, JSON.stringify({ base, failed, checks }, null, 1));

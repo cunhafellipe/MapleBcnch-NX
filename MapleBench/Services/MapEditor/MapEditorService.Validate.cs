@@ -80,6 +80,50 @@ public sealed partial class MapEditorService
                 }
             }
 
+            // ---- 2b. A link that exists but does not touch. -------------
+            //
+            // Ids are unique only inside a layer/group, so "the id exists" proves
+            // nothing about whether the character can step onto it. The client
+            // never asks: CreateFootholds resolves the link while building the
+            // chain and stores it as an object reference.
+            foreach (MapFoothold fh in footholds)
+            {
+                if (!TryEndpoints(fh, out int ax1, out int ay1, out int ax2, out int ay2))
+                    continue;
+
+                foreach (string end in new[] { "prev", "next" })
+                {
+                    string value = fh.Node.TextAt(end);
+                    if (string.IsNullOrEmpty(value) || value == "0")
+                        continue;
+
+                    bool meets = false;
+                    foreach (MapFoothold cand in footholds)
+                    {
+                        if (!string.Equals(cand.Id, value, StringComparison.Ordinal))
+                            continue;
+                        if (TryEndpoints(cand, out int bx1, out int by1, out int bx2, out int by2)
+                            && Touches(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2))
+                        {
+                            meets = true;
+                            break;
+                        }
+                    }
+
+                    if (meets)
+                        continue;
+
+                    result.BrokenChains++;
+                    if (result.BrokenChains <= 20)
+                    {
+                        result.Errors.Add(
+                            $"Foothold {fh.Id}.{end} points at '{value}', which exists but does not "
+                            + $"touch this foothold (ends at x={ax1}..x={ax2}). Ids repeat across "
+                            + "layers, so the link resolves to geometry the character cannot step onto.");
+                    }
+                }
+            }
+
             // ---- 3. Ground with nothing to stand on. --------------------
             if (footholds.Count == 0 && map.Layers.Count > 0)
             {
@@ -206,4 +250,28 @@ public sealed partial class MapEditorService
             Bottom = (int)maxY!.Value,
         };
     }
+
+    /// <summary>Read a foothold's two endpoints, or false when either is missing.</summary>
+    private static bool TryEndpoints(MapFoothold fh, out int x1, out int y1, out int x2, out int y2)
+    {
+        if (fh.X1 is not { } a || fh.Y1 is not { } b || fh.X2 is not { } c || fh.Y2 is not { } d)
+        {
+            x1 = y1 = x2 = y2 = 0;
+            return false;
+        }
+        x1 = (int)a; y1 = (int)b; x2 = (int)c; y2 = (int)d;
+        return true;
+    }
+
+    /// <summary>
+    /// Whether two footholds share an endpoint, the way linked ones do.
+    /// </summary>
+    /// <remarks>
+    /// The same test <c>CharacterPhysics.FindLinked</c> uses, kept here so the
+    /// validator and the walker cannot disagree about what "linked" means.
+    /// </remarks>
+    private static bool Touches(int ax1, int ay1, int ax2, int ay2,
+                               int bx1, int by1, int bx2, int by2) =>
+        (bx1 == ax2 && by1 == ay2) || (bx1 == ax1 && by1 == ay1)
+        || (bx2 == ax2 && by2 == ay2) || (bx2 == ax1 && by2 == ay1);
 }
