@@ -79,10 +79,21 @@ export class SimulatorSection {
       const caps = await get('/api/simulate/capabilities');
       this.caps = caps;
       if (caps.available) {
-        const data = await get('/api/simulate/maps?limit=2000');
+        // The search box filters this array in the browser, so whatever is not
+        // fetched here is unreachable from the screen -- silently, with no
+        // error. It used to fetch 2,000 of 5,366 and the remaining 3,366 could
+        // not be picked even by exact id.
+        const data = await get('/api/simulate/maps?limit=100000');
         this.maps = data.maps ?? [];
+        // Loaded vs total is reported rather than inferred: "the picker is
+        // short" and "the archive is short" look identical from the outside,
+        // and the first one is a bug worth seeing.
+        this.mapsLoaded = this.maps.length;
+        this.mapsTotal = data.total ?? caps.mapCount ?? this.maps.length;
       } else {
         this.maps = [];
+        this.mapsLoaded = 0;
+        this.mapsTotal = 0;
       }
     } catch (err) {
       this.error = err.message;

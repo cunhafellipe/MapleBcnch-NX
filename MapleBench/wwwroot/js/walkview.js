@@ -37,6 +37,17 @@ const INK = {
 };
 
 /**
+ * The figure, in WZ units. A character is not a dot: the whole complaint about
+ * this view was that a walking character looked like a coloured circle, which
+ * cannot be told apart from a marker. MapleStory's own player sprite is
+ * roughly 55px wide and 79px tall (MapleCharacter.cs:133-134, Offset.Y = -79,
+ * Offset.X = -40), so the box here matches that and layout() reserves room for
+ * it. Drawn, not fetched: this surface has to work on any archive, including
+ * one with no character art at all.
+ */
+const FIGURE = { width: 55, height: 79, head: 13 };
+
+/**
  * One walk, drawn on a canvas.
  */
 export class WalkViewer {
@@ -73,6 +84,12 @@ export class WalkViewer {
    * inventing a second renderer.
    */
   async load(path) {
+    // Drop the previous map's decoded bitmaps before asking for the next one's.
+    // Every Image holds a decoded surface, and the server caches them until its
+    // own sweep runs -- which, at 2.8 GB, released nothing. Holding two maps'
+    // art at once is what pushed it over.
+    this.releaseArt();
+
     this.path = path;
 
     // The map must be open before /api/mapedit/doc will answer: documents do
@@ -133,31 +150,113 @@ export class WalkViewer {
     this.draw();
   }
 
+  /** Let go of every decoded bitmap this viewer is holding. */
+  releaseArt() {
+    if (!this.images) return;
+    for (const slot of this.images.values()) {
+      if (slot?.img) {
+        // Clearing src is what actually frees the decoded surface; dropping the
+        // reference alone can leave it on the element until the next GC.
+        try { slot.img.src = ''; } catch { /* already detached */ }
+        slot.img = null;
+        slot.ok = false;
+      }
+    }
+    this.images = new Map();
+  }
+
   /** Fetch every distinct picture the map's tiles and objects refer to. */
   loadArt(doc) {
     const art = doc.art ?? {};
     const pending = [];
 
-    const want = (key) => {
-      if (!key || this.images.has(key)) return;
+    // A map can name several hundred distinct pictures, and asking for all of
+    // them at once is what killed the server: it answered every /api/canvas
+    // request, the decoded bitmaps stayed in the image cache, and the process
+    // went out at 2.8 GB. Measured from the crash log -- "released 0 images,
+    // 2854 MB -> 2854 MB" -- so the sweep had nothing it could give back.
+    //
+    // Load the ones the viewport actually needs, a screenful at a time, and let
+    // the rest arrive if the walk goes somewhere that needs them.
+    const wanted = new Set();
+    for (const layer of doc.layers ?? []) {
+      for (const tile of layer.tiles ?? []) if (tile.art) wanted.add(tile.art);
+      for (const obj of layer.objs ?? []) if (obj.art) wanted.add(obj.art);
+    }
+    this.artKeys = [...wanted];
+
+    // Anything already cached is free; anything new is fetched in batches so no
+    // single map asks for hundreds of pictures simultaneously.
+    const fresh = this.artKeys.filter((key) => !this.images.has(key));
+    for (const key of fresh) {
       const meta = art[key];
-      const slot = { img: null, ok: false, missing: !meta || meta.missing || !meta.path, meta };
-      this.images.set(key, slot);
-      if (slot.missing) return;
-      pending.push(new Promise((resolve) => {
+      this.images.set(key, {
+        img: null, ok: false,
+        missing: !meta || meta.missing || !meta.path,
+        meta: meta ?? null,
+      });
+    }
+
+    const loadKey = (key) => new Promise((resolve) => {
+      const meta = art[key];
+      if (!meta || meta.missing || !meta.path) { resolve(); return; }
+      const slot = this.images.get(key);
+      const img = new Image();
+      img.onload = () => { slot.img = img; slot.ok = true; resolve(); };
+      img.onerror = () => { slot.missing = true; resolve(); };
+      img.src = `/api/canvas?path=${encodeURIComponent(meta.path)}&v=me`;
+    });
+
+    return this.loadVisible(() => { this.drawn = (this.drawn ?? 0) + 1; this.draw(); })
+      .then(() => loadKey(this.artKeys[0]))
+      .then(() => pending);
+  }
+
+  /**
+   * Fetch the pictures that fall inside the viewport, in batches.
+   *
+   * @param {(done: number, total: number) => void} [onBatch] progress callback
+   */
+  async loadVisible(onBatch) {
+    const view = this.layout();
+    if (!view || !this.artKeys?.length) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = this.canvas.clientWidth || 900;
+    const cssH = this.canvas.clientHeight || 300;
+    const s = view.scale;
+
+    const inside = [];
+    for (const layer of this.doc?.layers ?? []) {
+      for (const item of [...(layer.tiles ?? []), ...(layer.objs ?? [])]) {
+        const px = (item.x - view.minX) * s;
+        const py = (item.y - view.minY) * s;
+        if (px > -120 && px < cssW + 120 && py > -120 && py < cssH + 120) {
+          if (item.art) inside.push(item.art);
+        }
+      }
+    }
+
+    const unique = [...new Set(inside)]
+      .filter((key) => this.images?.get(key) && !this.images.get(key).ok && !this.images.get(key).missing);
+
+    const BATCH = 16;
+    const art = this.doc?.art ?? {};
+    for (let i = 0; i < unique.length; i += BATCH) {
+      const slice = unique.slice(i, i + BATCH);
+      await Promise.all(slice.map((key) => new Promise((resolve) => {
+        const meta = art[key];
+        const slot = this.images.get(key);
+        if (!meta || meta.missing || !meta.path) { resolve(); return; }
         const img = new Image();
         img.onload = () => { slot.img = img; slot.ok = true; resolve(); };
         img.onerror = () => { slot.missing = true; resolve(); };
         img.src = `/api/canvas?path=${encodeURIComponent(meta.path)}&v=me`;
-      }));
-    };
-
-    for (const layer of doc.layers ?? []) {
-      for (const tile of layer.tiles ?? []) want(tile.art);
-      for (const obj of layer.objs ?? []) want(obj.art);
+      })));
+      onBatch?.(Math.min(i + BATCH, unique.length), unique.length);
+      // Yield so the browser can paint what arrived so far instead of sitting
+      // blocked while several hundred requests finish.
+      await new Promise((r) => setTimeout(r, 0));
     }
-
-    return Promise.all(pending).then(() => { this.drawn = (this.drawn ?? 0) + 1; this.draw(); });
   }
 
   /** Load the per-frame path and stop at the end. */
@@ -262,8 +361,22 @@ export class WalkViewer {
       if (x > maxX) maxX = x;
       if (y > maxY) maxY = y;
     }
+
+    // The character stands ON a foothold, so the foothold's lowest point is
+    // its feet. Without headroom above, every frame where it stands near the
+    // top of the framed area draws its head outside the canvas -- the art was
+    // there and the figure was clipped off it. Same reason for the map's own
+    // vertical bounds when they exist: the ground the walk uses is not always
+    // where the picture is.
+    const b = g.Bounds;
+    if (b && Number.isFinite(b.top) && Number.isFinite(b.bottom)) {
+      minY = Math.min(minY, b.top);
+      maxY = Math.max(maxY, b.bottom);
+    }
+    minY -= FIGURE.height + 24;
+
     const pad = 40;
-    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    minX -= pad; maxX += pad; maxY += pad;
 
     const cssWidth = this.canvas.clientWidth || 900;
     const scale = Math.max(0.05, cssWidth / Math.max(1, maxX - minX));
@@ -316,11 +429,14 @@ export class WalkViewer {
       return;
     }
 
-    // Height follows the map's own aspect ratio so the ground is not squashed.
+    // Height follows the framed area's own aspect ratio so the ground is not
+    // squashed. It must measure what layout() actually framed -- including the
+    // figure headroom it now adds -- or the canvas is shorter than the view
+    // and the character's head lands outside it again.
     const worldW = Math.max(1, (Math.max(...g.Footholds.map((f) => Math.max(f.x1, f.x2)),
                                     ...g.Footholds.map((f) => Math.min(f.x1, f.x2))) - view.minX)
                           / view.scale);
-    const cssH = Math.max(220, Math.min(520, worldW * (window.innerHeight < 900 ? 0.34 : 0.42)));
+    const cssH = Math.max(220, Math.min(620, worldW * (window.innerHeight < 900 ? 0.34 : 0.42)));
 
     this.canvas.style.height = `${cssH}px`;
     this.canvas.width = Math.round(cssW * dpr);
@@ -405,13 +521,51 @@ export class WalkViewer {
 
     const cur = this.ticks[this.frame];
     if (cur) {
-      const cx = px(cur.x), cy = py(cur.y);
-      const r = Math.max(4, 6 * s);
-      ctx.fillStyle = ACTIVE[cur.action] ?? '#e53e3e';
-      ctx.strokeStyle = '#1a202c';
+      // (x, y) is where the character's FEET are: it stands on the foothold.
+      // Everything above is drawn upward from there, which is also why layout()
+      // reserves FIGURE.height of headroom -- without it the figure is clipped.
+      const fx = px(cur.x);
+      const fy = py(cur.y);
+      const s = view.scale;
+      const w = FIGURE.width * s;
+      const h = FIGURE.height * s;
+      const headR = FIGURE.head * s;
+      const colour = ACTIVE[cur.action] ?? '#e53e3e';
+
+      ctx.save();
+      ctx.lineJoin = 'round';
+      // Outline first, so the figure reads against any map art underneath.
+      ctx.strokeStyle = '#141a24';
+      ctx.lineWidth = Math.max(2, 3 * s);
+
+      // Legs and torso: a simple standing pose, leaning the way it travels.
+      const lean = cur.action === 'climb' ? 0 : (cur.dir ?? 1) * 0.06 * h;
+      ctx.beginPath();
+      ctx.moveTo(fx - w * 0.18 + lean, fy);
+      ctx.lineTo(fx - w * 0.10 + lean, fy - h * 0.42);
+      ctx.moveTo(fx + w * 0.18 + lean, fy);
+      ctx.lineTo(fx + w * 0.10 + lean, fy - h * 0.42);
+      ctx.moveTo(fx - w * 0.10 + lean, fy - h * 0.42);
+      ctx.lineTo(fx + w * 0.10 + lean, fy - h * 0.42);
+      ctx.lineTo(fx + w * 0.13 + lean, fy - h * 0.74);
+      ctx.stroke();
+
+      // Head, filled, so it is unmistakably a person and not a ring.
+      ctx.beginPath();
+      ctx.arc(fx + lean, fy - h * 0.74 - headR * 0.75, headR, 0, Math.PI * 2);
+      ctx.fillStyle = colour;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // The action colour, kept as a mark at the feet: the pose above is
+      // deliberately simple, and this is what says walk vs rise vs fall.
+      const r = Math.max(3, 5 * s);
+      ctx.fillStyle = colour;
+      ctx.strokeStyle = '#141a24';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.arc(fx, fy, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
@@ -421,7 +575,7 @@ export class WalkViewer {
         ctx.strokeStyle = INK.head;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
+        ctx.arc(fx, fy, r + 3, 0, Math.PI * 2);
         ctx.stroke();
       }
     }

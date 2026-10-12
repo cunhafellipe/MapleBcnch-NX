@@ -34,12 +34,16 @@ public static class SimulatorEndpoints
         // List the maps that can be simulated. Same shape as the editor's list,
         // but it does NOT require an editing session to be open for them.
         group.MapGet("/maps", (string? q, int? limit, MapEditorService maps) =>
-            Results.Ok(maps.ListMaps(q, Math.Clamp(limit ?? 200, 1, 2000))));
+            // Clamped high on purpose. The picker keeps every map it is given
+            // and the search box filters that array in the browser, so a cap
+            // here silently hides maps from the screen: at 2,000 the 3,366
+            // beyond it could not be picked even by exact id, and nothing in
+            // the UI said so. A caller that wants only a page passes a small
+            // number; one that wants them all passes a large one.
+            Results.Ok(maps.ListMaps(q, Math.Clamp(limit ?? 200, 1, 20000))));
 
         // How many maps there are, for a caller that wants to cover the whole
-        // client rather than the first page. The list endpoint caps at 2000 for
-        // the browser's benefit; a client has 5,366 and a batch sweep needs all
-        // of them, so the count is served rather than inferred.
+        // client rather than the first page. A batch sweep needs all of them.
         group.MapGet("/maps/count", (MapEditorService maps) =>
             Results.Ok(new { total = maps.Capabilities().MapCount }));
 

@@ -145,11 +145,30 @@ const picked2 = await evaluate(`(() => {
 console.log('map:', picked2);
 await new Promise((r) => setTimeout(r, 30000));
 
-// Canvas pixels, not just presence. But paintedPct alone lies: the view fills
-// the background first, so a map with zero art scores 100%. What separates
-// "art drawn" from "empty background" is how many DISTINCT colours are on it --
-// a blank canvas is one or two, real map art is hundreds. Both are reported so
-// a regression cannot hide behind a full-looking percentage.
+// Step the playback to a middle frame. Frame 1 puts the character at the very
+// left edge with an empty trail behind it, which looks identical to "the
+// figure and the path are still missing" -- the screenshot has to be taken
+// with the walk already in progress to prove either one is drawn.
+const framed = await evaluate(`(() => {
+  const segs = document.querySelectorAll('input[type=range]');
+  const frame = segs[segs.length - 1];
+  const root = document.querySelector('.walkview-canvas')?.closest('div');
+  // The frame slider is the one whose max is the tick count.
+  let slider = null;
+  for (const s of document.querySelectorAll('input[type=range]')) {
+    if (Number(s.max) > 50) slider = s;
+  }
+  if (!slider) return 'NO FRAME SLIDER; ranges=' +
+    JSON.stringify([...document.querySelectorAll('input[type=range]')]
+      .map(s => ({ min: s.min, max: s.max, val: s.value })));
+  const mid = Math.floor(Number(slider.max) / 2);
+  slider.value = String(mid);
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+  slider.dispatchEvent(new Event('change', { bubbles: true }));
+  return 'stepped to frame ' + mid + ' of ' + slider.max;
+})()`);
+console.log('frame:', framed);
+await new Promise((r) => setTimeout(r, 3000));
 const painted = await evaluate(`(() => {
   const c = [...document.querySelectorAll('canvas')].map(cv => {
     try {
