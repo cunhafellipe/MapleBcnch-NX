@@ -23,6 +23,9 @@ namespace MapleBench.Services.MapEditor;
 /// </remarks>
 public sealed partial class MapEditorService
 {
+    /// <summary>Mob.cs:151 — the speed a mob walks when its info has none.</summary>
+    private const float CharacterDefaultMoveSpeed = MobPatrol.DefaultMoveSpeed;
+
     /// <summary>How many fixed steps a walk may take before it is called stuck.</summary>
     private const int MaxWalkTicks = 60 * 60 * 5;   // 5 simulated seconds
 
@@ -71,8 +74,38 @@ public sealed partial class MapEditorService
             FootholdPhysics.Foot? start = FindStartFoothold(physics, originX, startY);
             if (start is null)
             {
-                result.Reason = $"Nothing to stand on at x={originX}.";
-                return result;
+                // Measured: on 101020005 every foothold at the left edge is a
+                // vertical wall — 204 of 261 are — and the map is climbed from
+                // ladders, of which it has 10. "Nothing to stand on" is true and
+                // useless: the character gets there by climbing. Start at the foot
+                // of the nearest ladder and say why.
+                FootholdPhysics.Ladder? ladder = physics.Ladders
+                    .OrderBy(l => Math.Abs(l.X - originX))
+                    .FirstOrDefault();
+
+                if (ladder is { } entry)
+                {
+                    start = physics.FindBelow(entry.X, entry.Bottom + 40, falling: true)
+                        ?? physics.FindBelow(entry.X, entry.Bottom, falling: true);
+
+                    if (start is not null)
+                    {
+                        result.StartedOnLadder = true;
+                        result.LadderX = entry.X;
+                        result.Reason =
+                            $"every foothold at x={originX} is a vertical wall, so this map is "
+                            + $"climbed rather than walked. Starting at the foot of the ladder at "
+                            + $"x={entry.X}; pass climb=-1 to go up it.";
+                    }
+                }
+
+                if (start is null)
+                {
+                    result.Reason =
+                        $"Nothing to stand on at x={originX}, and no ladder reaches it either. "
+                        + "This map has no walkable ground at that edge.";
+                    return result;
+                }
             }
 
             result.StartX = start.Value.X1;
@@ -85,6 +118,7 @@ public sealed partial class MapEditorService
 
             int lastX = int.MinValue;
             int stuckFor = 0;
+            int airborne = 0;
             const int StuckTicks = 30;   // half a second without progress
 
             // Sampled as it happens, not reconstructed afterwards: a walk is
@@ -139,6 +173,20 @@ public sealed partial class MapEditorService
                 // across the void at terminal velocity until the tick cap, which
                 // is 18,000 steps of nothing. Measured: a climb attempt that
                 // missed its ladder spent the entire budget drifting.
+                // A fall that will not land runs forever. Bound it: after a
+                // couple of seconds of falling with nothing to catch, there is
+                // nothing to wait for.
+                airborne = who.OnGround ? 0 : airborne + 1;
+                if (airborne > MaxFallFrames)
+                {
+                    result.FellOut = true;
+                    result.Reason =
+                        $"the character fell for {MaxFallFrames} frames from x={x}, "
+                        + $"y={(int)Math.Round(who.Y)} without reaching ground. "
+                        + "There is no foothold below it anywhere along that fall.";
+                    break;
+                }
+
                 if (!who.OnGround && !LadderInReach(physics, who))
                 {
                     result.FellOut = true;
@@ -222,9 +270,13 @@ public sealed partial class MapEditorService
                 {
                     if (++stuckFor >= StuckTicks)
                     {
+                        result.Stuck = true;
                         result.Reason =
                             $"the character stopped moving at x={x}, y={(int)Math.Round(who.Y)} "
-                            + $"after {who.Ticks} steps. The ground ahead is not reachable by walking.";
+                            + $"after {who.Ticks} steps ({who.Ticks * CharacterPhysics.StepSeconds:N1}s). "
+                            + "It is standing on ground it cannot walk off — a step it cannot climb, "
+                            + "or a wall it is pressed against. Nothing fell out of the world; the way "
+                            + "simply ends here.";
                         break;
                     }
                 }
@@ -475,6 +527,16 @@ public sealed partial class MapEditorService
             dto.SpawnX = (int)(mob.X ?? 0);
             dto.SpawnY = (int)(mob.Cy ?? mob.Y ?? 0);
 
+            // rx0/rx1 are the patrol bounds, read the same way Mob.cs:89 does.
+            // Both are optional: 0 is what the client treats as "unbounded".
+            dto.PatrolLeft = (int)(mob.Node.IntegerAt("rx0") ?? 0);
+            dto.PatrolRight = (int)(mob.Node.IntegerAt("rx1") ?? 0);
+
+            // MoveSpeed = (1 + speed/100) * 2, Mob.cs:149. The field lives on
+            // the MOB's info node in the Mob archive, not on the map, so a map
+            // walk cannot know it and the default stands until it does.
+            dto.MoveSpeed = CharacterDefaultMoveSpeed;
+
             FootholdPhysics.Foot? start =
                 FindStartFoothold(physics, dto.SpawnX, dto.SpawnY);
             if (start is null)
@@ -487,7 +549,8 @@ public sealed partial class MapEditorService
             }
 
             dto.StartFoothold = start.Value.Id;
-            MobPatrol mob2 = new(physics, start.Value, seed);
+            MobPatrol mob2 = new(physics, start.Value, seed,
+                dto.PatrolLeft, dto.PatrolRight, dto.MoveSpeed);
             float maxDx = 0;
             for (int i = 0; i < dto.Steps && mob2.OnGround; i++)
             {
@@ -506,6 +569,36 @@ public sealed partial class MapEditorService
                 ? $"the spawn patrolled {dto.Reversals} turn(s) over {maxDx:N0} px in {dto.Steps} frames, "
                   + $"ending on foothold {mob2.Foothold.Id}"
                 : mob2.LeftGroundBecause ?? "the spawn left its chain";
+
+            // The same patrol again, with a character standing next to it.
+            // Mob.cs decides an attack by comparing FACING, not by a distance
+            // box, so the only way to exercise that half is to put something in
+            // front of it.
+            FootholdPhysics.Foot? same = physics.FindBelow(dto.SpawnX, dto.SpawnY, falling: false);
+            if (same is not null)
+            {
+                MobPatrol duel = new(physics, same.Value, seed,
+                    dto.PatrolLeft, dto.PatrolRight, dto.MoveSpeed);
+
+                // Run until it notices, or until it leaves the chain, whichever
+                // comes first. A mob that never engages has still answered the
+                // question it was asked.
+                for (int i = 0; i < Math.Min(dto.Steps, 300); i++)
+                {
+                    duel.Step((int)Math.Round(duel.X) + 30, (int)Math.Round(duel.Y));
+                    if (duel.Engaged || !duel.OnGround)
+                        break;
+                }
+
+                dto.Engaged = duel.Engaged;
+                if (duel.Engaged)
+                {
+                    duel.TakeHit();
+                    dto.HitsTaken = duel.HitsTaken;
+                    duel.Kill();
+                    dto.Deaths = duel.Dead ? 1 : 0;
+                }
+            }
 
             return dto;
         }
@@ -596,6 +689,19 @@ public sealed partial class MapEditorService
             return advice;
         }
     }
+
+    /// <summary>
+    /// How many frames a character may spend falling before the walk stops.
+    /// </summary>
+    /// <remarks>
+    /// A fall that will land is short — the terminal velocity is 8px per frame
+    /// and a map is 2,000px tall at most. A fall that will NOT land never ends,
+    /// and without this the walk spends its whole budget drifting sideways in
+    /// empty air. Measured on 610030510: 97 frames of walking, then 303 of
+    /// falling with the position frozen, and the run still reported success
+    /// because it never set any failure flag.
+    /// </remarks>
+    private const int MaxFallFrames = 120;
 
     private static bool LadderInReach(FootholdPhysics physics, CharacterPhysics who)
     {
@@ -743,6 +849,16 @@ public sealed class MapWalkRunDto
     /// </remarks>
     public bool ChainEndedShort { get; set; }
 
+    /// <summary>On ground, but unable to move: too steep a step, or a wall.</summary>
+    public bool Stuck { get; set; }
+
+
+    /// <summary>True when the start came from a ladder rather than from open ground.</summary>
+    public bool StartedOnLadder { get; set; }
+
+    /// <summary>X of the ladder the walk starts from, when it started on one.</summary>
+    public int LadderX { get; set; }
+
     /// <summary>Why the walk ended, in plain words.</summary>
     public string Reason { get; set; } = "";
 
@@ -841,6 +957,9 @@ public sealed class MapMobPatrolDto
     public int Seed { get; set; }
     public int Steps { get; set; }
     public string Note { get; set; } = "";
+    public int PatrolLeft { get; set; }
+    public int PatrolRight { get; set; }
+    public float MoveSpeed { get; set; }
     public string MobId { get; set; } = "";
     public int SpawnX { get; set; }
     public int SpawnY { get; set; }
@@ -851,6 +970,9 @@ public sealed class MapMobPatrolDto
     public string EndingFoothold { get; set; } = "";
     public int MaxDistance { get; set; }
     public bool StayedOnMap { get; set; }
+    public bool Engaged { get; set; }
+    public int HitsTaken { get; set; }
+    public int Deaths { get; set; }
     public string Reason { get; set; } = "";
 }
 

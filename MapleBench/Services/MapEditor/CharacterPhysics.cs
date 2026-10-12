@@ -90,6 +90,7 @@ public sealed class CharacterPhysics
         // the very first step count as "already reached the end".
         _x = direction >= 0 ? start.X1 : start.X2;
         _y = direction >= 0 ? start.Y1 : start.Y2;
+        _lastGroundId = start.Id;
         OnGround = true;
     }
 
@@ -292,6 +293,7 @@ public sealed class CharacterPhysics
         _foothold = step;
         _x = moveLeft >= 0 ? step.X1 : step.X2;
         _y = moveLeft >= 0 ? step.Y1 : step.Y2;
+        _lastGroundId = step.Id;
     }
 
     /// <summary>Advance a fall and look for the ground, as the client does.</summary>
@@ -308,23 +310,28 @@ public sealed class CharacterPhysics
             _y += slice;
             remaining -= slice;
 
+            // FindBelow with falling:true accepts a surface at exactly Y, so
+            // once the feet are level with one it lands there — which is right.
+            // What is NOT right is letting a fall re-land on the ledge it just
+            // left, every frame, so the character hovers instead of falling and
+            // no fall ever lasts long enough to be measured. Measured: on
+            // 610030510 the character fell for 18,000 frames with its position
+            // frozen, and the airborne counter stayed at zero.
+            //
+            // The rule that makes it a fall: once airborne, only a foothold the
+            // character was not already standing on can catch it.
             FootholdPhysics.Foot? ground = _map.FindBelow(
                 (int)Math.Round(_x), (int)Math.Floor(_y), falling: true);
 
             if (ground is { IsWall: false } g
-                && _y >= (g.SurfaceAt((int)Math.Round(_x)) ?? int.MaxValue) - 3)
+                && _y >= (g.SurfaceAt((int)Math.Round(_x)) ?? int.MaxValue) - 3
+                && g.Id != _lastGroundId)
             {
                 _foothold = g;
-                // Land ON the surface, not a pixel under it. The sub-step
-                // advances in whole pixels but the surface is interpolated, so
-                // the feet can settle up to a pixel BELOW it -- and a later
-                // FindBelow, which only accepts surfaces at or above Y, then
-                // cannot see the ground the character is standing on and reports
-                // it as having fallen out. Measured: after a jump the character
-                // stood at y=369 on a surface of y=368 and was called lost.
                 _y = g.SurfaceAt((int)Math.Round(_x)) ?? _y;
                 _velocityY = 0;
                 OnGround = true;
+                _lastGroundId = g.Id;
                 LeftGroundBecause = null;
                 return;
             }
@@ -539,6 +546,9 @@ public sealed class CharacterPhysics
     public FootholdPhysics.Ladder? OnLadder => _ladder;
 
     private FootholdPhysics.Ladder? _ladder;
+
+    /// <summary>The foothold the feet last rested on, so a fall cannot re-land on it.</summary>
+    private string? _lastGroundId;
 
     /// <summary>
     /// Vertical climb speed, per step.

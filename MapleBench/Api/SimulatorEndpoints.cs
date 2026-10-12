@@ -36,6 +36,13 @@ public static class SimulatorEndpoints
         group.MapGet("/maps", (string? q, int? limit, MapEditorService maps) =>
             Results.Ok(maps.ListMaps(q, Math.Clamp(limit ?? 200, 1, 2000))));
 
+        // How many maps there are, for a caller that wants to cover the whole
+        // client rather than the first page. The list endpoint caps at 2000 for
+        // the browser's benefit; a client has 5,366 and a batch sweep needs all
+        // of them, so the count is served rather than inferred.
+        group.MapGet("/maps/count", (MapEditorService maps) =>
+            Results.Ok(new { total = maps.Capabilities().MapCount }));
+
         // Walk a map. Read-only: it inspects and reports, and there is no
         // commit parameter anywhere in this group because nothing here writes.
         group.MapPost("/walk", (MapSimulateRequest request, MapEditorService maps) =>
