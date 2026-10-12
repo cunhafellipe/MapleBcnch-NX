@@ -88,6 +88,12 @@ public static class SimulatorEndpoints
             int jumpEvery, int dropAtStep, MapEditorService maps) =>
             Results.Ok(maps.TraceWalk(path, x, y, dir, climb, steps, jumpEvery, dropAtStep)));
 
+        // The ground a walk happens on, as plain geometry. Without it a verdict is a
+// sentence with nothing behind it, and a walk that never happened looks exactly
+// like one that did -- which is how four bugs in a row passed every check.
+        group.MapGet("/geometry", (string path, MapEditorService maps) =>
+            Results.Ok(maps.MapGeometry(path)));
+
         // Why is the character standing where it is? A caller that distrusts the
         // walk's Y needs to see which footholds exist under that X, and this is
         // the only way to ask without opening the map in the editor.

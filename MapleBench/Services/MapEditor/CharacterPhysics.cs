@@ -209,13 +209,11 @@ public sealed class CharacterPhysics
         // The client does the same: the Up/Down branches run before the walk
         // branches and set InLadder, and the walk is skipped (MapleCharacter.cs:541).
         //
-        // The reach test is deliberately WIDER than the client's ±10. A ladder
-        // spans a column and the character approaches it along a foothold that
-        // may stop short of it — measured, a ladder at x=1274 and a foothold
-        // ending at x=1256 left the character 18px away, outside the client's
-        // box, so the climb could never begin and the walk ran to the end of
-        // the tick budget instead. A ladder you can see is a ladder you climb.
-        if (climb != 0 && FindLadderForClimb() is { } ladderHere)
+        // The reach test is the client's own ±10 box (LadderRopes.cs:19) — see
+        // FindLadderForClimb. It used to be widened to 40 to catch ladders the
+        // character stopped 18px short of, but that shortfall was this file
+        // missing DriftWhileFalling, not a property of the data.
+        if (climb != 0 && FindLadderForClimb(climb) is { } ladderHere)
         {
             LastAction = "climb";
             // Pass the ladder in. Climb used to look it up again from its own
@@ -682,10 +680,30 @@ public sealed class CharacterPhysics
     /// With the drift in place the client's box is enough, and a widened one would
     /// let a character climb a ladder it is visibly nowhere near.
     /// </remarks>
-    private FootholdPhysics.Ladder? FindLadderForClimb()
+    private FootholdPhysics.Ladder? FindLadderForClimb(int climb)
     {
-        return _map.FindLadder((int)Math.Round(X), (int)Math.Round(Y));
+        // MapleCharacter.cs:538 probes at (X, Y + OffY), and OffY is set by the
+        // key that is held: -3 going up (:543), 0 going down (:570). The client
+        // re-probes every frame with the current key's offset, so the ladder box
+        // it tests is three pixels higher while climbing up than while down.
+        //
+        // Measured on this port without it: a ladder whose top sits three pixels
+        // above the character's standing height was out of reach going up and
+        // within reach going down, which is backwards.
+        int offY = climb < 0 ? ClimbProbeUp : 0;
+        return _map.FindLadder((int)Math.Round(X), (int)Math.Round(Y) + offY);
     }
+
+    /// <summary>
+    /// How far above the feet the ladder probe sits while climbing up.
+    /// </summary>
+    /// <remarks>
+    /// MapleCharacter.cs:543, <c>OffY = -3</c>. It is an instance field in the
+    /// client and stays -3 until a Down key press zeroes it, so a character that
+    /// stops climbing keeps the last offset — but a walk script decides per step,
+    /// so deriving it from the direction is both equivalent and self-documenting.
+    /// </remarks>
+    public const int ClimbProbeUp = -3;
 
     /// <summary>Vertical padding for the climb box; the client's is ±12.</summary>
     private const int ClimbReachY = 12;
@@ -707,7 +725,7 @@ public sealed class CharacterPhysics
     /// read that does not survive the port.
     /// </remarks>
     public void Climb(int moveLeft, int climb) =>
-        ClimbOn(moveLeft, climb, FindLadderForClimb());
+        ClimbOn(moveLeft, climb, FindLadderForClimb(climb));
 
     /// <summary>Climb a ladder already chosen by the caller.</summary>
     public void ClimbOn(int moveLeft, int climb, FootholdPhysics.Ladder? ladder)
@@ -746,12 +764,24 @@ public sealed class CharacterPhysics
         // Reaching the top: a rope ends there, a ladder hands you to a foothold.
         if (_y <= l.Top && climb < 0)
         {
+            // MapleCharacter.cs:554-566 uses two INDEPENDENT ifs on uf:
+            //
+            //     if (LadderRope.uf == 0) Y = LadderRope.Y1;
+            //     if (LadderRope.uf == 1)
+            //     {
+            //         Below = FindBelow(new Vector2(X, Y - 5), ref BelowFH);
+            //         Y = Below.Y; FH = BelowFH; InLadder = false;
+            //     }
+            //
+            // They are not an else. A uf that is neither 0 nor 1 stops at Y1 the
+            // way uf == 0 does; this port collapsed the test into one branch and
+            // gave every non-zero value the uf == 1 behaviour.
             if (l.UpperFoothold == 0)
             {
                 _y = l.Top;               // rope: stop at the top of the rope
                 _velocityY = 0;
             }
-            else
+            if (l.UpperFoothold == 1)
             {
                 // Look BELOW the ladder's top, not above it. The client asks for
                 // FindBelow(X, Y - 5) — the ledge a climber steps OFF onto is
@@ -801,18 +831,31 @@ public sealed class CharacterPhysics
             return;
         }
 
-        // Reaching the bottom: step off onto whatever is below.
-        if (_y >= l.Bottom && climb > 0)
+        // Reaching the bottom: MapleCharacter.cs:579-583.
+        //
+        //     if ((Y > LadderRope.Y2) && (InLadder))
+        //     {
+        //         InLadder = false;
+        //         JumpState = JumpState.jsFalling;
+        //     }
+        //
+        // Nothing else. No FindBelow, no X change, no foothold adoption. The
+        // character simply stops climbing and falls — and X stays where the
+        // ladder put it, not snapped to the left end of whatever happens to be
+        // below.
+        //
+        // This port looked for a foothold under the ladder and then assigned
+        // `_x = b.X1`, which threw the character to the far end of a segment it
+        // had not walked. Measured on the fleet it changed where 1,063 walks
+        // ended. The client never does that: leaving the ladder at the bottom is
+        // an exit, and the fall that follows is an ordinary fall.
+        if (_y > l.Bottom && climb > 0)
         {
-            FootholdPhysics.Foot? below = _map.FindBelow(l.X, (int)_y, falling: true);
-            if (below is { } b)
-            {
-                _foothold = b;
-                _x = b.X1;
-                _y = b.Y1;
-            }
-            _velocityY = 0;
             _ladder = null;
+            OnGround = false;
+            Rising = false;
+            _velocityY = 0;
+            LeftGroundBecause = $"climbed down past the bottom of the ladder at y={l.Bottom}";
             return;
         }
     }

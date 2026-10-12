@@ -22,6 +22,7 @@ import { el, clear, toastError } from './ui.js';
 // hard module error, and it only shows up when this section is first opened.
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
+import { WalkViewer } from './walkview.js';
 
 async function call(method, url, body) {
   const init = { method, headers: {} };
@@ -58,6 +59,12 @@ export class SimulatorSection {
     // two are not symmetric — a chain that runs out on one side can continue on
     // the other — so the control is on the page rather than implied.
     this.direction = 1;
+
+    // The walk, drawn on the map. The verdict below is a sentence; this is the
+    // picture that makes it checkable. Four bugs in a row passed every automated
+    // check while the character stood still, because no check could see the
+    // difference between walking and not walking.
+    this.viewer = new WalkViewer();
   }
 
   async open() {
@@ -95,7 +102,11 @@ export class SimulatorSection {
 
   matches(map) {
     if (!this.filter) return true;
-    return map.path.toLowerCase().includes(this.filter.toLowerCase());
+    const q = this.filter.toLowerCase();
+    if (map.path.toLowerCase().includes(q)) return true;
+    if ((map.name ?? '').toLowerCase().includes(q)) return true;
+    if (String(map.id ?? '').includes(this.filter.trim())) return true;
+    return false;
   }
 
   async walk(map) {
@@ -123,6 +134,23 @@ export class SimulatorSection {
         } catch { /* advice is a bonus, not the verdict */ }
       } else {
         this.advice = null;
+      }
+
+      // Now draw it. The verdict above is what the walk concluded; this is what
+      // the walk did, frame by frame, on the ground it did it over. A mismatch
+      // between the two is the exact failure this project kept shipping.
+      try {
+        await this.viewer.load(map.path);
+        await this.viewer.loadWalk({
+          x: this.result.startX ?? 0,
+          y: this.result.startY ?? 0,
+          dir: this.direction,
+          climb: -1,
+          steps: Math.min(300, Math.max(30, Number(this.result.ticks) || 300)),
+        });
+        this.viewError = '';
+      } catch (err) {
+        this.viewError = err.message;
       }
     } catch (err) {
       this.error = err.message;
@@ -188,20 +216,38 @@ export class SimulatorSection {
     const right = el('div', { class: 'sim-right' });
 
     // ---- map picker
+    //
+    // A <select>, not a scrolling list of 5,366 paths. The editor opens a map
+    // through a search box with the map's Chinese name beside its id
+    // (/api/mapedit/maps), and that is what a reader actually recognises --
+    // "彩虹岛 : 蘑菇村西入口" rather than "f1/Map/Map0/000000000.img".
     const search = el('input', {
       class: 'sim-search', type: 'search', value: this.filter,
-      placeholder: `${this.caps.mapCount.toLocaleString()} maps — filter by path`,
+      placeholder: `${this.caps.mapCount.toLocaleString()} 張地圖 — 以名稱或編號搜尋`,
       oninput: (e) => { this.filter = e.target.value; this.renderPicker(); },
     });
 
-    const list = el('div', { class: 'sim-list' });
-    list.id = 'sim-map-list';
+    const select = el('select', {
+      class: 'sim-select', size: 14,
+      onchange: (e) => {
+        const row = this.visibleMaps().find((m) => m.path === e.target.value);
+        if (row) this.walk(row);
+      },
+    });
 
-    const picker = el('div', { class: 'sim-picker' }, [
-      search,
-      list,
-    ]);
+    const picker = el('div', { class: 'sim-picker' }, [search, select]);
     left.appendChild(picker);
+
+    this.pickerHost = select;
+
+    if (this.viewError) {
+      right.appendChild(el('p', { class: 'sim-error' }, [`walk view: ${this.viewError}`]));
+    }
+
+    if (this.result) {
+      // The picture first: the numbers below are unreadable without it.
+      right.appendChild(el('div', { class: 'sim-viewer' }, [this.viewer.root]));
+    }
 
     right.appendChild(this.result
       ? this.renderResult()
@@ -218,31 +264,41 @@ export class SimulatorSection {
     return el('div', { class: 'sim-grid' }, [left, right]);
   }
 
+  /** Maps matching the filter, with the Chinese name leading. */
+  visibleMaps() {
+    return this.maps.filter((m) => this.matches(m));
+  }
+
+  /** What the reader sees: the name when the archive has one, else the id. */
+  mapLabel(m) {
+    const id = String(m.id ?? '').padStart(9, '0');
+    return m.name ? `${m.name}  (${id})` : id;
+  }
+
   renderPicker() {
     if (!this.pickerHost) return;
     clear(this.pickerHost);
 
-    const shown = this.maps.filter((m) => this.matches(m));
-    // A 5,000-row list is a scroll container, not a page. Cap the DOM and say
-    // so, rather than silently showing a prefix that looks like everything.
-    const CAP = 300;
-    for (const map of shown.slice(0, CAP)) {
-      const isSel = this.selected?.path === map.path;
-      this.pickerHost.appendChild(el('button', {
-        class: `sim-row${isSel ? ' sel' : ''}`,
-        onclick: () => this.walk(map),
-      }, [
-        el('span', { class: 'sim-row-path' }, [map.path]),
-        el('span', { class: 'sim-row-src' }, [map.source ?? '']),
-      ]));
+    const shown = this.visibleMaps();
+    // A <select> holds its options as text, so 5,366 of them is a few hundred
+    // kilobytes rather than 5,366 DOM nodes -- but only after a filter narrows
+    // it. Empty filter shows the first page so the control is never blank.
+    const CAP = 400;
+    const list = shown.slice(0, CAP);
+
+    for (const map of list) {
+      this.pickerHost.appendChild(el('option', {
+        value: map.path,
+        selected: this.selected?.path === map.path,
+      }, [this.mapLabel(map)]));
     }
 
     if (shown.length > CAP) {
-      this.pickerHost.appendChild(el('p', { class: 'sim-note' }, [
-        `showing ${CAP} of ${shown.length.toLocaleString()} — narrow the filter to see the rest`,
-      ]));
+      this.pickerHost.appendChild(el('option', {
+        disabled: true,
+      }, [`… 還有 ${(shown.length - CAP).toLocaleString()} 張，請搜尋縮小範圍`]));
     } else if (!shown.length) {
-      this.pickerHost.appendChild(el('p', { class: 'sim-note' }, ['no map matches that filter']));
+      this.pickerHost.appendChild(el('option', { disabled: true }, ['沒有符合的地圖']));
     }
   }
 

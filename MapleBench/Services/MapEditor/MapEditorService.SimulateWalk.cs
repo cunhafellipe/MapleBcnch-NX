@@ -399,6 +399,55 @@ public sealed partial class MapEditorService
     /// each tick: which foothold it was on, whether it reached the end, and
     /// whether a wall stopped it.
     /// </remarks>
+    /// <summary>
+    /// The map's geometry, for drawing a walk on top of it.
+    /// </summary>
+    /// <remarks>
+    /// The walk endpoints answer "can a character cross this map" in words.
+    /// Nothing on screen shows it happening — and a verdict with no picture
+    /// behind it is the thing this whole project kept getting wrong: four bugs
+    /// in a row passed every check while the character stood still, because no
+    /// check could see the difference between walking and not walking.
+    ///
+    /// So the ground is served as plain geometry. A canvas can draw a line from
+    /// (x1,y1) to (x2,y2) and a character at (x,y); everything else the
+    /// simulator claims on screen can be checked against this.
+    /// </remarks>
+    public MapGeometryDto MapGeometry(string path)
+    {
+        lock (_gate)
+        {
+            FootholdPhysics physics = new(LoadForReading(path));
+            var dto = new MapGeometryDto();
+
+            foreach (FootholdPhysics.Foot f in physics.Footholds)
+            {
+                dto.Footholds.Add(new MapSegmentDto(
+                    f.Id, f.Layer,
+                    f.X1, f.Y1, f.X2, f.Y2,
+                    f.IsWall,
+                    f.Prev, f.Next));
+            }
+
+            foreach (FootholdPhysics.Ladder l in physics.Ladders)
+            {
+                dto.Ladders.Add(new MapGeometryLadderDto(l.X, l.Top, l.Bottom, l.UpperFoothold));
+            }
+
+            foreach (FootholdPhysics.Portal p in physics.Portals)
+            {
+                dto.Portals.Add(new MapPortalMarkDto(
+                    p.Name, p.X, p.Y, p.Type, p.IsExit, p.IsSameMapLink));
+            }
+
+            dto.Bounds = physics.Bounds is { } b
+                ? new MapGeometryRectDto(b.Item1, b.Item2, b.Item3, b.Item4)
+                : null;
+
+            return dto;
+        }
+    }
+
 public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, int steps,
             int jumpEvery = 0, int dropAtStep = 0)
         {
@@ -847,6 +896,31 @@ public sealed class MapGroundProbeDto
 
     /// <summary>The lowest surface above Y, if any — what the character just fell past.</summary>
     public int AboveY { get; set; } = int.MinValue;
+}
+
+/// <summary>One foothold as a drawable line.</summary>
+public sealed record MapSegmentDto(
+    string Id, string Layer,
+    int X1, int Y1, int X2, int Y2,
+    bool IsWall,
+    long Prev, long Next);
+
+/// <summary>One ladder or rope, as a vertical line.</summary>
+public sealed record MapGeometryLadderDto(int X, int Top, int Bottom, long UpperFoothold);
+
+/// <summary>One portal, as a marker.</summary>
+public sealed record MapPortalMarkDto(string Name, int X, int Y, long Type, bool IsExit, bool IsSameMapLink);
+
+/// <summary>A rectangle, for the map's own boundary.</summary>
+public sealed record MapGeometryRectDto(int Left, int Top, int Right, int Bottom);
+
+/// <summary>Everything needed to draw a map and a walk on top of it.</summary>
+public sealed class MapGeometryDto
+{
+    public List<MapSegmentDto> Footholds { get; } = [];
+    public List<MapGeometryLadderDto> Ladders { get; } = [];
+    public List<MapPortalMarkDto> Portals { get; } = [];
+    public MapGeometryRectDto? Bounds { get; set; }
 }
 
 /// <summary>One foothold covering the probed X.</summary>

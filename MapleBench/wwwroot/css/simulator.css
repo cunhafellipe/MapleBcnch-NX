@@ -349,3 +349,43 @@
   font-size: 0.8125rem;
   line-height: 1.5;
 }
+
+/* ---- the walk, drawn -----------------------------------------------
+   The verdict is a sentence and the numbers below it are a table. Neither
+   can be checked against anything. This is the map the walk happened on,
+   with the figure on it, so "walked 91.7% of the map" is a thing you watch
+   rather than a value you take on faith. */
+
+.sim-viewer { display: block; margin-bottom: 4px; }
+
+.walkview { display: flex; flex-direction: column; gap: 8px; }
+
+.walkview-canvas { cursor: crosshair; }
+
+.walkview-controls {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+
+.walkview-controls .check-row { display: flex; align-items: center; gap: 6px; margin: 0 0 0 8px; }
+
+.walkview-hud {
+  font-size: var(--fs-12);
+  color: #a0aec0;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+  word-break: break-word;
+}
+
+/* The map list is a <select> now: a Chinese name is something a reader can
+   recognise, and 5,366 of them in a scrolling div is neither. */
+.sim-select {
+  width: 100%;
+  font-size: var(--fs-13);
+  padding: 4px 6px;
+  background: var(--bg-2, #2d3748);
+  color: inherit;
+  border: 1px solid var(--border, #4a5568);
+  border-radius: 4px;
+  min-height: 220px;
+}
+.sim-select option { padding: 2px 4px; }
