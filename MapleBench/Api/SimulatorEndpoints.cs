@@ -85,8 +85,8 @@ public static class SimulatorEndpoints
         // /step rebuilds the character per call and so cannot show a sequence;
         // this keeps one character and returns what Walk() decided each tick.
         group.MapGet("/trace", (string path, int x, int y, int dir, int climb, int steps,
-            MapEditorService maps) =>
-            Results.Ok(maps.TraceWalk(path, x, y, dir, climb, steps)));
+            int jumpEvery, int dropAtStep, MapEditorService maps) =>
+            Results.Ok(maps.TraceWalk(path, x, y, dir, climb, steps, jumpEvery, dropAtStep)));
 
         // Why is the character standing where it is? A caller that distrusts the
         // walk's Y needs to see which footholds exist under that X, and this is

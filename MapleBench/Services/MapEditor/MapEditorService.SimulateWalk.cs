@@ -385,8 +385,9 @@ public sealed partial class MapEditorService
     /// each tick: which foothold it was on, whether it reached the end, and
     /// whether a wall stopped it.
     /// </remarks>
-    public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, int steps)
-    {
+public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, int steps,
+            int jumpEvery = 0, int dropAtStep = 0)
+        {
         lock (_gate)
         {
             FootholdPhysics physics = new(LoadForReading(path));
@@ -411,6 +412,15 @@ public sealed partial class MapEditorService
             int n = Math.Clamp(steps, 1, 500);
             for (int i = 0; i < n; i++)
             {
+                // Same cadence the character walk uses, so a trace can show the
+                // shape of a jump instead of only its verdict. Without this the
+                // rising phase was unobservable: jsJumping never appeared in any
+                // trace, and a jump that rose 0.3px looked identical to no jump.
+                if (jumpEvery > 0 && who.Ticks > 0 && who.Ticks % jumpEvery == 0)
+                    who.Jump();
+                else if (dropAtStep > 0 && who.Ticks == dropAtStep - 1)
+                    who.DropThrough();
+
                 who.Step(dir, climb);
                 CharacterPhysics.WalkDecision? d = who.LastWalk;
                 dto.Ticks.Add(new MapWalkTraceTick(

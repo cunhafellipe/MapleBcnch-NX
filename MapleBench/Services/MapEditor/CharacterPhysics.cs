@@ -65,6 +65,19 @@ public sealed class CharacterPhysics
     /// <summary>Falling faster than this is capped (MapleCharacter.cs:138).</summary>
     public const float MaxFallSpeed = 8f;
 
+    /// <summary>
+    /// The cap the client raises to on landing (MapleCharacter.cs:879).
+    /// </summary>
+    /// <remarks>
+    /// Landing writes <c>MaxFallSpeed = 10</c> into the same field it just been
+    /// capped to. It is not reset until the character jumps again, so a jump's
+    /// arc is longer on the way down than a fall from the same height.
+    /// </remarks>
+    public const float LandedFallSpeed = 10f;
+
+    /// <summary>How far below the feet the fall probe reaches (MapleCharacter.cs:876).</summary>
+    public const int FallProbeSlack = 6;
+
     /// <summary>Radians per angle unit, for the client's 256-step angle scale.</summary>
     private const float PiConv256 = -40.743665431f;
 
@@ -77,6 +90,16 @@ public sealed class CharacterPhysics
     private float _y;
     private float _speed;
     private float _velocityY;
+
+    /// <summary>
+    /// The terminal velocity in force right now: 8 normally, 10 after a landing.
+    /// </summary>
+    /// <remarks>
+    /// The client keeps this in the same mutable field it caps against, so a
+    /// landing writes 10 and it stays 10 until the next jump. Modelling it as a
+    /// const would make a jump's descent slower than the game's.
+    /// </remarks>
+    private float _fallCap = MaxFallSpeed;
 
     public CharacterPhysics(FootholdPhysics map, FootholdPhysics.Foot start, int direction = 1)
     {
@@ -127,8 +150,23 @@ public sealed class CharacterPhysics
 
         if (moveLeft != 0)
         {
-            _speed += Acceleration * moveLeft;
-            _speed = Math.Clamp(_speed, -MaxWalkSpeed, MaxWalkSpeed);
+            // The client guards acceleration on the fall state
+            // (MapleCharacter.cs:718, :735):
+            //
+            //     if (JumpState != JumpState.jsFalling)
+            //     {
+            //         SpeedL += 1.5f;
+            //         if (SpeedL > 2.5f) SpeedL = 2.5f;
+            //     }
+            //
+            // A falling character still steers, but it does not build walking
+            // speed — it is moving under gravity, not under its own power.
+            // Rising is exempt: the client guards only jsFalling.
+            if (OnGround || Rising)
+            {
+                _speed += Acceleration * moveLeft;
+                _speed = Math.Clamp(_speed, -MaxWalkSpeed, MaxWalkSpeed);
+            }
         }
         else
         {
@@ -175,7 +213,35 @@ public sealed class CharacterPhysics
 
         if (!OnGround)
         {
-            LastAction = "fall";
+            // SpriteEngine.cs:1583-1598 splits the airborne arc in two:
+            //
+            //     case JumpState.jsJumping:
+            //         Y += VelocityY;
+            //         VelocityY += JumpSpeed;
+            //         if (VelocityY > 0) jumpState = jsFalling;
+            //         break;                       // <- no ground query
+            //
+            //     case JumpState.jsFalling:
+            //         Y = Y + VelocityY;
+            //         VelocityY = VelocityY + JumpSpeed;
+            //         if (VelocityY > MaxFallSpeed) VelocityY = MaxFallSpeed;
+            //         break;
+            //
+            // The ascent checks nothing. The descent is where MapleCharacter.cs
+            // :875 looks for ground. Treating both as one "airborne" step made a
+            // jump test the ground on the way UP, which is how a jump that should
+            // clear 75px ended as a hop.
+            LastAction = Rising ? "rise" : "fall";
+
+            if (Rising)
+            {
+                _y += _velocityY;
+                _velocityY += JumpSpeed;
+                if (_velocityY > 0)
+                    Rising = false;
+                return;
+            }
+
             Fall();
             return;
         }
@@ -330,42 +396,43 @@ public sealed class CharacterPhysics
     /// <summary>Advance a fall and look for the ground, as the client does.</summary>
     private void Fall()
     {
-        _velocityY = Math.Min(_velocityY + JumpSpeed, MaxFallSpeed);
+        // MapleCharacter.cs:875-884, verbatim in shape:
+        //
+        //     if ((JumpState == JumpState.jsFalling) && (FallFlag))
+        //     {
+        //         Below = FootholdTree.Instance.FindBelow(
+        //             new Vector2(X, Y - VelocityY - 6), ref BelowFH);
+        //         if (Y >= Below.Y - 3)
+        //         {
+        //             Y = Below.Y;
+        //             MaxFallSpeed = 10;
+        //             JumpState = JumpState.jsNone;
+        //             FH = BelowFH;
+        //         }
+        //     }
+        //
+        // Two things I had wrong. The probe reaches back over the whole frame's
+        // travel (VelocityY + 6), not to a single point — so a foothold the
+        // character passed through mid-frame still catches it. And landing
+        // RAISES the terminal velocity to 10, which is why a jump arc in the
+        // game is longer on the way down than a plain fall from the same height.
+        float travel = _velocityY;
+        _y += travel;
+        _velocityY = Math.Min(_velocityY + JumpSpeed, _fallCap);
 
-        // Sub-stepped: at terminal velocity the character moves 8px per step,
-        // and a single point sample would step straight over a foothold.
-        float remaining = _velocityY;
-        while (remaining > 0f)
+        FootholdPhysics.Foot? ground = _map.FindBelow(
+            (int)Math.Round(_x), (int)Math.Floor(_y - travel - FallProbeSlack), falling: true);
+
+        if (ground is { IsWall: false } g && _y >= (g.SurfaceAt((int)Math.Round(_x)) ?? int.MaxValue) - 3)
         {
-            float slice = Math.Min(remaining, 1f);
-            _y += slice;
-            remaining -= slice;
-
-            // FindBelow with falling:true accepts a surface at exactly Y, so
-            // once the feet are level with one it lands there — which is right.
-            // What is NOT right is letting a fall re-land on the ledge it just
-            // left, every frame, so the character hovers instead of falling and
-            // no fall ever lasts long enough to be measured. Measured: on
-            // 610030510 the character fell for 18,000 frames with its position
-            // frozen, and the airborne counter stayed at zero.
-            //
-            // The rule that makes it a fall: once airborne, only a foothold the
-            // character was not already standing on can catch it.
-            FootholdPhysics.Foot? ground = _map.FindBelow(
-                (int)Math.Round(_x), (int)Math.Floor(_y), falling: true);
-
-            if (ground is { IsWall: false } g
-                && _y >= (g.SurfaceAt((int)Math.Round(_x)) ?? int.MaxValue) - 3
-                && g.Id != _lastGroundId)
-            {
-                _foothold = g;
-                _y = g.SurfaceAt((int)Math.Round(_x)) ?? _y;
-                _velocityY = 0;
-                OnGround = true;
-                _lastGroundId = g.Id;
-                LeftGroundBecause = null;
-                return;
-            }
+            _foothold = g;
+            _y = g.SurfaceAt((int)Math.Round(_x)) ?? _y;
+            // The client raises the cap on landing (MapleCharacter.cs:879).
+            _fallCap = LandedFallSpeed;
+            _velocityY = 0;
+            OnGround = true;
+            _lastGroundId = g.Id;
+            LeftGroundBecause = null;
         }
     }
 
@@ -399,10 +466,37 @@ public sealed class CharacterPhysics
     {
         if (!OnGround)
             return false;
-        _velocityY = -JumpSpeed;
+        // SpriteEngine.cs:1576-1581:
+        //
+        //     case JumpState.jsNone:
+        //         if (DoJump)
+        //         {
+        //             jumpState = JumpState.jsJumping;
+        //             VelocityY = -JumpHeight;      // <- NOT -JumpSpeed
+        //         }
+        //
+        // The launch velocity is JumpHeight (9.5), not JumpSpeed (0.6). With
+        // 0.6 the character rose 0.3px against a 0.6 gravity — a jump in name
+        // only. Gravity acts the whole way, so the arc is
+        // Height = v²/2g = 9.5²/1.2 ≈ 75px.
+        _fallCap = MaxFallSpeed;
+        _velocityY = -JumpHeight;
+        Rising = true;
         OnGround = false;
         return true;
     }
+
+    /// <summary>
+    /// True while the character is still going up (the client's jsJumping).
+    /// </summary>
+    /// <remarks>
+    /// jsJumping and jsFalling are separate states, not one "airborne" flag. It
+    /// matters in two places: acceleration is allowed while rising but not while
+    /// falling (MapleCharacter.cs:718, :735), and the ground query runs only
+    /// when falling (MapleCharacter.cs:875). Collapsing them into a boolean
+    /// loses both.
+    /// </remarks>
+    public bool Rising { get; private set; }
 
     /// <summary>
     /// The ladder to climb, using a wider box than the client's.
@@ -597,13 +691,38 @@ public sealed class CharacterPhysics
     /// <summary>Step off deliberately, as Alt+Down does in the client.</summary>
     public void DropThrough()
     {
-        if (OnGround)
+        if (!OnGround)
+            return;
+
+        // MapleCharacter.cs:889-899 — the drop only happens through a HORIZONTAL
+        // foothold:
+        //
+        //     Below = FootholdTree.Instance.FindBelow(new Vector2(X, Y + 4), ref BelowFH);
+        //     if (BelowFH.X2 > BelowFH.X1)
+        //     {
+        //         if (Below.Y != 99999)
+        //         {
+        //             JumpState = JumpState.jsFalling;
+        //         }
+        //     }
+        //
+        // The probe looks 4px BELOW the feet, and a sloped foothold is refused.
+        // Dropping through a slope in the client does nothing at all, so a walk
+        // script that assumes it can will diverge as soon as the ground tilts.
+        FootholdPhysics.Foot? below = _map.FindBelow(
+            (int)Math.Round(_x), (int)Math.Round(_y) + DropProbeSlack, falling: false);
+
+        if (below is { } b && b.X2 > b.X1)
             LeaveGround("dropped through on purpose");
     }
+
+    /// <summary>How far below the feet the drop-through probe reaches (MapleCharacter.cs:892).</summary>
+    public const int DropProbeSlack = 4;
 
     private void LeaveGround(string why)
     {
         OnGround = false;
+        Rising = false;
         LeftGroundBecause = why;
         _velocityY = 0;
     }

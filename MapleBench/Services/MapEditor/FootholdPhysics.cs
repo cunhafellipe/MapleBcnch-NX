@@ -65,22 +65,42 @@ public sealed class FootholdPhysics
 
             int x1 = (int)rawX1, y1 = (int)rawY1, x2 = (int)rawX2, y2 = (int)rawY2;
 
-            // Read straight off the node: MapFoothold does not expose `z`, and the
-                // layer test in CharacterPhysics needs it -- a wall on another
-                // floor is scenery, not an obstacle (MapleNecrocer compares Z at
-                // MapleCharacter.cs:857).
-                _footholds.Add(new Foot(
+            // Z is the LAYER INDEX, not a subnode. Footholds.cs:247:
+            //
+            //     foreach (WzNode Iter in Layer)      // the layer node
+            //     {
+            //         FH.Z = Iter.Text.ToInt();       // its NAME, as a number
+            //         ...
+            //     }
+            //
+            // Reading IntegerAt("z") finds nothing — foothold records carry no
+            // such child — so Z was always 0 and every cross-layer wall test
+            // passed vacuously: a wall on another floor was treated as being on
+            // the character's own floor. The client's comparison at
+            // MapleCharacter.cs:857 is `BelowFH.Z == WallFH.Z`, which only means
+            // "same floor" if Z is the floor.
+            _footholds.Add(new Foot(
                 x1, y1, x2, y2,
                 fh.Id, fh.Prev ?? 0, fh.Next ?? 0,
                 fh.Layer, fh.Group,
                 fh.CantThrough ?? 0, fh.ForbidFallDown ?? 0,
-                fh.Node.IntegerAt("z") ?? 0));
+                ParseLayerIndex(fh.Layer)));
         }
 
         Bounds = ComputeBounds();
         BuildLadders(map);
         BuildPortals(map);
     }
+
+    /// <summary>The layer node's name as a number, the way the client reads it.</summary>
+    /// <remarks>
+    /// Footholds.cs:247 is <c>FH.Z = Iter.Text.ToInt()</c> where <c>Iter</c>
+    /// walks the layer nodes. The layer is usually named "0".."7" but a map is
+    /// free to name them otherwise; anything that is not a number falls back to
+    /// 0, which is what the client would do with the same text.
+    /// </remarks>
+    private static long ParseLayerIndex(string layer) =>
+        long.TryParse(layer, out long v) ? v : 0;
 
     /// <summary>
     /// Reads <c>ladderRope/&lt;index&gt;</c> — the shape MapleNecrocer reads from
@@ -340,16 +360,37 @@ public sealed class FootholdPhysics
 public readonly record struct Portal(
         string Name, string ToName, long ToMap, long Type, int X, int Y)
     {
-        /// <summary>
-        /// Whether standing here would actually take the character somewhere.
-        /// </summary>
+        /// <summary>Whether standing here takes the character to ANOTHER MAP.</summary>
         /// <remarks>
-        /// MapleNecrocer only builds sprites for types 2 and 10 (MapPortal.cs:73),
-        /// and a portal with <c>tm == 999999999</c> is a one-way end that goes
-        /// nowhere. Reporting those as exits would tell an agent a map leads
-        /// somewhere it does not.
+        /// MapleCharacter.cs:596-600 — the cross-map trigger:
+        ///
+        ///     if (Keyboard.KeyDown(Input.Up) &amp;&amp; (JumpState == jsNone) &amp;&amp; (OnPortal) ...)
+        ///     {
+        ///         if (Portal.ToMap != "999999999")
+        ///         {
+        ///             if ((Portal.Type == 2) || (Portal.Type == 1))
+        ///         ...
+        ///
+        /// So the exit set is {1, 2}, and type 10 is NOT in it. A type 10 portal
+        /// takes a different branch entirely (MapleCharacter.cs:613-629): it
+        /// finds a portal of the same name on this map and drops the character
+        /// from 100px above it — same map, no transition. Reporting those as an
+        /// exit told callers this map continues elsewhere when it only continues
+        /// inside itself.
+        ///
+        /// The client's filter is only ToMap != 999999999; ToMap != 0 is mine and
+        /// stays, because 0 is not a map id in this dataset.
         /// </remarks>
-        public bool IsExit => Type is 2 or 10 && ToMap != 999999999 && ToMap != 0;
+        public bool IsExit => Type is 1 or 2 && ToMap != 999999999 && ToMap != 0;
+
+        /// <summary>
+        /// A same-map door: the client drops the character onto the matching
+        /// portal on this map (MapleCharacter.cs:613-629).
+        /// </summary>
+        public bool IsSameMapLink => Type == 10;
+
+        /// <summary>A spawn point (<c>pt == 0</c>); the client respawns here.</summary>
+        public bool IsSpawn => Type == 0;
     }
 
     /// <summary>Every portal on the map.</summary>
