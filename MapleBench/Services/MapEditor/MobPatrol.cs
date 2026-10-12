@@ -52,17 +52,44 @@ public sealed class MobPatrol
     private const int RightBelow = 100;
     private const int StandBelow = 150;
 
-    /// <summary>Frames between rolls. The client rolls every frame; this is slower.</summary>
-    private const int RollEvery = 20;
+    /// <summary>
+    /// Frames between rolls.
+    /// </summary>
+    /// <remarks>
+    /// 1, because the client rolls every frame: <c>Mob.cs:351</c> constructs the
+    /// generator and <c>:354</c> throws immediately, inside <c>DoMove</c>. A mob
+    /// moving at 2px per frame crosses its own body length in well under the 20
+    /// frames this used to wait, so it turned once per stretch of walking and the
+    /// patrol had a rhythm the game does not.
+    /// </remarks>
+    private const int RollEvery = 1;
 
     /// <summary>Default walk speed, Mob.cs:151.</summary>
     public const float DefaultMoveSpeed = 2f;
 
-    /// <summary>Frames a hit animation locks the mob for, Mob.cs:439.</summary>
+    /// <summary>
+    /// Frames a hit animation locks the mob for, Mob.cs:439.
+    /// </summary>
+    /// <remarks>
+    /// The client's real duration is however long the mob's <c>hit1</c> animation
+    /// runs (<c>Mob.cs:399-404</c>), which lives in the Mob archive rather than
+    /// the map file. 20 is the fallback a caller can override.
+    /// </remarks>
     private const int HitStunFrames = 20;
 
-    /// <summary>Frames a dead mob stays down before respawning.</summary>
-    public const int RespawnFrames = 600;
+    /// <summary>How a mob moves, from its animation set. Mob.cs:166-175.</summary>
+    public enum MobMoveType
+    {
+        /// <summary>Has a <c>move</c> node. Ignores rx0/rx1; turns at the chain end.</summary>
+        Move,
+        /// <summary>Has a <c>jump</c> node. Honours rx0/rx1 and leaps gaps.</summary>
+        Jump,
+        /// <summary>Has a <c>fly</c> node. Ignores footholds entirely; honours rx0/rx1.</summary>
+        Fly,
+    }
+
+    /// <summary>The type of mob this patrol models.</summary>
+    public MobMoveType MoveType { get; }
 
     private readonly FootholdPhysics _map;
     private readonly Random _rng;
@@ -81,7 +108,8 @@ public sealed class MobPatrol
         int seed,
         int patrolLeft = 0,
         int patrolRight = 0,
-        float moveSpeed = DefaultMoveSpeed)
+        float moveSpeed = DefaultMoveSpeed,
+        MobMoveType moveType = MobMoveType.Move)
     {
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _rng = new Random(seed);
@@ -90,6 +118,7 @@ public sealed class MobPatrol
         // of the two should not have the mob teleport to 0.
         _patrolLeft = patrolLeft;
         _patrolRight = patrolRight;
+        MoveType = moveType;
 
         _foothold = start;
         _x = start.X1;
@@ -125,7 +154,14 @@ public sealed class MobPatrol
     /// <summary>Why it left the chain, or null.</summary>
     public string? LeftGroundBecause { get; private set; }
 
-    /// <summary>Whether it has noticed a character standing close enough to reach.</summary>
+    /// <summary>
+    /// Whether this mob is currently redirecting toward an attacker.
+    /// </summary>
+    /// <remarks>
+    /// Not a distance test. A mob notices a character only after being hit
+    /// (<c>Mob.cs:434-460</c>) — there is no aggro radius anywhere in the client.
+    /// This is true for the tick in which that reaction runs and false otherwise.
+    /// </summary>
     public bool Engaged { get; private set; }
 
     /// <summary>Frames left before it can act again.</summary>
@@ -134,8 +170,14 @@ public sealed class MobPatrol
     /// <summary>Whether it is down. A dead mob does not patrol.</summary>
     public bool Dead { get; private set; }
 
-    /// <summary>Frames until it returns, once dead.</summary>
-    public int RespawnIn { get; private set; }
+    /// <summary>
+    /// Always zero: the client has no respawn, so there is nothing to count down.
+    /// </summary>
+    /// <remarks>
+    /// Kept so callers reading the field still compile; <c>Mob.cs:443-476</c> and
+    /// <c>SpriteEngine.cs:486-492</c> free the sprite and never recreate it.
+    /// </remarks>
+    public int RespawnIn => 0;
 
     /// <summary>Times it has been struck.</summary>
     public int HitsTaken { get; private set; }
@@ -147,23 +189,52 @@ public sealed class MobPatrol
     /// Run one frame.
     /// </summary>
     /// <param name="characterX">
-    /// A character's X, or null for none. Mob.cs compares facing rather than
-    /// distance, so this is the whole engagement test.
+    /// A character's X, or null for none. The client has no proximity test — this
+    /// is used only by the post-hit reaction (Mob.cs:434-460).
     /// </param>
     /// <param name="characterY">A character's Y, or null.</param>
     public void Step(int? characterX = null, int? characterY = null)
     {
+        // A dead mob is gone. Mob.cs:443-476 plays the die animation and then
+        // SpriteEngine.cs:486-492 puts the sprite on DeadList and frees it. There
+        // is no timer and no respawn — the map keeps its hole until it reloads.
+        // This used to bring it back after 600 frames, which is a fact about
+        // nothing in the game.
         if (Dead)
-        {
-            if (--RespawnIn <= 0) Respawn();
             return;
-        }
 
+        // The stun is the hit ANIMATION, not a pause before the mob reacts.
+        // Mob.cs:424 stops movement while GetHit1 is set, but :434-460 runs the
+        // turn-and-redirect in the same file — so the reaction happens on the
+        // tick the animation ends, and Engaged reports exactly that tick.
         if (Stun > 0)
         {
             Stun--;
             return;
         }
+
+        // Mob.cs:445 — a mob struck from behind turns to face the attacker.
+        if (HitsTaken > 0)
+        {
+            HitsTaken = 0;
+            Engaged = true;
+            if (characterX is { } cx)
+            {
+                Facing = cx >= _x ? 1 : -1;
+                FacingRight = Facing > 0;
+                // Mob.cs:434-460 — the attacker also REDIRECTS the mob, not just
+                // its sprite. The hit makes it walk toward whoever struck it.
+                if (Facing != 0)
+                {
+                    Direction = Facing;
+                    return;
+                }
+            }
+            Engaged = false;
+            return;
+        }
+
+        Engaged = false;
 
         if (!OnGround)
         {
@@ -178,29 +249,15 @@ public sealed class MobPatrol
             return;
         }
 
-        // Mob.cs:445 — a mob struck from behind turns to face the attacker.
-        if (HitsTaken > 0)
-        {
-            HitsTaken = 0;
-            if (characterX is { } cx) Facing = cx >= _x ? 1 : -1;
-        }
 
-        Engaged = characterX is { } ex && Math.Abs(ex - _x) <= Reach;
-
-        if (Engaged && characterX is { } tx)
-        {
-            // Face the character. Mob.cs compares FlipX with the player's to
-            // decide whether an attack can land, so facing is the whole test.
-            Facing = tx >= _x ? 1 : -1;
-            FacingRight = Facing > 0;
-            return;
-        }
+        // There is no aggro radius. Mob.cs:350-375 decides direction from
+        // Random.Next(200) every frame and never reads Game.Player.X; the only
+        // player-dependent branch in the whole file is the hit reaction above.
+        // The 60px box this replaced made every mob appear to notice a
+        // character that the game has no mechanism for noticing.
 
         if (++_sinceRoll >= RollEvery)
-        {
-            _sinceRoll = 0;
             Roll();
-        }
 
         Move();
     }
@@ -222,9 +279,6 @@ public sealed class MobPatrol
         HitsTaken++;
         Stun = HitStunFrames;
     }
-
-    /// <summary>How far a mob can reach a character. Reach is a facing test, not a box.</summary>
-    private const int Reach = 60;
 
     private void Roll()
     {
@@ -260,9 +314,13 @@ public sealed class MobPatrol
         _x += (float)(Sin256(angle) * _moveSpeed);
         _y -= (float)(Cos256(angle) * _moveSpeed);
 
-        // Patrol bounds, Mob.cs:586 and :664. Both default to 0 meaning
-        // "unbounded", so a bound only counts when the map actually set it.
-        if (_patrolRight > _patrolLeft)
+        // Patrol bounds, Mob.cs:586 and :664 — but ONLY inside the Jump and Fly
+        // branches. The Move branch (Mob.cs:566-582) clamps to the foothold's own
+        // edge and never reads rx0/rx1 at all, so for the most common mob type
+        // these fields are dead. Applying them to a walker made it turn at a
+        // coordinate the game would have walked straight past.
+        bool honoursBounds = MoveType is MobMoveType.Jump or MobMoveType.Fly;
+        if (honoursBounds && _patrolRight > _patrolLeft)
         {
             if (Direction > 0 && _x >= _patrolRight)
             {
@@ -324,17 +382,6 @@ public sealed class MobPatrol
         if (Dead)
             return;
         Dead = true;
-        RespawnIn = RespawnFrames;
-        OnGround = false;
-        LeftGroundBecause = null;
-    }
-
-    /// <summary>Put it back, as the client's respawn does.</summary>
-    public void Respawn()
-    {
-        Dead = false;
-        RespawnIn = 0;
-        Stun = 0;
         OnGround = false;
         LeftGroundBecause = null;
     }

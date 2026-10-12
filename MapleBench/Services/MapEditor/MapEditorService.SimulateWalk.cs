@@ -517,6 +517,22 @@ public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, 
     /// question with a different answer each time is not a question. Given the
     /// same seed this replays exactly.
     /// </remarks>
+    /// <summary>The foothold with this id, or null.</summary>
+    /// <remarks>
+    /// Ids repeat across maps and even within one (69 maps ship a duplicate), so
+    /// this is only for a foothold the caller already named on this map — the
+    /// id the patrol reported, not an arbitrary one.
+    /// </remarks>
+    private static FootholdPhysics.Foot? FindById(FootholdPhysics map, string id)
+    {
+        foreach (FootholdPhysics.Foot f in map.Footholds)
+        {
+            if (f.Id == id)
+                return f;
+        }
+        return null;
+    }
+
     public MapMobPatrolDto PatrolMob(string path, int? spawnX, int? spawnY, int seed, int steps)
     {
         lock (_gate)
@@ -584,34 +600,60 @@ public MapWalkTraceDto TraceWalk(string path, int x, int y, int dir, int climb, 
                   + $"ending on foothold {mob2.Foothold.Id}"
                 : mob2.LeftGroundBecause ?? "the spawn left its chain";
 
-            // The same patrol again, with a character standing next to it.
-            // Mob.cs decides an attack by comparing FACING, not by a distance
-            // box, so the only way to exercise that half is to put something in
-            // front of it.
-            FootholdPhysics.Foot? same = physics.FindBelow(dto.SpawnX, dto.SpawnY, falling: false);
+            // The same patrol again, with a character striking it.
+            //
+            // The client has NO proximity test: Mob.cs:350-375 picks a direction
+            // from Random.Next(200) every frame and never reads the player's X.
+            // The only player-dependent branch in the file is what happens AFTER
+            // a hit (Mob.cs:434-460), so that is the sequence to exercise —
+            // strike, then watch the mob turn and walk toward the attacker.
+            //
+            // The old version waited up to 300 frames for a 60px "engagement"
+            // that the game has no mechanism for, so it almost always timed out
+            // and reported a mob that can be provoked into a fight on any map.
+            FootholdPhysics.Foot? same = FindById(physics, dto.StartFoothold);
             if (same is not null)
             {
                 MobPatrol duel = new(physics, same.Value, seed,
                     dto.PatrolLeft, dto.PatrolRight, dto.MoveSpeed);
 
-                // Run until it notices, or until it leaves the chain, whichever
-                // comes first. A mob that never engages has still answered the
-                // question it was asked.
-                for (int i = 0; i < Math.Min(dto.Steps, 300); i++)
+                int dirBefore = duel.Direction;
+
+                duel.TakeHit();
+                dto.HitsTaken = duel.HitsTaken;
+
+                // Run out the stun, then let the reaction play. Mob.cs resumes
+                // moving when the hit animation ends (:399-404).
+                int reacted = 0;
+                bool engaged = false;
+                bool redirected = false;
+                for (int i = 0; i < Math.Min(dto.Steps, 60); i++)
                 {
-                    duel.Step((int)Math.Round(duel.X) + 30, (int)Math.Round(duel.Y));
-                    if (duel.Engaged || !duel.OnGround)
+                    int attackerX = (int)Math.Round(duel.X) + 30;
+                    int dirBeforeTick = duel.Direction;
+                    duel.Step(attackerX, (int)Math.Round(duel.Y));
+                    reacted++;
+                    // Engaged is true only on the tick the reaction runs; reading
+                    // it after the loop would see the flag already cleared.
+                    if (duel.Engaged)
+                    {
+                        engaged = true;
+                        redirected = duel.Direction != dirBeforeTick;
                         break;
+                    }
                 }
 
-                dto.Engaged = duel.Engaged;
-                if (duel.Engaged)
-                {
-                    duel.TakeHit();
-                    dto.HitsTaken = duel.HitsTaken;
-                    duel.Kill();
-                    dto.Deaths = duel.Dead ? 1 : 0;
-                }
+                dto.Engaged = engaged;
+                dto.AttackerRedirected = redirected;
+                dto.AttackerRedirectFrames = reacted;
+
+                duel.Kill();
+                dto.Deaths = duel.Dead ? 1 : 0;
+
+                // A dead mob stays dead. Respawning after 600 frames was this
+                // file's invention; Mob.cs:443-476 and SpriteEngine.cs:486-492
+                // free the sprite and it never comes back.
+                dto.Respawned = false;
             }
 
             return dto;
@@ -982,7 +1024,28 @@ public sealed class MapMobPatrolDto
     public string EndingFoothold { get; set; } = "";
     public int MaxDistance { get; set; }
     public bool StayedOnMap { get; set; }
+
+    /// <summary>
+    /// Whether the mob redirected toward the attacker after being struck.
+    /// </summary>
+    /// <remarks>
+    /// The client has no proximity test — Mob.cs:350-375 never reads the
+    /// player's position. This is true only for the tick of the post-hit
+    /// reaction (Mob.cs:434-460), not "a character is nearby".
+    /// </remarks>
     public bool Engaged { get; set; }
+
+    /// <summary>Whether that reaction also reversed its walking direction.</summary>
+    public bool AttackerRedirected { get; set; }
+
+    /// <summary>Frames it took the mob to react.</summary>
+    public int AttackerRedirectFrames { get; set; }
+
+    /// <summary>
+    /// Always false. The client has no respawn (Mob.cs:443-476).
+    /// </summary>
+    public bool Respawned { get; set; }
+
     public int HitsTaken { get; set; }
     public int Deaths { get; set; }
     public string Reason { get; set; } = "";
