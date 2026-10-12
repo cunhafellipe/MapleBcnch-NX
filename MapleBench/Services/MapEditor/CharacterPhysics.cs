@@ -383,7 +383,26 @@ public sealed class CharacterPhysics
             GroundBelow = ground?.Id,
         };
 
-        if (!reachedEnd)
+        // HANDOVER — gated on POSITION, not on reaching the chain's end.
+        //
+        // MapleCharacter.cs:810 (left) and :862 (right):
+        //
+        //     if ((X <= FH.X1) && (FH.PrevID != 0) && (!FH.IsWall())
+        //         && (!FH.Prev.IsWall()))
+        //     {
+        //         FH = FH.Prev;
+        //         if (JumpState == JumpState.jsNone) { X = FH.X2; Y = FH.Y2; }
+        //     }
+        //
+        // The test is whether the character has walked off the near end of the
+        // foothold it is on. `reachedEnd` only asks whether it has passed the
+        // chain's far boundary, so it is false for every foothold in the middle
+        // of a chain — and gating the handover on it meant the character took one
+        // foothold and then stood there for the rest of its budget. Measured on
+        // f1/Map/Map6/610030510.img: 300 steps, one foothold, 177.
+        bool atEnd = moveLeft >= 0 ? _x >= fh.X2 : _x <= fh.X1;
+
+        if (!atEnd)
             return;
 
         // Past the end of this foothold. Take the next one if it exists and is
@@ -393,6 +412,12 @@ public sealed class CharacterPhysics
 
         if (next is not { IsWall: false } step)
         {
+            // No foothold to hand over to. Whether that is "fell off the world"
+            // or "the chain ended" is decided by reachedEnd, which knows where
+            // the chain's own boundary is.
+            if (!reachedEnd)
+                return;
+
             leftGround = true;
             LeaveGround(
                 moveLeft >= 0

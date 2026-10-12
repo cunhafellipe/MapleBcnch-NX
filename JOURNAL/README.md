@@ -66,6 +66,7 @@
 | **[2026-10-12-1014-master-plan](2026-10-12-1014-master-plan.md)** | **工作線路總計畫**：半成品的性質是「用錯誤的模型做完了」，三階段模型錯誤皆已推翻 |
 | **[2026-10-12-1025-audit-itself-is-wrong](2026-10-12-1025-audit-itself-is-wrong.md)** | **審計本身是錯的**：`FindWallL` 客戶端永遠不成立，我卻列為差距。修正判準：**先確認客戶端會執行，再對齊**。查證途中實測 VR 邊界四邊全錯（最大 231px） |
 | **[2026-10-12-1030-audit-verification](2026-10-12-1030-audit-verification.md)** | **驗證審計清單**：6 項裁決 4 項為假。發現清單漏掉最嚴重的一項——`Fall()` 缺水平位移，它還掩蓋了 `ClimbReachX=40` 那個「量測過的補丁」 |
+| **[2026-10-12-1055-p0-handover](2026-10-12-1055-p0-handover.md)** | 🔴 **P0**：交接被掛在 `reachedEnd` 上，鏈中間永假——角色走過一段 foothold 就不會再前進。所有測試都綠燈。修正後 acceptance **24/24**（`save verifies` 也好了） |
 | [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器的技術細節與設計決策 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
