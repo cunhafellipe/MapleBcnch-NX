@@ -51,12 +51,14 @@
 | [2026-10-12-stage-a](2026-10-12-stage-a.md) | ✅ **階段 A 驗收**：100 張雙向 200 次行走最大偏差 3px、`acceptance.mjs` 23/23，以及三個被抓到的真實缺陷 |
 | [2026-10-12-simulator-complete](2026-10-12-simulator-complete.md) | ✅ **模擬器完成**：梯子、傳送門、怪物巡邏、6 個 MCP 工具、失敗建議。200 次零誤差，34/34 掉落地圖都有修復建議 |
 | [2026-10-12-mob-ai-and-full-sweep](2026-10-12-mob-ai-and-full-sweep.md) | 完整怪物 AI（讀 Mob.cs）、**客戶端全量 10,732 次驗證**，以及一個**沒修好**的 18,000 幀案例 |
+| [2026-10-12-unresolved](2026-10-12-unresolved.md) | 查不掉的問題：程式碼正確但那段不執行。量測過程、決定性實驗，以及為什麼停下來 |
 
 ## 專案文件
 
 | 文件 | 內容 |
 |---|---|
 | **[PLAN-MASTER.md](PLAN-MASTER.md)** | ⭐ **總計畫**：現在的狀態、四階段任務序列與驗收門檻、主目錄怎麼同步、明確不做的事 |
+| [PLAN-SIMULATOR-2.md](PLAN-SIMULATOR-2.md) | **下一輪計畫**：修 18,000 幀（診斷優先，不推理）、同步主目錄、推送 |
 | [PLAN-SIMULATOR.md](PLAN-SIMULATOR.md) | 模擬器的技術細節與設計決策 |
 | [MAP-STRUCTURE.md](../docs/MAP-STRUCTURE.md) | 地圖結構規格：foothold 鏈、圖塊、背景、物件分類。**全部來自實測解剖** |
 | [tools/anatomy/](../tools/anatomy/) | 解剖腳本與原始資料，可重跑驗證規格 |
