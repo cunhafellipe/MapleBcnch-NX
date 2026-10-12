@@ -31,6 +31,82 @@ namespace MapleBench.Services.MapEditor;
 /// <see cref="MapDocument"/> that somebody else owns.
 /// </para>
 /// </remarks>
+/// <summary>
+/// The map's own rectangle, read from <c>info</c> the way MapleNecrocer does.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <c>MapleMap.cs:171-196</c>, both branches:
+/// </para>
+/// <code>
+/// if (Map.Info.ContainsKey("VRLeft"))
+/// {
+///     Map.Left   = Map.Info["VRLeft"];
+///     Map.Bottom = Map.Info["VRBottom"] + 15;
+///     Map.Top    = Map.Info["VRTop"];
+///     Map.Right  = Map.Info["VRRight"];
+/// }
+/// else
+/// {
+///     Map.Left   = FootholdTree.MinX1.First();
+///     Map.Right  = FootholdTree.MaxX2.Last();
+///     Map.Bottom = -Map.Info["centerY"] + Map.Info["MapHeight"] - 55;
+///     Map.Top    = -Map.Info["centerY"] + 50;
+/// }
+/// </code>
+/// <para>
+/// Neither branch is "the extents of every foothold". Deriving all four from
+/// foothold extremes — which is what this did until now — disagrees with the
+/// client on every shipping map that carries VR. Measured on
+/// <c>f1/Map/Map2/200090410.img</c> (VRLeft -420, VRTop -1320, VRRight 380,
+/// VRBottom -245):
+/// </para>
+/// <code>
+/// 邊界     foothold 極值   客戶端 VR      差
+/// Left        -322        -420        +98
+/// Right        149         380       -231
+/// Top        -1166       -1320       +154
+/// Bottom      -443        -230       -213
+/// </code>
+/// <para>
+/// That is why <c>reachedEdge</c> — "the character crossed the whole map" — was
+/// being reported from the wrong rectangle.
+/// </para>
+/// </remarks>
+internal static class MapBounds
+{
+    /// <summary>Resolve the map rectangle, or null when <paramref name="info"/> has no basis for it.</summary>
+    internal static (int, int, int, int)? Resolve(
+        MapModel.WzNode? info,
+        (int Left, int Top, int Right, int Bottom) footholdExtent)
+    {
+        if (info is null)
+            return null;
+
+        // Branch one: the map declares its own rectangle.
+        if (info.Child("VRLeft")?.AsInteger() is { } vrLeft)
+        {
+            int vrTop = (int)(info.Child("VRTop")?.AsInteger() ?? vrLeft);
+            int vrRight = (int)(info.Child("VRRight")?.AsInteger() ?? vrLeft);
+            int vrBottom = (int)(info.Child("VRBottom")?.AsInteger() ?? vrTop);
+            return ((int)vrLeft, vrTop, vrRight, vrBottom + 15);
+        }
+
+        // Branch two: no VR, so top and bottom come from the minimap framing.
+        // Left and right still come from the footholds, exactly as the client does.
+        if (info.Child("centerY")?.AsInteger() is { } centerY
+            && info.Child("MapHeight")?.AsInteger() is { } mapHeight)
+        {
+            int top = (int)-centerY + 50;
+            int bottom = (int)-centerY + (int)mapHeight - 55;
+            return (footholdExtent.Left, top, footholdExtent.Right, bottom);
+        }
+
+        // No VR and no minimap framing: the foothold extents are all there is.
+        return footholdExtent;
+    }
+}
+
 public sealed class FootholdPhysics
 {
     private readonly List<Foot> _footholds;
@@ -40,6 +116,7 @@ public sealed class FootholdPhysics
     public FootholdPhysics(MapDocument map)
     {
         ArgumentNullException.ThrowIfNull(map);
+        MapInfo = map.Find("info");
 
         _footholds = new List<Foot>(map.Footholds.Count);
         foreach (MapFoothold fh in map.Footholds)
@@ -91,6 +168,13 @@ public sealed class FootholdPhysics
         BuildLadders(map);
         BuildPortals(map);
     }
+
+    /// <summary>The map's <c>info</c> node, or null when the map has none.</summary>
+    /// <remarks>
+    /// Kept because the map rectangle lives here, not in the footholds — see
+    /// <see cref="MapBounds"/>. Null is normal: a generated map may not carry it.
+    /// </remarks>
+    public WzNode? MapInfo { get; }
 
     /// <summary>The layer node's name as a number, the way the client reads it.</summary>
     /// <remarks>
@@ -464,15 +548,15 @@ public readonly record struct Portal(
         if (_footholds.Count == 0)
             return null;
 
-        int left = int.MaxValue, top = int.MaxValue;
-        int right = int.MinValue, bottom = int.MinValue;
+        int fhLeft = int.MaxValue, fhTop = int.MaxValue;
+        int fhRight = int.MinValue, fhBottom = int.MinValue;
         foreach (Foot f in _footholds)
         {
-            if (f.Left < left) left = f.Left;
-            if (f.Top < top) top = f.Top;
-            if (f.Right > right) right = f.Right;
-            if (f.Bottom > bottom) bottom = f.Bottom;
+            if (f.Left < fhLeft) fhLeft = f.Left;
+            if (f.Top < fhTop) fhTop = f.Top;
+            if (f.Right > fhRight) fhRight = f.Right;
+            if (f.Bottom > fhBottom) fhBottom = f.Bottom;
         }
-        return (left, top, right, bottom);
+        return MapBounds.Resolve(MapInfo, (fhLeft, fhTop, fhRight, fhBottom));
     }
 }
