@@ -45,6 +45,7 @@ public static class Endpoints
         api.MapFacts();
         api.MapMapEditor();
         api.MapSimulator();
+        api.MapClientLog();
     }
 
     #region Map assets

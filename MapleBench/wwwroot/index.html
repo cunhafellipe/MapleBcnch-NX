@@ -231,6 +231,10 @@
      confirm from inside a form cleared the form out from under it. The styling in
      app.css is element-scoped (`dialog {`), not #modal, so it still applies. -->
 
+<!-- First, before app.js: a module that throws while evaluating is still
+     caught, and the error is POSTed to the server so it can be read
+     without a developer console. -->
+<script src="js/errorreport.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

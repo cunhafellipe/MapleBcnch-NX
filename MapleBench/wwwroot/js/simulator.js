@@ -258,7 +258,6 @@ export class SimulatorSection {
           + 'by looking at it — the chain has to be walked.',
         ));
 
-    this.pickerHost = list;
     this.renderPicker();
 
     return el('div', { class: 'sim-grid' }, [left, right]);
