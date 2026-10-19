@@ -186,7 +186,13 @@ public static class ValueMath
     {
         string text = (expression ?? "").Trim();
         if (text.Length == 0)
-            return new Op(OpKind.Literal, 0, 0, "");
+            // An empty box is not the literal "". Parse used to hand back
+            // OpKind.Literal with an empty string, which Apply turned into
+            // Outcome.Result("") -- Ok, not a skip -- and every numeric target then
+            // took WzNodeFactory.ParseInt(""), which is 0. Measured against a real
+            // Npc.nx: tradeBlock went 12345 -> 0 while the preview showed a blank
+            // after-value. Invalid makes Apply skip instead, so nothing is written.
+            return new Op(OpKind.Invalid, 0, 0, "needs an operation or a value");
 
         // Explicit literal. Escapes anything that would otherwise be read as an
         // operator, which is the only way to write the literal string "*2".

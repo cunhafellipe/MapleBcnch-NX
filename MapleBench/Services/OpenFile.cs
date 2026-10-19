@@ -170,7 +170,7 @@ public sealed class OpenFile : IDisposable
         // file to be saved to — enough to fire the close prompt, mark the client
         // dirty in the Port panel, and invite the one action that must never
         // happen here.
-        if (Kind is "split" or "img-folder")
+        if (Kind is "split" or "ms" or "img-folder")
             return 0;
 
         if (LooseImage != null)

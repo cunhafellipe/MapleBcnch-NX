@@ -1,5 +1,6 @@
-﻿using System.Globalization;
+﻿﻿﻿﻿using System.Globalization;
 using MapleLib.WzLib;
+using MapleLib.WzLib.WzProperties;
 using MapleBench.Models;
 
 namespace MapleBench.Services;
@@ -900,6 +901,18 @@ public sealed class NpcService
                 $"'{request.Value}' is not a number, so it cannot be used with '{op}'.");
         }
 
+        // "set" writes the operand verbatim, so an empty one used to reach the
+        // writer unchanged: the equality guard below compares a real "1000"
+        // against "", finds them different, and plans the row. SetValue then
+        // handed "" to ParseInt/ParseLong/ParseFloat, every one of which returns
+        // 0 for a blank -- so an untouched value box turned every numeric field
+        // to 0. Measured against a real Npc.nx: tradeBlock 12345 -> 0, with the
+        // preview showing "".
+        //
+        // A WzStringProperty genuinely accepts "", so the refusal is decided per
+        // row, against the property actually in hand.
+        bool blankSet = op == "set" && string.IsNullOrWhiteSpace(request.Value);
+
         NpcBulkResultDto result = new() { DryRun = request.DryRun };
 
         lock (_session.Gate)
@@ -955,6 +968,14 @@ public sealed class NpcService
 
                 string? before = property.WzValue?.ToString();
                 change.Before = before;
+
+                if (blankSet && property is not WzStringProperty)
+                {
+                    change.Skipped = true;
+                    change.Reason = "No value was given, and this field holds a number. " +
+                                    "An empty box would write 0.";
+                    continue;
+                }
 
                 if (op == "set")
                 {

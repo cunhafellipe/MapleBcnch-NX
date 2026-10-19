@@ -157,6 +157,15 @@ public sealed class WzSaveService
             // afterwards on the same NxArchive instance: every NxCanvas in the tree holds a
             // reference to that one object, so remapping it in place leaves the whole tree
             // decoding against the new bytes, which replacing the object could not do.
+            // The read-back above proves nothing about the device: NxArchive.Open
+            // reads the file back through the same page cache WriteAllBytes just
+            // filled, so a save that "verified" clean had still only reached RAM.
+            // That is exactly the gap FlushToDisk's own doc comment describes, and
+            // the classic paths close it before anything irreversible happens. NX
+            // did not, so power loss in the seconds after the swap could leave the
+            // client folder holding a truncated archive. Cheap: 71 ms for 150 MB.
+            FlushToDisk(scratch);
+
             NxArchive? remapped = null;
             if (!saveAs && file.NxSource is not null)
             {
@@ -196,7 +205,18 @@ public sealed class WzSaveService
             if (backup is not null && !File.Exists(target))
             {
                 try { File.Move(backup, target); }
-                catch (IOException) { /* reported through the thrown error below */ }
+                catch (IOException restoreFailed)
+                {
+                    // The bare throw below rethrows the ORIGINAL failure, whose message
+                    // names the scratch/target move and never mentions that the archive is
+                    // now sitting under the backup. That is how a save left a file somewhere
+                    // the user was not told to look.
+                    throw new IOException(
+                        $"{Path.GetFileName(target)} could not be written ({restoreFailed.Message}) and the " +
+                        $"previous file could not be moved back from {backup}. " +
+                        $"Nothing was lost: your archive is at {backup}. Copy it back by hand.",
+                        restoreFailed);
+                }
             }
 
             throw;
@@ -237,6 +257,20 @@ public sealed class WzSaveService
         if (!saveAs)
         {
             file.MarkAllImagesClean();
+
+            // The classic paths both clear this file's undo history on a
+            // successful write -- SaveArchive at its two ClearForFile sites after
+            // the swap, SaveLooseImage via ReopenLooseImage -- because a saved tree
+            // and an undo stack still describing the pre-save state cannot both be
+            // true. NX did not, and MarkAllImagesClean only zeroes Dirty and
+            // WzImage.Changed, so the entries survived.
+            //
+            // Measured, in-place save then one Ctrl+Z on Etc.nx: memory went back
+            // to 10 while the file on disk held 4242, /api/files reported
+            // dirty=false with dirtyNodeCount=0, and /api/changes dropped the
+            // archive entirely -- so closing it would have prompted nothing and
+            // silently discarded a state the user believed was saved.
+            _undo.ClearForFile(file.Id);
             // NOTE: the reopen itself deliberately does NOT happen here.
 
             // The map editor verifies AFTER this method returns: it re-resolves

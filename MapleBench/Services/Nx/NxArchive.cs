@@ -514,6 +514,20 @@ public sealed unsafe class NxArchive : IDisposable
         }
 
         long offset = (long)_bitmapOffsets[index];
+
+        // The four-byte length sits AT the table entry's offset, so the entry has to be
+        // in range before that read -- checking afterwards is checking after the fault.
+        // Nothing else guards this: Validate checks where each TABLE ends, never what the
+        // entries inside it say, and this is the first place an entry is dereferenced.
+        // Measured on a 159-byte NX whose single bitmap entry pointed eight gigabytes past
+        // its own end: the archive opened, its tree listed, and reading this entry killed
+        // the process with 0xC0000005.
+        if (offset < 0 || (ulong)offset + sizeof(uint) > (ulong)FileLength)
+        {
+            throw new InvalidDataException(
+                $"A bitmap offset-table entry in a {FileLength}-byte archive points to 0x{offset:X}, " +
+                $"which is outside it. The file is truncated or corrupt.");
+        }
         return (offset + 4, ReadUInt32(offset));
     }
 

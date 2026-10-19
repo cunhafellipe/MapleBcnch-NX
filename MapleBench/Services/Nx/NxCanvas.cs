@@ -52,7 +52,32 @@ public readonly unsafe struct NxCanvas
     public int DecodedLength => Width * Height * 4;
 
     /// <summary>Byte range of the stored payload, inside the mapped file.</summary>
-    public (long Offset, uint Length) EncodedRange => Archive.GetBitmapRange((int)Index);
+    public (long Offset, uint Length) EncodedRange
+    {
+        get
+        {
+            (long offset, uint length) = Archive.GetBitmapRange((int)Index);
+
+            // NxAudio.EncodedRange below does exactly this and has always done it; the bitmap
+            // side did not, and the bitmap table is the one NxArchive.Validate does not
+            // inspect -- it checks where each TABLE ends, never what the entries inside it
+            // say. An offset past the end of the mapping therefore reached
+            // NxCanvasEncodingProbe.Detect, which reads twelve bytes at PointerAt(offset)
+            // before any check exists, and the process died with 0xC0000005.
+            //
+            // Reproduced on a 159-byte hand-built NX whose single bitmap entry pointed eight
+            // gigabytes past its own end: the archive opened, its tree listed, and the
+            // process was gone the moment that canvas was rendered.
+            if (offset < 0 || (ulong)(offset + length) > (ulong)Archive.FileLength)
+            {
+                throw new InvalidDataException(
+                    $"A canvas payload claims to run from {offset} for {length} bytes in a " +
+                    $"{Archive.FileLength}-byte archive.");
+            }
+
+            return (offset, length);
+        }
+    }
 
     /// <summary>How the stored payload is compressed.</summary>
     public NxCanvasEncoding Encoding

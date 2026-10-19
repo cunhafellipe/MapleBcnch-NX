@@ -98,7 +98,16 @@ public sealed class XmlExportService
             }
 
             if (walk.Written.Count == 0)
-                throw new InvalidOperationException("There are no images under this node.");
+                // The two cases mean opposite things and used to share one message. A
+                // node that genuinely holds no images is a fact; a node whose every image
+                // failed to serialise -- which is what an NX archive does when none of its
+                // images were ever built -- was reported as empty.
+                throw new InvalidOperationException(
+                    walk.Failed.Count > 0
+                        ? $"None of the {walk.Failed.Count} image(s) under this node could be exported " +
+                          $"({string.Join(", ", walk.Failed.Take(5))}). An NX image has to be built before it " +
+                          "can be serialised; browse each image once, or export an image you have opened."
+                        : "There are no images under this node.");
 
             // Compressing reads only files this call just wrote, so it happens
             // outside the gate: that lock is global and every other request —
@@ -117,7 +126,14 @@ public sealed class XmlExportService
                     source = Uri.UnescapeDataString(path),
                     exported = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                     count = walk.Written.Count,
-                    truncated = walk.Truncated,
+                    // The cap and a failed image are both reasons the archive is
+                    // incomplete, so both report incomplete -- but only the cap stops the
+                    // walk. Failing an image must not end it.
+                    truncated = walk.Truncated || walk.Failed.Count > 0,
+                    failedByCap = walk.Truncated,
+                    // Named, not just counted: a caller that needs the whole archive has
+                    // to be able to say WHICH images are missing.
+                    failed = walk.Failed,
                     files = walk.Written.Select(w => w.EntryName),
                 }, new JsonSerializerOptions { WriteIndented = true });
             }
@@ -188,6 +204,14 @@ public sealed class XmlExportService
             // One image nobody can decrypt must not cost the other 1,999.
             _log.LogDebug(ex, "Skipping {Image} during XML export", image.Name);
             TryDelete(file);
+
+            // ...but it must not vanish either. This was a Debug line and a return, so a
+            // failed image disappeared with nothing to show for it: the manifest reported
+            // the ones that succeeded and truncated:false, which reads as "this is the whole
+            // archive". Measured on Quest.nx (6 images, none ever browsed): the export
+            // answered "There are no images under this node", and after browsing exactly one
+            // it shipped 1 of 6 and still said complete.
+            walk.Failed.Add(image.Name);
             return;
         }
 
@@ -258,6 +282,9 @@ public sealed class XmlExportService
         public required string TempRoot { get; init; }
         public required int MaxImages { get; init; }
         public List<(string EntryName, string FilePath)> Written { get; } = new();
+        /// <summary>Images that could not be serialised, by name.</summary>
+        public List<string> Failed { get; } = new();
+
         public long Bytes;
         public bool Truncated;
     }
