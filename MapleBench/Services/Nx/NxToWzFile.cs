@@ -177,7 +177,13 @@ public static class NxToWzFile
             // What it costs is a traversal and no memory. NxNode is a handle over a mapped
             // 20-byte record rather than an object, so nothing here is allocated that the
             // archive does not already own.
+            long nodesBeforeThisImage = nodes;
             MeasureImage(imageNode, ref nodes, ref collapsed, ref canvases);
+
+            // What this image alone will cost to build, for the builder's own
+            // pre-flight. Free here: MeasureImage already walked exactly the paths
+            // the build walks, so this is the difference it just added.
+            long thisImageNodes = nodes - nodesBeforeThisImage;
 
             // The build is deferred, not skipped: this image holds no properties until something
             // asks for them through WzSessionService.EnsureParsed, which is the one place that can
@@ -212,7 +218,7 @@ public static class NxToWzFile
                 // on a file nobody touched. An NX entry is read-only regardless, but the flag
                 // is what the UI reads, so it has to say the truth.
                 built.Changed = false;
-            });
+            }, thisImageNodes);
 
             file.WzDirectory.AddImage(image);
             images++;
