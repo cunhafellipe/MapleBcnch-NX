@@ -34,6 +34,10 @@ public sealed partial class MapEditorService
             MapDocument map = doc.Doc;
             MapValidateDto result = new() { Path = path };
 
+        // Distinct: the field is "the tile sets in use", and a map using one set
+        // across six layers must not report it six times.
+        var tileSets = new SortedSet<string>(StringComparer.Ordinal);
+
             // ---- 1. Link stub: the geometry is in another map. -----------
             // Measured: 3 of 10 sampled maps were stubs. A generator that
             // treats the stub as an empty map writes a shell with no ground.
@@ -162,9 +166,14 @@ public sealed partial class MapEditorService
             // ---- 5. Tiles must carry u/no or they draw nothing. ---------
             foreach (MapLayer layer in map.Layers)
             {
-                string? ts = layer.Node.TextAt("tS");
+                // MapLayer.TileSet, not TextAt("tS"). The field lives two levels down at
+                // <L>/info/tS -- MapNodes.cs says so and its own TileSet accessor reads
+                // it that way -- while TextAt is a direct-child lookup, so it never found
+                // it and TileSets came back empty for every map. Placement.cs already
+                // read the right path; the validator was the odd one out.
+                string? ts = layer.TileSet;
                 if (!string.IsNullOrEmpty(ts))
-                    result.TileSets.Add(ts);
+                    tileSets.Add(ts);
 
                 foreach (MapTile tile in layer.Tiles)
                 {
@@ -212,6 +221,7 @@ public sealed partial class MapEditorService
             // ---- 7. Bounds, because a generator needs the extent. -------
             result.Bounds = ComputeBounds(map);
 
+            result.TileSets.AddRange(tileSets);
             result.Ok = result.Errors.Count == 0;
             return result;
         }
