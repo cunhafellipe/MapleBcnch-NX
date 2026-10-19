@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+﻿﻿﻿﻿using System.Diagnostics;
 using System.Text.RegularExpressions;
 using MapleLib.WzLib;
 using MapleLib.WzLib.WzProperties;
@@ -213,6 +213,17 @@ public sealed class WzSearchService
         List<SearchHitDto> changed = new();
         List<(string Path, string Value)> pending = new();
         List<(string Path, string Name)> renames = new();
+
+        // Replace carried no clock at all, and that mattered twice over. Search has
+        // Budget (line 18) and checks it per node; here a find that matched nothing
+        // walked every node of every open archive with the session gate held for the
+        // whole walk -- Walk only releases it when it is sliced, and generation:null
+        // means it is not -- so every other request in the app queued behind it while
+        // deep:true materialised every unbuilt NX image on the way. That is the eager
+        // open cost the lazy-shell rewrite removed, reintroduced by one dialog. The
+        // gate stays held: the writes below need one unchanging tree, so the budget
+        // bounds the damage rather than the design changing.
+        Stopwatch clock = Stopwatch.StartNew();
         bool truncated = false;
 
         lock (_session.Gate)
@@ -229,7 +240,7 @@ public sealed class WzSearchService
                     // below deliberately do not check.
                     cancel.ThrowIfCancellationRequested();
 
-                    if (changed.Count >= request.Limit)
+                    if (changed.Count >= request.Limit || clock.Elapsed > Budget)
                     {
                         truncated = true;
                         return false;

@@ -93,12 +93,22 @@ public sealed class NxPngProperty : WzPngProperty
     /// <inheritdoc/>
     public override Bitmap GetBitmap()
     {
-        if (_pixels is null)
+        // Read the field ONCE and keep the array in a local for the rest of this
+        // call. It used to assign _pixels and then read it back, and
+        // ReleaseAllCachedPixels runs outside the session gate (ImageMemoryService
+        // :351 -- the gate covers 191-206 and 210-248 only) while a render holds it,
+        // so a sweep landing between the assign and the re-read made `pixels` null
+        // and pixels.Length threw. A local removes the window without putting a lock
+        // on the path every preview goes through, and the decode-vs-decode race the
+        // class notes already call benign is unchanged: both sides decode the same
+        // immutable payload out of the mapping and produce identical bytes.
+        byte[]? pixels = _pixels;
+        if (pixels is null)
         {
-            _pixels = NxCanvasDecoder.Decode(_canvas);
+            pixels = NxCanvasDecoder.Decode(_canvas);
+            _pixels = pixels;
             lock (Cached) Cached.Add(new WeakReference<NxPngProperty>(this));
         }
-        byte[] pixels = _pixels;
 
         if (pixels.Length == 0)
         {
