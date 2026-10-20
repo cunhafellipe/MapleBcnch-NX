@@ -14,7 +14,7 @@ public static class Endpoints
 
     public static void MapEndpoints(this WebApplication app)
     {
-        RouteGroupBuilder api = app.MapGroup("/api").AddEndpointFilter(ErrorFilter);
+        RouteGroupBuilder api = app.MapGroup("/api").AddEndpointFilter(ApiErrorFilter.Filter);
 
         api.MapGet("/about", () => Results.Ok(new
         {
@@ -1096,71 +1096,6 @@ public static class Endpoints
     }
 
     #endregion
-
-    /// <summary>
-    /// Turns the exceptions the services throw into the shape the UI expects,
-    /// so every failure surfaces as a readable toast rather than a 500 page.
-    /// </summary>
-    private static async ValueTask<object?> ErrorFilter(
-        EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        try
-        {
-            return await next(context);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return Results.NotFound(new ApiError(ex.Message));
-        }
-        catch (FileNotFoundException ex)
-        {
-            return Results.NotFound(new ApiError(ex.Message));
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            return Results.NotFound(new ApiError(ex.Message));
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new ApiError(ex.Message));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new ApiError(ex.Message));
-        }
-        catch (InvalidDataException ex)
-        {
-            // The file was there and the request named it correctly; what is wrong is
-            // what is inside it. That is a bad request, not a missing resource, and the
-            // difference matters to whoever reads the response: a 404 here would send
-            // the user hunting for a file that exists and is sitting on disk.
-            //
-            // It was answering 500 before. InvalidDataException derives straight from
-            // SystemException, so it matched no branch above it and fell all the way
-            // through to the catch-all, which put the real sentence in Detail -- a field
-            // the UI never shows -- behind a Message that said nothing at all. Every
-            // bounds check in Services/Nx throws this type (NxArchive's table and
-            // string-pool checks, NxCanvas, NxCanvasDecoder, NxToWzFile, NxMergeService,
-            // and the WZ integrity audit), so a corrupt archive and an absent one
-            // answered identically.
-            return Results.BadRequest(new ApiError(ex.Message));
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Results.Json(new ApiError("Access denied.", ex.Message), statusCode: 403);
-        }
-        catch (Exception ex)
-                {
-                    // The message alone cost hours here: "Object reference not set to
-                    // an instance of an object" came from four different places while
-                    // chasing 113 failing skills, and none of them were distinguishable
-                    // from the response. The stack goes to the log; the response stays
-                    // short because agents read it.
-                    Console.Error.WriteLine($"[endpoint] {ex}");
-                    return Results.Json(
-                        new ApiError("Something went wrong.", ex.Message), statusCode: 500);
-                }
-    }
 }
 
 public sealed class SetValuesRequest

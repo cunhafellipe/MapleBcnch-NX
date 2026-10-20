@@ -312,7 +312,7 @@ public sealed unsafe class NxArchive : IDisposable
             _fileLength = fileLength;
             _disposed = false;
 
-            ReadTables();
+            ReadTables(path);
             Validate(path);
         }
         catch
@@ -337,22 +337,123 @@ public sealed unsafe class NxArchive : IDisposable
     /// layout, but nothing guarantees a future writer would, and reading a table that described
     /// the previous file would turn a save into a corruption.
     /// </remarks>
-    private void ReadTables()
+    private void ReadTables(string path)
     {
-        NodeCount = (int)ReadUInt32(0x04);
-        NodeOffset = ReadUInt64(0x08);
-        StringCount = (int)ReadUInt32(0x10);
-        StringOffset = ReadUInt64(0x14);
-        BitmapCount = (int)ReadUInt32(0x1C);
-        BitmapOffset = ReadUInt64(0x20);
-        AudioCount = (int)ReadUInt32(0x28);
-        AudioOffset = ReadUInt64(0x2C);
+        NodeCount = ReadCount(path, 0x04, "node", NodeRecordSize);
+        NodeOffset = ReadOffset(path, 0x08, "node block");
+        StringCount = ReadCount(path, 0x10, "string", sizeof(ulong));
+        StringOffset = ReadOffset(path, 0x14, "string offset table");
+        BitmapCount = ReadCount(path, 0x1C, "bitmap", sizeof(ulong));
+        BitmapOffset = ReadOffset(path, 0x20, "bitmap offset table");
+        AudioCount = ReadCount(path, 0x28, "audio", sizeof(ulong));
+        AudioOffset = ReadOffset(path, 0x2C, "audio offset table");
 
         _stringOffsets = ReadOffsetTable(StringOffset, StringCount);
         _bitmapOffsets = ReadOffsetTable(BitmapOffset, BitmapCount);
         _audioOffsets = ReadOffsetTable(AudioOffset, AudioCount);
 
         Root = new NxNode(this, 0);
+    }
+
+    /// <summary>
+    /// Reads a header COUNT field and refuses anything the file cannot physically hold.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// These four fields are stored as <c>uint</c> and were read straight into an
+    /// <see cref="int"/>. The project builds unchecked — no
+    /// <c>CheckForOverflowUnderflow</c>, no <c>Directory.Build.props</c> — so
+    /// <c>0xFFFFFFFF</c> arrived as <c>-1</c>, silently.
+    /// </para>
+    /// <para>
+    /// That is not a wrong number, it is a wrong <em>invariant</em>, and the arithmetic
+    /// downstream turned it back into something that looked fine.
+    /// <c>Validate</c> computes <c>NodeOffset + (ulong)NodeCount * NodeRecordSize</c>,
+    /// and C#'s <c>(ulong)someInt</c> sign-extends rather than masking: <c>(ulong)(-1)</c>
+    /// is 18,446,744,073,709,551,615, which times 20 wraps modulo 2^64 to a small number.
+    /// Measured, with the arithmetic reproduced in BigInteger:
+    /// </para>
+    /// <code>
+    /// NodeCount = -1        -> nodeBlockEnd = 32      -> RequireFit PASSES
+    /// NodeCount = -2        -> nodeBlockEnd = 12      -> RequireFit PASSES
+    /// NodeCount = -3        -> nodeBlockEnd = 18446744073709551608 -> rejected
+    /// NodeCount = int.MinValue -> nodeBlockEnd = 18446744030759878708 -> rejected
+    /// </code>
+    /// <para>
+    /// So exactly two values slipped through, and the archive opened as valid. From there
+    /// <c>NxNode.IsValid</c> is <c>(uint)_index &lt; (uint)_archive.NodeCount</c>, and
+    /// <c>(uint)(-1)</c> is 0xFFFFFFFF, so <em>every</em> index passed. The first child index
+    /// in the node block then reached <c>NodeNameId</c>, which reads twenty bytes per record
+    /// straight off the mapping. Measured on a 132-byte file with
+    /// <c>nodeCount = 0xFFFFFFFF</c> and one root child index of 0x7FFFFFFF:
+    /// </para>
+    /// <code>
+    /// System.AccessViolationException
+    ///    at MapleBench.Services.Nx.NxArchive.ReadUInt32(Int64)
+    ///    at MapleBench.Services.Nx.NxArchive.NodeNameId(Int32)
+    ///    at MapleBench.Services.Nx.NxNode.get_Name()
+    ///    at MapleBench.Services.Nx.NxToWzFile.Convert(NxArchive, NxLoadMode)
+    /// </code>
+    /// <para>
+    /// <b>Why here and not in <see cref="Validate"/>.</b> <c>ReadTables</c> runs first, and
+    /// <c>ReadOffsetTable</c> allocates <c>new ulong[count]</c> from the very number being
+    /// validated — a negative count, or one the file cannot hold, has to be refused before
+    /// anything allocates from it.
+    /// </para>
+    /// <para>
+    /// The bound is the file's own size rather than a constant: every entry of every one of
+    /// these four tables occupies at least <paramref name="bytesPerEntry"/> bytes on disk, so
+    /// a count larger than the file can hold is corrupt by definition, whatever the number.
+    /// </para>
+    /// </remarks>
+    private int ReadCount(string path, int headerOffset, string what, int bytesPerEntry)
+    {
+        uint raw = ReadUInt32(headerOffset);
+
+        // Reject the wrap before the cast, not after it. 0xFFFFFFFF is above
+        // int.MaxValue, so this one comparison kills every negative the unchecked
+        // cast could produce. The second check is what stops a plausible-looking
+        // 200,000,000 from allocating a gigabyte of offset table.
+        if (raw > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' claims {raw} {what} entries, which does not fit in the " +
+                "header's own counter. The file is truncated or corrupt.");
+        }
+
+        int count = (int)raw;
+        long available = _fileLength - NxArchive.HeaderSize;
+        if ((long)count * bytesPerEntry > available)
+        {
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' claims {count:N0} {what} entries, which need " +
+                $"{count * (long)bytesPerEntry:N0} bytes in a {available:N0}-byte file. " +
+                "The file is truncated or corrupt.");
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Reads a header OFFSET field and refuses one that is not inside the file.
+    /// </summary>
+    /// <remarks>
+    /// Validate compares these arithmetically against the counts, and all four of those
+    /// expressions can wrap, so the field has to be known-good before it is used as an
+    /// operand. An offset past the end of the mapping is a wild pointer waiting for the
+    /// first read through it.
+    /// </remarks>
+    private ulong ReadOffset(string path, int headerOffset, string what)
+    {
+        ulong offset = ReadUInt64(headerOffset);
+        if (offset > (ulong)_fileLength)
+        {
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' puts its {what} at 0x{offset:X}, past the end of a " +
+                $"{_fileLength}-byte file. The file is truncated or corrupt.");
+        }
+
+        return offset;
     }
 
     /// <summary>
@@ -401,10 +502,25 @@ public sealed unsafe class NxArchive : IDisposable
     /// Checks that the four tables do not overlap and that the counts fit the file.
     /// </summary>
     /// <remarks>
-    /// These are the only structural invariants the format actually has, and they are what
-    /// distinguishes "this file is truncated or corrupt" from "this file is NX". Checking them
-    /// at open time means a bad archive fails here with a sentence a person can act on, rather
-    /// than as an access violation somewhere deep in a tree walk later.
+    /// <para>
+    /// This method checks where each table <em>ends</em>, that the four do not overlap, and
+    /// that the counts are consistent with the file's length. It does not look inside a
+    /// table, and it does not check the header's own fields — those are checked where they
+    /// are read, at the point of use:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>the header counts and offsets, in <see cref="ReadTables"/>;</description></item>
+    /// <item><description>a string offset-table entry, in <see cref="GetString"/>;</description></item>
+    /// <item><description>a bitmap offset-table entry, in <see cref="GetBitmapRange"/>;</description></item>
+    /// <item><description>a payload's byte range, in <see cref="NxCanvas.EncodedRange"/>;</description></item>
+    /// <item><description>canvas dimensions, in <see cref="NxCanvas.DecodedLength"/>.</description></item>
+    /// </list>
+    /// <para>
+    /// That split is deliberate rather than tidiness: each of those checks sits at the
+    /// dereference it guards, so a caller that reaches the value by any path gets the check.
+    /// This is not a claim that the checks above are the only invariants the format has —
+    /// it is where each of them lives.
+    /// </para>
     /// </remarks>
     private void Validate(string path)
     {

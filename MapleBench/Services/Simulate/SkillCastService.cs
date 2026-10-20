@@ -1671,7 +1671,7 @@ public sealed class SkillCastService
             // `mobCount` is a value rather than an absence.
             // MEASURED 2026-10-18: every `mobCount`, `attackCount` and `range` on
             // the 66 is `Long`; `damage` is the one that is sometimes a `String`.
-            int mobCount = ReadIntNode(atLevel, "mobCount", 1);
+            int mobCount = Math.Clamp(ReadIntNode(atLevel, "mobCount", 1), 0, MaxLoopedCount);
             // `get_real` on a `nl::node` parses a string node too, so this goes through
             // the ANY-WIDTH reader. It used to go through this file's second,
             // narrower numeric reader -- Int/Short/Long/Float/Double with no
@@ -1847,10 +1847,45 @@ public sealed class SkillCastService
         {
             WzIntProperty i => i.Value,
             WzShortProperty sh => sh.Value,
-            WzLongProperty l => (int)Math.Clamp(l.Value, int.MinValue, int.MaxValue),
-            _ => TryReadReal(parent, name, out double r) ? (int)Math.Round(r) : fallback,
+            WzLongProperty l => ClampToInt(l.Value),
+            // The other three shapes used to arrive unclamped. They are not small by
+            // construction: TryReadReal parses a STRING with NumberStyles.Float, and
+            // that accepts "NaN", "Infinity" and "1e999" (.NET Core 3.0+ returns
+            // Infinity instead of throwing on overflow). So an archive only has to
+            // contain the text "2000000000" — no corruption required — to make
+            // `(int)Math.Round(r)` produce a loop bound that allocates billions of
+            // objects. The Long branch above already clamped; this is the same rule.
+            _ => TryReadReal(parent, name, out double r) ? ClampToInt(r) : fallback,
         };
     }
+
+    /// <summary>
+    /// A file-supplied number narrowed to <see cref="int"/>, refusing what cannot be one.
+    /// </summary>
+    /// <remarks>
+    /// Everything this narrows comes out of an archive, so "it is a double" is not a
+    /// reason to trust it as a count, a radius or a loop bound. NaN and the infinities
+    /// become 0 rather than an arbitrary int: (int)double.NaN is undefined in C# and
+    /// (int)double.PositiveInfinity saturates to int.MaxValue, which is precisely the
+    /// billion-iteration case this exists to stop.
+    /// </remarks>
+    private static int ClampToInt(double value) =>
+        double.IsNaN(value) || double.IsInfinity(value)
+            ? 0
+            : (int)Math.Clamp(Math.Round(value), int.MinValue, int.MaxValue);
+
+    /// <summary>
+    /// Ceiling on a node the code LOOPS over, measured rather than guessed.
+    /// </summary>
+    /// <remarks>
+    /// MEASURED 2026-10-20 over the real <c>Skill.nx</c> (124,428 nodes, 3,515 of
+    /// them <c>mobCount</c>): min 1, median 6, p99 15, <b>max 30</b>. Nothing in the
+    /// corpus comes close to this ceiling, and the loop it guards allocates a
+    /// <c>SkillCastEvent</c> and an interpolated string per iteration — so without a
+    /// bound the cost is set by a number in the file rather than by anything the
+    /// caller asked for.
+    /// </remarks>
+    private const int MaxLoopedCount = 1024;
 
     /// <summary>
     /// A node read as a number of ANY width, or <c>false</c> when it is absent or
@@ -2339,7 +2374,7 @@ public sealed class SkillCastService
                 && int.TryParse(child.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)
                 && id >= 0)
                 frames.Add(child);
-        frames = frames.OrderBy(f => int.Parse(f.Name, NumberStyles.Integer, CultureInfo.InvariantCulture)).ToList();
+        frames = frames.OrderBy(f => int.TryParse(f.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ord) ? ord : int.MaxValue).ToList();
 
         if (frames.Count == 0)
             return Array.Empty<SkillHitSprite>();
@@ -2426,7 +2461,7 @@ public sealed class SkillCastService
                 && int.TryParse(child.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)
                 && id >= 0)
                 frames.Add(child);
-        frames = frames.OrderBy(f => int.Parse(f.Name, NumberStyles.Integer, CultureInfo.InvariantCulture)).ToList();
+        frames = frames.OrderBy(f => int.TryParse(f.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ord) ? ord : int.MaxValue).ToList();
 
         if (frames.Count == 0)
             return Array.Empty<SkillTileSprite>();

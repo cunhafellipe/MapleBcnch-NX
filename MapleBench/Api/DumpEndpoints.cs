@@ -22,7 +22,7 @@ public static class DumpEndpoints
 {
     public static void MapDump(this WebApplication app)
     {
-        RouteGroupBuilder api = app.MapGroup("/api").AddEndpointFilter(DumpErrorFilter);
+        RouteGroupBuilder api = app.MapGroup("/api").AddEndpointFilter(ApiErrorFilter.Filter);
 
         // What this node IS, and therefore what it can produce. The menu asks
         // this every time it opens; it decodes nothing.
@@ -133,45 +133,6 @@ public static class DumpEndpoints
             buffer[i] = value[i] is >= ' ' and <= '~' ? value[i] : '?';
         return new string(buffer[..length]);
     }
-
-    /// <summary>
-    /// The same mapping <see cref="Endpoints"/> uses, kept here so this group
-    /// does not depend on a private member of that file.
-    /// </summary>
-    private static async ValueTask<object?> DumpErrorFilter(
-        EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        try
-        {
-            return await next(context);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return Results.NotFound(new ApiError(ex.Message));
-        }
-        catch (FileNotFoundException ex)
-        {
-            return Results.NotFound(new ApiError(ex.Message));
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            return Results.NotFound(new ApiError(ex.Message));
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new ApiError(ex.Message));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new ApiError(ex.Message));
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Results.Json(new ApiError("Access denied.", ex.Message), statusCode: 403);
-        }
-        catch (Exception ex)
-        {
-            return Results.Json(new ApiError("Something went wrong.", ex.Message), statusCode: 500);
-        }
-    }
 }
+
+

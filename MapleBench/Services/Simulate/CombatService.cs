@@ -594,7 +594,11 @@ public sealed class CombatService
                 value = s.Value;
                 return true;
             case WzLongProperty l:
-                value = (int)l.Value;
+                // Same clamp as ReadInt below, which this file's other long->int
+                // reader already had. Under NX every one of these nodes arrives as
+                // WzLongProperty, so the reader without the clamp was not an edge
+                // case — it was the path taken by every value in the archive.
+                value = (int)Math.Clamp(l.Value, int.MinValue, int.MaxValue);
                 return true;
             case WzStringProperty str when int.TryParse(
                 str.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed):
@@ -1492,7 +1496,7 @@ public sealed class CombatService
                             if (TryFindChild(info, "range", out WzObject? r2) && r2 is not null)
                                 TryReadVectorChild(r2, "sp", out spx, out spy);
                             int radius = TryFindChild(info, "range", out WzObject? r3) && r3 is not null
-                                ? ReadInt(r3, "r") ?? 0 : 0;
+                                ? Math.Clamp(ReadInt(r3, "r") ?? 0, 0, MaxAttackRadiusPx) : 0;
                             int areaStart = TryFindChild(info, "range", out WzObject? r4) && r4 is not null
                                 ? ReadInt(r4, "start") ?? 0 : 0;
                             int areaCount = TryFindChild(info, "range", out WzObject? r5) && r5 is not null
@@ -1672,6 +1676,27 @@ public sealed class CombatService
             _ => null,
         };
     }
+
+    /// <summary>
+    /// Ceiling on an attack radius, in world pixels. MEASURED, not guessed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// MEASURED 2026-10-20 over the real <c>Mob.nx</c> (710,584 nodes, 332 of them
+    /// named <c>r</c>): min -1000, median 280, p99 700, <b>max 1200</b>. The corpus
+    /// never approaches this ceiling.
+    /// </para>
+    /// <para>
+    /// What it buys is bounded work, because the cone test slices the range in 20px
+    /// columns — iterations are radius/20 — and it is called twice per attack spec
+    /// (facing and flipped facing) for every mob on every frame. An unclamped
+    /// radius of 2,000,000,000 is a hundred million iterations for ONE call, and
+    /// the value comes out of the archive, so no request asked for it.
+    /// 20,000px is roughly sixteen times the widest measured attack and over ten
+    /// times the widest map, while capping a call at a thousand iterations.
+    /// </para>
+    /// </remarks>
+    private const int MaxAttackRadiusPx = 20_000;
 
     private bool TryFindChildStatic(WzObject node, string name, out WzObject? found)
     {
