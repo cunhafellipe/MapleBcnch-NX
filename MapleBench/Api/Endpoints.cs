@@ -1128,6 +1128,23 @@ public static class Endpoints
         {
             return Results.BadRequest(new ApiError(ex.Message));
         }
+        catch (InvalidDataException ex)
+        {
+            // The file was there and the request named it correctly; what is wrong is
+            // what is inside it. That is a bad request, not a missing resource, and the
+            // difference matters to whoever reads the response: a 404 here would send
+            // the user hunting for a file that exists and is sitting on disk.
+            //
+            // It was answering 500 before. InvalidDataException derives straight from
+            // SystemException, so it matched no branch above it and fell all the way
+            // through to the catch-all, which put the real sentence in Detail -- a field
+            // the UI never shows -- behind a Message that said nothing at all. Every
+            // bounds check in Services/Nx throws this type (NxArchive's table and
+            // string-pool checks, NxCanvas, NxCanvasDecoder, NxToWzFile, NxMergeService,
+            // and the WZ integrity audit), so a corrupt archive and an absent one
+            // answered identically.
+            return Results.BadRequest(new ApiError(ex.Message));
+        }
         catch (UnauthorizedAccessException ex)
         {
             return Results.Json(new ApiError("Access denied.", ex.Message), statusCode: 403);
