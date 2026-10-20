@@ -45,11 +45,46 @@ public readonly unsafe struct NxCanvas
     /// Size of the decoded image: four bytes per pixel, BGRA order.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is a property of the dimensions, not of the file. A compressed payload of any
     /// length always decodes to exactly this many bytes, which is what makes it safe to
     /// allocate the destination buffer from the node record without trusting the stored length.
+    /// </para>
+    /// <para>
+    /// <b>Why this throws rather than returning a number.</b> The dimensions are a pair of
+    /// <c>ushort</c> read straight out of the node record, and nothing in the format bounds
+    /// them, so <c>width * height * 4</c> used to be evaluated in <see cref="int"/>
+    /// arithmetic that wrapped silently instead of failing. 32768x32768 is exactly 2^32 and
+    /// came back as <b>0</b>, which the decoder read as "this canvas is empty" and answered
+    /// with a blank 1x1 picture; 23171x23171 overflowed the other way into a <b>negative</b>
+    /// length that reached <c>new byte[expected]</c> as an OverflowException with no mention
+    /// of the canvas that caused it.
+    /// </para>
+    /// <para>
+    /// This is the one place where untrusted dimensions turn into an allocation size, and
+    /// every path into pixels goes through it — the WebP branch, the LZ4 branch, the BGRA
+    /// copy and <c>DecodeToBitmap</c>. The check therefore lives here and not in each caller,
+    /// so a second decoder cannot arrive without it.
+    /// </para>
     /// </remarks>
-    public int DecodedLength => Width * Height * 4;
+    public int DecodedLength
+    {
+        get
+        {
+            // Widened to long before the multiply: the widest pair the node record can even
+            // express is 65535x65535x4, which is 17 GB and overflows int well before anything
+            // else gives up.
+            long bytes = (long)Width * Height * 4;
+            if (bytes > int.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"A canvas declares {Width}x{Height}, which is {bytes:N0} bytes of BGRA — more than " +
+                    "a single 2 GB buffer can hold. The node record is corrupt or hostile.");
+            }
+
+            return (int)bytes;
+        }
+    }
 
     /// <summary>Byte range of the stored payload, inside the mapped file.</summary>
     public (long Offset, uint Length) EncodedRange

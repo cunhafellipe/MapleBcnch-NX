@@ -281,6 +281,42 @@ public sealed class MapDocument
     }
 
     /// <summary>
+    /// A second view of the same nodes with every typed view rebuilt from them
+    /// <em>now</em>, for a caller that must see structure added or removed since load.
+    ///
+    /// <para>
+    /// <see cref="Nodes"/> is the document; the typed views are projections of it, and
+    /// they are projections as of the moment this constructor last ran. That contract is
+    /// documented on <see cref="InsertNode"/> and callers honour it by reading
+    /// <see cref="Nodes"/>. The validator did not, so a foothold deleted after the image
+    /// was opened was still in <see cref="Footholds"/>, its id still resolved inside the
+    /// validator's own id set, and a severed chain reported clean.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Why the constructor and not <see cref="Load"/>.</b> The constructor is thirteen
+    /// assignments and a handful of shallow walks over nodes that are already parsed, so
+    /// re-running it over the same list costs one pass. <see cref="Load"/> would call
+    /// <c>ParseImage</c> and <see cref="WzNode.ReadImage"/> first and hand back a second
+    /// tree — a full walk to learn something the existing nodes already say.
+    /// </para>
+    ///
+    /// <para>
+    /// Nothing is copied and nothing is written: the result shares the same node objects,
+    /// so it inherits the do-not-write contract <see cref="LoadShared"/> states, and it is
+    /// only valid under the same session lock.
+    /// </para>
+    /// </summary>
+    internal static MapDocument Resnapshot(MapDocument current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+
+        // The cast is the same one InsertNode and RemoveNode already make; Nodes is
+        // declared as the read-only interface and held as the list those two mutate.
+        return new MapDocument(current.ImageName, (List<WzNode>)current.Nodes);
+    }
+
+    /// <summary>
     /// Builds a fresh <see cref="WzImage"/> from the model. Nothing is shared
     /// with the image this document was loaded from except the binary payloads
     /// the model deliberately does not decode — see <see cref="WzNode"/>.

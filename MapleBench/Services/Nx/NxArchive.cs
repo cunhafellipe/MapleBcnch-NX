@@ -495,7 +495,34 @@ public sealed unsafe class NxArchive : IDisposable
         }
 
         long offset = (long)_stringOffsets[index];
+
+        // Same reason as GetBitmapRange below, and the same blind spot in Validate: it checks
+        // where each TABLE ends, never what the entries inside it say, so this is the first
+        // place the offset is dereferenced. The check above only proves the entry is in range
+        // as an INDEX, which says nothing about where inside the file it points.
+        //
+        // Measured on a 211-byte NX whose second string entry held 0x7473655400080000 — the
+        // bytes of the string data read back as an offset — where the archive opened, its
+        // node block listed, and reading node 1's name killed the process with 0xC0000005.
+        if (offset < 0 || (ulong)offset + sizeof(ushort) > (ulong)FileLength)
+        {
+            throw new InvalidDataException(
+                $"A string offset-table entry in a {FileLength}-byte archive points to 0x{offset:X}, " +
+                "which is outside it. The file is truncated or corrupt.");
+        }
+
         ushort byteLength = ReadUInt16(offset);
+
+        // A second boundary, and it is a real one: the entry above can point at the last two
+        // bytes of the file and still pass, leaving the string body itself running off the
+        // end of the mapping. ReadUInt16 would survive that and the span below would not.
+        if ((ulong)offset + sizeof(ushort) + byteLength > (ulong)FileLength)
+        {
+            throw new InvalidDataException(
+                $"A string in a {FileLength}-byte archive starts at 0x{offset:X} and claims {byteLength} " +
+                "bytes, which runs past the end of the file. The file is truncated or corrupt.");
+        }
+
         return Utf8.GetString(new ReadOnlySpan<byte>(_base + offset + 2, byteLength));
     }
 

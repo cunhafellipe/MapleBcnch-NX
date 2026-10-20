@@ -31,7 +31,19 @@ public sealed partial class MapEditorService
         lock (_gate)
         {
             EditorDoc doc = RequireWritable(path);
-            MapDocument map = doc.Doc;
+
+            // Read the map as it is now, not as it was when the image was opened.
+            //
+            // The typed views on the document are a load-time snapshot — MapDocument
+            // says so itself on InsertNode, and points callers at Nodes/Find for live
+            // structure. This validator read the snapshots instead, so a foothold
+            // deleted since load was still in map.Footholds, its id still resolved
+            // inside the id set built three lines below, and a severed chain reported
+            // ok:true — which is how "edit, validate, save" wrote an unwalkable map
+            // into the client archive with verified:true. Resnapshot rebuilds the
+            // views from the live node list; it does not re-read the image, and it
+            // copies nothing.
+            MapDocument map = MapDocument.Resnapshot(doc.Doc);
             MapValidateDto result = new() { Path = path };
 
         // Distinct: the field is "the tile sets in use", and a map using one set
