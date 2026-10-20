@@ -22,7 +22,7 @@ Measured across the real corpus in `C:\MUWORK\GAME\MPSHS`:
 | Fact | Value |
 |---|---|
 | Largest archive | `Mob.nx` 1,477.9 MB → **21 MB** resident after open |
-| Largest node count | `Map.nx` 678.9 MB → 185 MB resident, **8,400,019** nodes |
+| Largest node count | `Map.nx` 678.9 MB → 185 MB resident, **8,400,131** nodes |
 | `Character.nx` | 186.4 MB → 89 MB resident, 3,616,825 nodes |
 | Max child count seen | **8,947** (`Etc.nx`) — the ushort ceiling is 65,535 |
 | Max tree depth seen | **12** (`UI.nx`) |
