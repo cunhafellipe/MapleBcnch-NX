@@ -120,6 +120,25 @@ public sealed class WzSaveService
         // copied straight out of the mapped file rather than decoded, because decoding 545 MB
         // of UI art to re-encode it identically would be the single most expensive thing this
         // save could do. Everything below only moves and validates files.
+
+        // Refuse here rather than inside the writer, because the failure mode being avoided is
+        // an allocation one. NxWriter builds the whole archive into a single byte[], which tops
+        // out at NxWriter.MaxOutputBytes; finding out after the fact means gigabytes are already
+        // allocated before anything can say so. This branch's source is already an NX, and the
+        // writer carries each canvas payload through byte for byte, so the source file's own
+        // length is a sound bound on the output and costs one FileInfo to read.
+
+        // Mob.nx is 1,549,688,422 bytes and sits under the ceiling, so it still saves -- see the
+        // growth clamp in NxWriter.Ensure, which is what makes that true rather than a second
+        // way to hang.
+        if (File.Exists(source) && new FileInfo(source).Length > NxWriter.MaxOutputBytes)
+        {
+            throw new InvalidDataException(
+                $"'{file.Name}' is {new FileInfo(source).Length:N0} bytes, and writing an NX that size " +
+                $"needs a single buffer larger than this writer can hold ({NxWriter.MaxOutputBytes:N0} " +
+                "bytes). Nothing was written and the file on disk is unchanged.");
+        }
+
         byte[] bytes = NxWriter.Write(file.WzFile, out NxWriteReport report);
 
         // Beside the target, and named the way NewTempName names the classic

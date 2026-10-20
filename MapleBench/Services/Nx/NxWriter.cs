@@ -40,6 +40,21 @@ namespace MapleBench.Services.Nx;
 public static unsafe class NxWriter
 {
     /// <summary>
+    /// The largest output this writer will build, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// This is the CLR's own ceiling for a single array, not a policy number: a byte[] tops out
+    /// at 0x7FFFFFC4 because the object header shares the allocation with the length, so an
+    /// <c>int.MaxValue</c>-length array cannot exist. Everything above it has to fail loudly
+    /// rather than be discovered as an allocation error halfway through a write.
+    ///
+    /// <b>Exposed because the save path must check it before starting.</b> A refusal after
+    /// gigabytes have been allocated is an out-of-memory crash; the same refusal before the
+    /// first byte is a sentence the user can act on. See <c>WzSaveService.SaveNx</c>.
+    /// </remarks>
+    public const long MaxOutputBytes = 0x7FFFFFC4;
+
+    /// <summary>
     /// Appends little-endian values to a growable buffer, and knows exactly how long it is at
     /// every moment.
     /// </summary>
@@ -135,18 +150,45 @@ public static unsafe class NxWriter
 
         private void Ensure(int extra)
         {
-            if (_length + extra <= _buffer.Length)
+            // Widened before the comparison. `_length + extra` is the number of bytes this
+            // write ends at, and it is the only statement that decides whether the loop
+            // below can ever finish.
+            long target = (long)_length + extra;
+            if (target <= _buffer.Length)
             {
                 return;
             }
 
-            int size = _buffer.Length;
-            while (size < _length + extra)
+            if (target > MaxOutputBytes)
             {
-                size *= 2;
+                // Refusing here is the whole point. The alternative is not a smaller failure,
+                // it is a worse one: see the growth loop below.
+                throw new InvalidDataException(
+                    $"This archive needs more than {MaxOutputBytes:N0} bytes to write, and a single " +
+                    "buffer cannot hold that. Nothing was written and the file on disk is unchanged.");
             }
 
-            Array.Resize(ref _buffer, size);
+            long size = _buffer.Length;
+            while (size < target)
+            {
+                // Clamp rather than double blindly. This used to be `size *= 2` on an int, and
+                // that is the bug: the buffer can only reach 2^30 = 1,073,741,824, so the next
+                // doubling asks for 2^31 — one past int.MaxValue. C# does not check this
+                // (MapleBenchX.csproj sets no CheckForOverflowUnderflow and there is no
+                // Directory.Build.props), so the multiply wrapped to -2,147,483,648, then to 0
+                // on the step after, and `0 < target` is true forever.
+                //
+                // Measured, saving Mob.nx (1,549,688,422 bytes):
+                //     size = 1073741824, target = 1073754162
+                //     step 1: size *= 2 -> -2147483648   (still < target, keep going)
+                //     step 2: size *= 2 -> 0              (still < target, keep going)
+                //     step 3..N: size *= 2 -> 0            (forever)
+                // One core at 100%, memory flat, holding WzSaveService's session gate for the
+                // life of the process, and no scratch file ever created.
+                size = Math.Min(size * 2, MaxOutputBytes);
+            }
+
+            Array.Resize(ref _buffer, (int)size);
         }
     }
 
