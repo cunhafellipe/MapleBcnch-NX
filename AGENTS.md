@@ -21,6 +21,67 @@ the MCP server, what the tools are, and the rules you must not break.
 
 ---
 
+## Build and test
+
+The project targets `net10.0-windows`. **Do not run a bare `dotnet build`** —
+two traps make it fail on this machine. This is the command that works,
+verified 2026-08-20 (0 warnings, 0 errors):
+
+```powershell
+$env:DOTNET_ROOT = 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current'
+& 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current\dotnet.exe' build `
+    MapleBench\MapleBenchX.csproj -c Release -v minimal --nologo
+```
+
+**Trap 1 — wrong SDK on `PATH`.** `dotnet` on `PATH` is **8.0.425**; the only
+.NET 10 SDK is the scoop one (**10.0.401**). A bare `dotnet build` fails with
+`NETSDK1045`. There is **no `global.json`** here, so nothing redirects you.
+
+**Trap 2 — a running backend locks the build output.** `MSB3021`/`MSB3027`
+"cannot access … being used by another process" means a backend is still alive.
+The message names the holder (`檔案鎖定者: "…"`). Three ways out — in order of
+preference:
+
+```powershell
+# 1. build to a private output dir; disturbs nothing
+& "$env:DOTNET_ROOT\dotnet.exe" build MapleBench\MapleBenchX.csproj -c Release `
+    -p:OutDir="$env:TEMP\mb-build\"
+
+# 2. stop the apphost-started backend
+Get-Process MapleBenchX -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 3. a backend started as `dotnet MapleBenchX.dll` shows as ".NET Host" / dotnet.exe
+Get-Process dotnet -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -like '*MapleBcnch-NX*' } | Stop-Process -Force
+```
+
+Start the backend (build first; you cannot build into `bin/` while it runs):
+
+```powershell
+MapleBench\bin\Release\net10.0-windows\MapleBenchX.exe --no-browser --port 5100
+```
+
+Verification scripts. These run on **Windows PowerShell 5.1**. Check the real
+signature with `Get-Help <script> -Full` before passing switches — several take
+no `-RepoRoot` at all:
+
+```powershell
+# every tool in this directory, against fixtures whose correct answer is known
+# in advance. Takes NO -RepoRoot. Expected: 21 pass / 0 fail / 1 skip, TRUST: HIGH
+powershell -File tools\verify\self-test.ps1
+
+# refuse to start a build whose preconditions are not met
+powershell -File tools\verify\prebuild-check.ps1 -RepoRoot . -Project MapleBench\MapleBenchX.csproj
+
+# line-ending churn detector. -Path is MANDATORY and is a string[]
+powershell -File tools\verify\eol-check.ps1 -RepoRoot . -Path <file>
+
+# assert exact bytes are present. Note: -Path, not -File; no -RepoRoot
+powershell -File tools\verify\content-assert.ps1 -Path <file> -NeedleFile <file>
+```
+
+---
+
 ## Two ways to use this
 
 ### 1. As an MCP client (recommended)
@@ -29,12 +90,6 @@ The MCP server is a **stdio** server. Register it, and you get all 34 tools
 (`wz_map_*`, `wz_asset_*`) with their descriptions and schemas — you do not need
 to read any markdown to call them. **The backend must be running first**, because
 the MCP server only forwards to it.
-
-```bash
-# build + start the backend
-dotnet build MapleBench/MapleBenchX.csproj -c Release
-MapleBench/bin/Release/net10.0-windows/MapleBenchX.exe --port 5100
-```
 
 VS Code / Copilot agent mode reads `.vscode/mcp.json` (already committed).
 Claude Desktop / Cursor / generic clients:
@@ -114,6 +169,52 @@ tool's own success report:
 - `tools/probe/mcp-flow.mjs` — full map flow through MCP only.
 - For an NX merge, re-read the written file with an **independent** NX parser
   and confirm the new nodes exist and the old ones are untouched.
+
+**A passing build is not a passing fix.** Compile is necessary, not sufficient.
+
+### Maker-checker: the agent that writes a change never certifies it
+
+This repo's rules are not my invention — they are the banking *maker-checker*
+control, formalised in the Clark-Wilson model and codified in **NIST SP 800-53
+AC-5** (separation of duties), ported to agent pipelines. The reason it exists:
+LLMs measurably favour their own output. Prompt wording does not repair it;
+splitting the roles across separate contexts does.
+
+The checker must differ from the maker on **five dimensions**. Any one missing
+collapses the control:
+
+| Dimension | Maker | Checker |
+|---|---|---|
+| Context | Full reasoning, the "why" | **Fresh — only the diff plus criteria** |
+| Instructions | Implement the change | **Skeptical: refute, do not confirm** |
+| Model | Any | **Different family where possible** — same-family loops share blind spots |
+| Tools | Write, edit, build | **Read-only until a fix is warranted** |
+| Output | Code | **Structured verdict: each claim quoted, then upheld or refuted** |
+
+Handoff order, in this order:
+
+1. A **fresh** reviewer sees only the diff and the criteria — never the
+   implementer's reasoning, which would just restate the first opinion.
+2. The checker is **read-only** and must produce findings, not patches.
+3. A **separate fixer** applies corrections. The checker never fixes.
+4. A **new** reviewer takes another pass. Reusing one reviewer across items
+   accumulates context and recreates the self-review bias in a longer session.
+5. A **human** approves. Whoever asked for the fix is not the approver.
+
+**Route the checker by blast radius**, not uniformly. A small change to a
+bounds check can be far more dangerous than a large refactor:
+
+- **Always** review: anything parsing untrusted bytes (`Services/Nx`), anything
+  that writes to disk (`SaveNx`, `NxMergeService`, `MapEditorService`), anything
+  holding a lock or a gate (`WzSearchService`, `ImageMemoryService`), and any
+  change to exception→HTTP mapping.
+- **Skip** the checker for trivial, fully-reproducible changes that the
+  deterministic scripts already cover.
+- Use a **workflow** rather than an adversarial reviewer where the check is
+  deterministic; spend adversarial budget where judgment is actually required.
+
+**Do not report a fix as done until you have run it.** An agent's claim that it
+edited a file is evidence, not proof — read the file, or run the command.
 
 ---
 
