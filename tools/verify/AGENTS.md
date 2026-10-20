@@ -70,6 +70,35 @@ tool, and the tool was not used.
    Identical counts and `eol_rewrite=False` ⇒ the FAIL is the ratio heuristic,
    not churn. Only a **difference** between the two numstat runs is real churn.
 
+7. **Windows paths break hand-built JSON.** A path like
+   `C:\mbtest2\x.nx` contains `\m` and `\x`, which are **invalid JSON escapes**.
+   Posting `{"path":"C:\mbtest2\x.nx"}` returns `HTTP 400 "This request could
+   not be read."` — which reads exactly like "the server rejected the bad
+   file", when in fact the server never saw the file. Always build the body
+   with `ConvertTo-Json`:
+
+   ```powershell
+   $body = [Text.Encoding]::UTF8.GetBytes((@{ path = $f } | ConvertTo-Json -Compress))
+   ```
+
+   A 400 with a JSON-shape error is a **harness** failure until proven
+   otherwise. Never record it as the product's response.
+
+8. **The crafted fixtures live in two directories.** They are not all in one
+   place, and a subset in the wrong one reads as "no such file" and then as
+   "that behaviour is unreachable":
+
+   | Directory | Files |
+   |---|---|
+   | `C:\mbtest2\` | `canvas-32768.nx`, `canvas-23171.nx`, `canvas-40000.nx` (211 B), plus `Map.nx` |
+   | `C:\mbtest2-gen\` | `canvas-bmp-*.nx` (136 B), `nested-*.nx` (175 B), `string-runs-past-eof.nx` (136 B) |
+
+   `string-runs-past-eof.nx` is the only fixture that reaches the **second**
+   string bounds check. A review that looked only in `C:\mbtest2` concluded
+   that check was unreachable by any existing artifact — it was reachable and
+   the artifact was there. **List the directory before concluding an input
+   does not exist.**
+
 ---
 
 ## Before you trust a measurement
