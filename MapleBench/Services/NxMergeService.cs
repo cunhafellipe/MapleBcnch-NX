@@ -146,6 +146,17 @@ public sealed class NxMergeService
                 }
             }
 
+            // The read-back above proves nothing about the device: NxArchive.Open
+            // reads the scratch file back through the same page cache
+            // WriteAllBytes just filled, so a merge that verified clean had still
+            // only reached RAM. Power loss in the seconds after the swap would
+            // leave the client folder holding a truncated archive with the
+            // original already under its .bak name. FlushToDisk closes that gap,
+            // and it sits here — after the read-back has released its mapping and
+            // before anything irreversible touches the destination — so a flush
+            // that fails costs the scratch file and nothing else.
+            WzSaveService.FlushToDisk(scratch);
+
             // Windows will not rename a file that is memory-mapped, and this
             // archive's mapping is exactly that. It is dropped before the swap;
             // the process is done with the tree, so it is not remapped.
@@ -159,7 +170,7 @@ public sealed class NxMergeService
 
             File.Move(scratch, target, overwrite: true);
         }
-        catch
+        catch (Exception mergeFailed)
         {
             try { File.Delete(scratch); }
             catch (IOException) { /* the scratch file is not the user's data */ }
@@ -168,7 +179,24 @@ public sealed class NxMergeService
             if (backup is not null && !File.Exists(target))
             {
                 try { File.Move(backup, target); }
-                catch (IOException) { /* reported through the thrown error below */ }
+                catch (IOException restoreFailed)
+                {
+                    // Two failures have to be reported, and they are not the same
+                    // one. The bare throw below would carry the merge's own
+                    // failure, but its message names the swap and never mentions
+                    // that the archive is now sitting under the backup — that is
+                    // how a merge would leave the user's whole file somewhere they
+                    // were not told to look. So both causes go in the message, each
+                    // labelled, and the merge's own stays the InnerException:
+                    // IOException cannot carry two, and that one is the reason the
+                    // write failed in the first place.
+                    throw new IOException(
+                        $"{Path.GetFileName(target)} could not be written ({mergeFailed.Message}); " +
+                        $"the previous file could not be moved back from {backup} " +
+                        $"({restoreFailed.Message}). " +
+                        $"Nothing was lost: your archive is at {backup}. Copy it back by hand.",
+                        mergeFailed);
+                }
             }
 
             throw;
@@ -176,10 +204,21 @@ public sealed class NxMergeService
 
         _log.LogInformation(
             "Merged {Count} image(s) into {Target}: {Nodes:N0} nodes, {Canvases:N0} canvases, " +
-            "{Bytes:N0} bytes, backup {Backup}",
-            entries.Count, target, report.Nodes, report.Canvases, bytes.Length, backup ?? "(none)");
+            "{Bytes:N0} bytes, {Widened:N0} values widened, backup {Backup}",
+            entries.Count, target, report.Nodes, report.Canvases, bytes.Length, report.TypeWidened,
+            backup ?? "(none)");
 
         List<string> notes = [];
+        // Same writer as SaveNx, so the same values get widened here. A merge that
+        // widened a node and did not say so leaves the user comparing their file
+        // against the original with no explanation for the difference.
+        if (report.TypeWidened > 0)
+        {
+            notes.Add(
+                $"NX stores one 64-bit integer and one 64-bit float, so {report.TypeWidened:N0} values " +
+                "were widened from a narrower WZ type.");
+        }
+
         if (report.EncodingErrors > 0)
         {
             notes.Add(

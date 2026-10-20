@@ -196,7 +196,7 @@ public sealed class WzSaveService
                 }
             }
         }
-        catch
+        catch (Exception saveFailed)
         {
             try { File.Delete(scratch); }
             catch (IOException) { /* the scratch file is not the user's data */ }
@@ -207,15 +207,20 @@ public sealed class WzSaveService
                 try { File.Move(backup, target); }
                 catch (IOException restoreFailed)
                 {
-                    // The bare throw below rethrows the ORIGINAL failure, whose message
-                    // names the scratch/target move and never mentions that the archive is
-                    // now sitting under the backup. That is how a save left a file somewhere
-                    // the user was not told to look.
+                    // Two failures have to be reported, and they are not the same
+                    // one. The bare throw below would carry the save's own failure, but
+                    // its message names the scratch/target move and never mentions that
+                    // the archive is now sitting under the backup — that is how a save
+                    // left a file somewhere the user was not told to look. So both
+                    // causes go in the message, each labelled, and the save's own stays
+                    // the InnerException: IOException cannot carry two, and that one is
+                    // the reason the write failed in the first place.
                     throw new IOException(
-                        $"{Path.GetFileName(target)} could not be written ({restoreFailed.Message}) and the " +
-                        $"previous file could not be moved back from {backup}. " +
+                        $"{Path.GetFileName(target)} could not be written ({saveFailed.Message}); " +
+                        $"the previous file could not be moved back from {backup} " +
+                        $"({restoreFailed.Message}). " +
                         $"Nothing was lost: your archive is at {backup}. Copy it back by hand.",
-                        restoreFailed);
+                        saveFailed);
                 }
             }
 
@@ -1827,7 +1832,7 @@ public sealed class WzSaveService
     /// Pushes a finished temp file out of the OS page cache and onto the device,
     /// before anything irreversible happens to the file it is going to replace.
     ///
-    /// Nothing else in the pipeline does this. <c>WzFile.SaveToDisk</c> closes
+    /// Nothing else in the save path does this. <c>WzFile.SaveToDisk</c> closes
     /// its FileStream, which flushes to the *cache*; <see cref="VerifyCandidate"/>
     /// then reads the file back through that same cache, so a save that verified
     /// clean proved nothing at all about what had reached the platter. Losing
@@ -1840,8 +1845,14 @@ public sealed class WzSaveService
     /// it. That is not overhead so much as relocated time — it is how long the
     /// bytes take to actually reach the device, which was previously spent
     /// after the swap with nothing waiting on it and nothing to fall back to.
+    ///
+    /// Internal rather than private because the gap is not specific to this
+    /// service: <see cref="NxMergeService"/> writes a whole archive and verifies
+    /// it through the same page cache, so it needs the same flush and had no way
+    /// to reach this one. One implementation, so the two write paths cannot
+    /// drift apart on what "verified" means.
     /// </summary>
-    private static void FlushToDisk(string path)
+    internal static void FlushToDisk(string path)
     {
         // Write access is required for FlushFileBuffers, and Flush(true) issues
         // it against the handle whether or not this stream buffered anything.
