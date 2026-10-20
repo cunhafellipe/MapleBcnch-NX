@@ -22,6 +22,11 @@
          both and there is exactly one SDK on this machine to reason about. -->
     <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <!-- For RenderTools/MapPainter only: drawing a map to a PNG is the one
+         thing this server cannot answer with JSON, and every other server tool
+         stays text-only on purpose (see RenderTools remarks: an inline base64
+         PNG would destroy the context of the agent it exists for). -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

@@ -478,6 +478,36 @@ public sealed partial class MapEditorService
     /// per name precisely because the list may hold several.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// An NX map's own properties, without copying them.
+    /// </summary>
+    /// <remarks>
+    /// The read-only counterpart to <see cref="NxMapImage"/>. That method
+    /// deep-clones every property because the editor must hand back a tree it can
+    /// modify and write back. A map in <c>Map.nx</c> is 0.1 MB and its clone is
+    /// 2.5 GB resident -- 25,000 times the original -- which killed the process
+    /// twice with no exception.
+    ///
+    /// Callers must not write through what they get back.
+    /// </remarks>
+    private static WzPropertyCollection NxMapProperties(WzObject node)
+    {
+        WzPropertyCollection? children = node switch
+        {
+            WzImageProperty property => property.WzProperties,
+            WzImage image => image.WzProperties,
+            _ => null,
+        };
+
+        if (children == null)
+        {
+            throw new InvalidOperationException(
+                $"'{node.Name}' in an NX archive has no properties, so it holds no map to open.");
+        }
+
+        return children;
+    }
+
     private static WzImage NxMapImage(WzObject node)
     {
         WzPropertyCollection? children = node switch
@@ -2487,6 +2517,33 @@ public sealed partial class MapEditorService
         };
 
     /// <summary>
+    /// An integer child of a canvas, tolerant of every property type.
+    /// </summary>
+    /// <remarks>
+    /// A narrow <c>as WzIntProperty</c> is null for every other integer property
+    /// type -- WzShortProperty, WzStringProperty, WzLongProperty -- and a
+    /// <c>?? 0</c> after it turns that into a silent zero. MEASURED: the art node's
+    /// <c>z</c> is a real value (<c>f4/Tile/grassySoil.img/edU/1</c> = <c>-4</c>)
+    /// and the narrow cast reported 0 for all 253 tiles on
+    /// f4/Map/Map1/100000004.img, which is what flattened a map's depth to
+    /// document order and left the ground painting over the wall at every seam.
+    /// </remarks>
+    private static int CanvasInt(WzCanvasProperty canvas, string name)
+    {
+        if (canvas[name] is not { } node)
+            return 0;
+        return node switch
+        {
+            WzIntProperty i => i.Value,
+            WzShortProperty s => s.Value,
+            WzLongProperty l => (int)Math.Clamp(l.Value, int.MinValue, int.MaxValue),
+            WzStringProperty str when int.TryParse(
+                str.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
+            _ => 0,
+        };
+    }
+
+    /// <summary>
     /// Size, origin and z for a drawable node. A linking canvas (its pixels are
     /// a 1x1 placeholder) borrows the linked target's size but keeps its own
     /// origin when it has one — the link carries the placement, the target the
@@ -2504,7 +2561,27 @@ public sealed partial class MapEditorService
         int w = canvas.PngProperty?.Width ?? 0;
         int h = canvas.PngProperty?.Height ?? 0;
         WzVectorProperty? origin = canvas["origin"] as WzVectorProperty;
-        int z = (canvas["z"] as WzIntProperty)?.Value ?? 0;
+
+        // The art node's OWN z, read the way the rest of this codebase reads
+        // integers -- and the cast it replaces is the bug.
+        //
+        // MapTile.cs:33 is `WzDict.GetInt(Path + "/z")`, where Path is the ART
+        // path ("Map/Tile/{tS}.img/{u}/{no}"). MEASURED on the open archive:
+        //
+        //     f4/Tile/grassySoil.img/edU/1  ->  children: foothold, origin, z = -4
+        //
+        // and this used to read `(canvas["z"] as WzIntProperty)?.Value ?? 0`, which
+        // returned 0 for EVERY one of the 253 tiles on f4/Map/Map1/100000004.img.
+        // A narrow `as` cast is null for every other integer property type
+        // (WzShortProperty, WzStringProperty, ...) and `?? 0` then hides that.
+        //
+        // Why it shows up as a SEAM defect: `Z_TILE` is
+        // `layer*100000 + artZ + 1000` (walkview.js:276), so with every artZ
+        // flattened to 0 every tile on a layer shares ONE z and the stable sort
+        // falls back to document order. A ground tile and the block wall in front
+        // of it then paint in whatever order the map document happened to list
+        // them -- the ground covering the wall exactly where the two meet.
+        int z = CanvasInt(canvas, "z");
 
         if (w <= 1 && h <= 1)
         {

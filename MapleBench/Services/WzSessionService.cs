@@ -415,6 +415,13 @@ public sealed class WzSessionService : IDisposable
             NxConversion = conversion,
         };
 
+        // An NX canvas names its draw layer rather than numbering it, and the ranking lives
+        // in Base/zmap.img. Reading it here means composition can order layers for every
+        // later request without re-reading the table. A client folder that has no Base.nx
+        // open simply leaves every layer unranked, which NxLayerOrder answers as "furthest
+        // back" — the same fallback the reference takes for a layer it does not recognise.
+        LoadNxLayerOrder(conversion);
+
         _files[file.Id] = file;
         InvalidateResolution();
         _log.LogInformation(
@@ -423,6 +430,38 @@ public sealed class WzSessionService : IDisposable
 
 
         return file;
+    }
+
+    /// <summary>
+    /// Fills the layer-ranking cache from whichever open NX archive carries
+    /// <c>Base/zmap.img</c>. Caller holds <see cref="Gate"/>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Base.nx</c> is a separate archive from <c>Character.nx</c>, so an open of either
+    /// one alone cannot supply the table. Rather than make the layer order conditional on
+    /// the order archives happened to be opened in — which would make a character's art
+    /// compose differently depending on what else was open — the table is looked up across
+    /// the session and cached against whichever archive answered.
+    /// </remarks>
+    private void LoadNxLayerOrder(NxConversionResult conversion)
+    {
+        // The archive being registered is checked alongside the ones already open: Base.nx
+        // is where the table lives, so opening Base.nx itself is the one case where the
+        // newest file is the only one that can answer.
+        if (conversion.File.WzDirectory?.GetImageByName("zmap.img") is { } own)
+        {
+            Services.Nx.NxLayerOrder.Register(own, this);
+            return;
+        }
+
+        foreach (OpenFile open in _files.Values)
+        {
+            if (open.NxConversion?.File.WzDirectory?.GetImageByName("zmap.img") is { } zmap)
+            {
+                Services.Nx.NxLayerOrder.Register(zmap, this);
+                return;
+            }
+        }
     }
 
     /// <summary>
@@ -538,6 +577,14 @@ public sealed class WzSessionService : IDisposable
             $"are not using and try again. Nothing was opened and nothing was changed.");
     }
 
+    /// <summary>Cost of ONE NODE during an OPEN, measured 2026-10-19 across all 16</summary>
+    /// client archives: 22-71 bytes each, Map.nx the densest at 22.</summary>
+    /// <para>Five times the worst measured, so the guard errs high. It used to be
+    /// NxBytesPerMaterialisedNode times three -- the cost of materialising a node --
+    /// which an open no longer does.</para>
+    /// </summary>
+    private const long NxBytesPerOpenNode = 96;
+
     /// <summary>Heap cost of a materialised NX node, measured.</summary>
     private const long NxBytesPerMaterialisedNode = 560;
 
@@ -551,37 +598,46 @@ public sealed class WzSessionService : IDisposable
     private const int NxWorstCaseFanOut = 3;
 
     /// <summary>
-    /// What opening an NX archive will cost, from what the file says about itself.
+    /// What opening an NX archive will cost NOW, measured 2026-10-19.
+    /// </summary>
     ///
-    /// Two estimates, because two different things dominate. A tree-heavy archive
-    /// costs what its nodes cost; <c>Sound.nx</c> has only 10,777 nodes and still
-    /// needed 1.5 GB, because its payload is audio. Taking the larger of the two
-    /// covers both, and it deliberately errs high: this number only decides
-    /// whether to refuse an open, and a refusal costs one closed archive while an
-    /// under-estimate costs the whole session.
+    /// <para>The old numbers here were measured on 2026-10-09, against the eager
+    /// open that commit 68e0480 replaced on 2026-10-10. They were never
+    /// recalibrated, and they were wrong by one to three orders of magnitude.
+    /// A fresh process per archive, working set before and after the open:
+    /// <code>
+    ///   Map.nx        678.9 MB   8,400,019 nodes -&gt;    185 MB actual, 13,458 MB predicted
+    ///   Character.nx  186.4 MB   3,616,825 nodes -&gt;     89 MB actual,  5,795 MB predicted
+    ///   Mob.nx      1,477.9 MB     710,584 nodes -&gt;     21 MB actual,  5,912 MB predicted
+    ///   UI.nx         519.5 MB     548,956 nodes -&gt;     21 MB actual,  2,078 MB predicted
+    ///   Sound.nx      367.9 MB      10,777 nodes -&gt;      1 MB actual,  1,472 MB predicted
+    ///   String.nx       8.1 MB     214,339 nodes -&gt;      7 MB actual,    343 MB predicted
+    /// </code>
+    /// Mob.nx was refused by a 1.5 GB floor on a machine that opens it in 21 MB,
+    /// and Map.nx needed 13.5 GB of headroom to open something that costs 185 MB.
+    /// An open is now one WzImage shell per image plus the node-table walk, so it
+    /// scales with nodes at tens of bytes, not the 560 a materialised node costs.
+    /// The 560 is still the right constant -- it is what a BUILD costs, measured
+    /// again below -- but a build no longer happens at open.</para>
     ///
-    /// Calibrated against measured opens, in bytes of resident heap:
-    ///   Character.nx  186 MB  3,616,825 nodes  -&gt;  5,640 MB actual, 5,962 predicted
-    ///   Etc.nx        3.5 MB    164,756 nodes  -&gt;     67 MB actual,   262 predicted
-    ///   Sound.nx    367.9 MB     10,777 nodes  -&gt;  1,511 MB actual, 1,467 predicted
-    /// The middle case is over-estimated four-fold; the two ends land close.
+    /// <para>Two terms: the walk over the node table, which is proportional to
+    /// nodes at roughly 22-71 bytes each measured, and the mapping's resident
+    /// share. Both are charged with a wide margin -- this number only decides
+    /// whether to refuse, and refusing an archive that opens fine is its own
+    /// failure.</para>
     /// </summary>
     private static long EstimateNxBytesNeeded(string path, long size)
     {
         // Reading the node count costs one small read and no mapping, which is
         // what makes it possible here at all: this runs before anything has
         // decided to spend the memory.
-        long byNodes = (long)NxArchive.HeaderNodeCount(path) * NxWorstCaseFanOut * NxBytesPerMaterialisedNode;
+        long byNodes = (long)NxArchive.HeaderNodeCount(path) * NxBytesPerOpenNode;
 
-        // Payload-heavy archives: audio, and mostly canvases decoded on open.
-        // Measured at roughly four times the file.
-        long byBytes = size * 4;
+        // The mapped file's resident share. A quarter of the file, which is
+        // ~370 MB for a 1.5 GB Mob.nx against a measured 21 MB open.
+        long byBytes = size / 4;
 
-        // The margin is a floor, not an addition. Adding it made a 67 MB archive
-        // ask for 648 MB and refuse itself on a machine with half a gigabyte
-        // free -- the estimate already scales with the tree, and stacking a
-        // constant on top of a large number only ever refuses more than it
-        // needs to.
+        // The margin is a floor, not an addition.
         return Math.Max(Math.Max(byNodes, byBytes), MinimumFreeBytesToOpen);
     }
 

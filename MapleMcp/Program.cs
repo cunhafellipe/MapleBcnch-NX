@@ -44,92 +44,101 @@ public static class Program
                 };
 
                 options.ServerInstructions = """
-                    Four surfaces over one MapleBench backend: generic WZ/IMG/NX assets,
-                    map authoring, archive splitting, and map creation.
-                    All need the backend running (MapleBenchX.exe --browser).
+                    Nine surfaces over one MapleBench backend, 90 tools.
+                    All need the backend running (MapleBenchX.exe --browser
+                    --port <p>), and the archives must be OPENED first.
 
-                    GENERIC WZ/IMG/NX ASSETS. Available as wz_asset_*.
-                    Begin with wz_asset_files, open references read-only, inspect
-                    nodes before editing, and save to a separate candidate path.
-                    Generic previews only report intent; they do NOT validate the
-                    backend or encryption. Paths and profiles differ from Orz.
-                    This server does NOT yet replace Orz nx_build/publish,
-                    split-WZ source lookup or patch verification. Trusted source
-                    aliases use MAPLEBENCH_SOURCES; real encryption profiles must
-                    be independently verified. Synthetic IMG roundtrip is tested;
-                    production WZ/NX and game compatibility remain unverified.
-                    Never claim that saving NX synchronized its source IMG.
+                    START HERE
 
-                    AUTHORING MAPS
+                      wz_asset_files        which archives are open, and their ids
+                      wz_diag_health        backend version, memory, live sessions
 
-                      1. wz_map_capabilities   what is open and usable
-                      2. wz_map_list           find a map, or copy one as a style
-                      3. wz_map_open           read its structure
-                      4. wz_map_palette        choose material with drawableEntries > 0
-                      5. wz_map_place          single edits
-                         wz_map_batch          many edits as ONE undo step
-                      6. wz_map_validate       the rules that make a map playable
-                      7. wz_map_save           write to disk
+                    FILE IDS ARE NOT STABLE. A path starts with f1, f2, f25 --
+                    the id is handed out in the order archives were opened, so a
+                    server that restarted, or that had archives closed and
+                    reopened, renumbers them. MEASURED 2026-10-17: the same
+                    Map.nx was f4 in one run and f25 in the next. A stale id
+                    answers "No open file with id 'f4'", which reads like the
+                    data is gone and is not. Take the id from wz_asset_files or
+                    wz_map_list at the time you use it.
+
+                    TWO SIMULATORS, AND PICKING THE WRONG ONE COSTS AN HOUR.
+
+                      wz_map_simulate, wz_map_session_*, wz_map_ground
+                          THE MAP EDITOR'S physics. Answers "can a character cross
+                          this map", "where does it stop", "what is under this
+                          foothold". No character state persists between calls.
+
+                      wz_sim_*
+                          THE LIVE SIMULATOR -- the session the viewer's canvas is
+                          attached to. Answers "I pressed K and nothing happened",
+                          "what did that cast do to that mob", "which pose plays".
+                          A session survives across calls until wz_sim_close.
+
+                    THE LIVE SIMULATOR, IN ORDER
+
+                      1. wz_sim_open      a character on a map -> sessionId
+                      2. wz_sim_catalog   what can be cast, what can be summoned
+                      3. wz_sim_skills    bind a key: bindings ["1121008:K"]
+                      4. wz_sim_summon    put a mob in the world
+                      5. wz_sim_step      walk it into range (left/right/...)
+                      6. wz_sim_cast      one frame asking for a skill
+                      7. wz_sim_state     read it: action, skillStance,
+                                           skillEffects, and every mob's hp
+
+                    Damage is FIXED at 100 per hit and every mob spawns at 1000
+                    (ADR-0006), so "the cast landed" is a number you can check
+                    rather than a formula you would have to trust. Ten hits kill
+                    anything.
+
+                    GAME DATA DOMAINS. wz_data_* reaches skill, mob, npc, string
+                    and cash shop with their own field validation and their own
+                    bulk semantics. Use it rather than wz_asset_set_value for
+                    those: the generic node route will happily write a value the
+                    domain cannot load.
+
+                    LONG JOBS. wz_job_* covers eight families (audit, dump,
+                    compose, import, repair.*) with one shape. repair.* writes
+                    archives, so its start takes commit. A family that does not
+                    have the stage you asked for throws and names the families
+                    that do -- it never substitutes another family's route.
+
+                    RENDERING. wz_render_view proves a node DECODES. It does not
+                    prove the pixels match a reference and it does not prove the
+                    art is the right art. Do not report a rendering as
+                    verification of anything beyond that.
 
                     SAFETY. Every mutating tool takes commit and defaults to
                     false, which reports what it would do and changes nothing.
                     Preview, read the result, then commit. Nothing touches disk
-                    until wz_map_save runs with commit=true, and saving rewrites
-                    the whole archive — it keeps a timestamped backup, but it is
-                    still a rewrite.
+                    until wz_map_save or wz_save_commit runs with commit=true,
+                    and saving rewrites the whole archive -- it keeps a
+                    timestamped backup, but it is still a rewrite. The wz_sim_*
+                    family is the deliberate exception and says why in its own
+                    remarks: those sessions live in memory and are gone at
+                    wz_sim_close.
 
-                    FOOTHOLDS ARE NOT OPTIONAL. A map with ground and no
-                    footholds cannot be walked. The tile material itself does
-                    not carry foothold geometry — no set in Map.nx does — so
-                    footholds must come from wz_map_place with kind=foothold, and
-                    they have to chain: each one's prev/next points at a real
-                    neighbour. wz_map_validate is what checks that.
+                    SAVING. An archive is memory-mapped for the life of the
+                    process once it is opened, and no endpoint closes one. So
+                    wz_asset_close discards unsaved work, wz_save_memory's sweep
+                    is the safe handle, and a clean wz_save_preflight does not
+                    promise that the save will succeed.
 
-                    Map paths look like "f1/Map/Map0/000000001.img" — an open
-                    archive id, then the path inside it. wz_map_list hands these
-                    back ready to use.
+                    AUTHORING MAPS. Footholds are not optional and no tile set in
+                    Map.nx carries foothold geometry, so a map with ground and no
+                    footholds cannot be walked: they come from wz_map_place with
+                    kind=foothold, they have to chain prev/next to real
+                    neighbours, and wz_map_validate is what checks it.
 
-                    A map may be a link stub with no geometry of its own;
-                    wz_map_open says so when that happens. Author against the
-                    target, not the stub.
-
-                    SPLITTING ARCHIVES INTO .img FILES
-
-                      1. wz_archive_capabilities   backend up? what is open?
-                      2. wz_archive_scan           what is in that folder
-                      3. wz_archive_split          write the .img tree
-                      4. wz_archive_export_img     one node, when you need to
-                                                    check a single file
-
-                    A split client stores data as .wz archives, but most tools
-                    that read MapleStory data — WzImg-MCP, HaCreator, the
-                    reference BeiDou-Client tree — want one .img file per
-                    resource. wz_archive_split is the step between them: it
-                    opens each archive and writes every image node as its own
-                    file, using the backend's own serialiser so the bytes match
-                    what the editor saves.
-
-                    TWO THINGS THAT WASTE A LOT OF TIME IF IGNORED.
-
-                    _Canvas. A category folder often holds both the data
-                    archive and a _Canvas folder beside it, and the data
-                    archive's image nodes hold names, fields and frame lists
-                    that POINT at the sprites. The _Canvas archives hold the
-                    sprites themselves, indexed by asset key — so each of its
-                    nodes serialises to one .img that is most or all of the
-                    archive. Splitting one produces single files in the hundreds
-                    of MB that are archive contents, not resources. Leave
-                    includeCanvas false.
-
-                    SIZE. 67 GB of archives can split into far more than the
-                    drive has room for. Run wz_archive_split with dryRun=true
-                    first to see the count, and limitFiles to trial the path
-                    end to end before committing to a full run.
-
-                    A category root file such as Mob.wz is often 216 bytes: a
-                    PKG1 pointer naming the real split files, not data. The
-                    tools skip these and say so rather than reporting an empty
-                    archive.
+                    SPLITTING ARCHIVES INTO .img FILES. wz_archive_split writes
+                    one .img per resource with the backend's own serialiser, so
+                    the bytes match what the editor saves. Two things cost hours
+                    if ignored: a _Canvas folder beside a data archive holds the
+                    sprites the data archive only POINTS at, so splitting it
+                    yields hundreds of MB of archive contents rather than
+                    resources (leave includeCanvas false); and 67 GB of archives
+                    can split into more than the drive has room for, so dryRun
+                    first.
                     """;
             })
             .WithToolsFromAssembly()

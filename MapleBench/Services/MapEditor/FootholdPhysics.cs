@@ -80,6 +80,35 @@ internal static class MapBounds
         MapModel.WzNode? info,
         (int Left, int Top, int Right, int Bottom) footholdExtent)
     {
+        (int, int, int, int)? rect = ResolveDeclared(info, footholdExtent);
+        if (rect is not { } r || info is null)
+            return rect;
+
+        // The declared rectangle is the CAMERA's framing, not the world's
+        // extent, and the two disagree on real maps.
+        //
+        // Measured on f1/Map/Map9/922230001.img: footholds span y -539..511 and
+        // the spawn is at y=511, standing on foothold id=2 — a real, walkable
+        // ledge. `-centerY + MapHeight - 55` resolves to 470, so the character
+        // spawned 41px BELOW `bounds.bottom` and was immediately "out of the
+        // map" while standing on solid ground. Nothing about the map was wrong;
+        // the rectangle just did not cover it.
+        //
+        // Every consumer here — the fall clamp, the camera clamp, the spawn
+        // validity test — treats these bounds as the world. So they must
+        // contain the footholds. Widen, never narrow.
+        return (
+            Math.Min(r.Item1, footholdExtent.Left),
+            Math.Min(r.Item2, footholdExtent.Top),
+            Math.Max(r.Item3, footholdExtent.Right),
+            Math.Max(r.Item4, footholdExtent.Bottom));
+    }
+
+    /// <summary>The rectangle the reference computes, unmodified.</summary>
+    private static (int, int, int, int)? ResolveDeclared(
+        MapModel.WzNode? info,
+        (int Left, int Top, int Right, int Bottom) footholdExtent)
+    {
         if (info is null)
             return null;
 
@@ -227,6 +256,94 @@ public sealed class FootholdPhysics
 
     /// <summary>The walkable extent, or null when the map has no usable foothold.</summary>
     public (int Left, int Top, int Right, int Bottom)? Bounds { get; }
+
+    /// <summary>
+    /// Every ground height at <paramref name="x"/> that lies inside
+    /// <c>[<paramref name="top"/>, <paramref name="bottom"/>]</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A direct port of the reference's
+    /// <c>FootholdTree::get_foothold_range</c>
+    /// (<c>Gameplay/Physics/FootholdTree.cpp:609-639</c>, itself labelled
+    /// "official CWvsPhysicalSpace2D::GetFootholdRange"), which is what a ground
+    /// decal samples to find the floor it should lie on:
+    /// </para>
+    /// <code>
+    /// std::vector&lt;int16_t&gt; get_foothold_range(int16_t x, int16_t top, int16_t bottom) const
+    /// {
+    ///     std::vector&lt;int16_t&gt; result;
+    ///     auto range = footholdsbyx.equal_range(x);
+    ///     for (auto iter = range.first; iter != range.second; ++iter)
+    ///     {
+    ///         const Foothold&amp; fh = footholds.at(iter-&gt;second);
+    ///         if (fh.is_wall()) continue;
+    ///         int16_t ground = static_cast&lt;int16_t&gt;(std::round(fh.ground_below(x)));
+    ///         if (ground &gt;= top &amp;&amp; ground &lt;= bottom)
+    ///         {
+    ///             bool duplicate = false;
+    ///             for (int16_t existing : result)
+    ///                 if (std::abs(existing - ground) &lt;= 8) { duplicate = true; break; }
+    ///             if (!duplicate) result.push_back(ground);
+    ///         }
+    ///     }
+    ///     return result;
+    /// }
+    /// </code>
+    /// <para>
+    /// Three parts of that are load-bearing and all three are kept:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><b>Walls are skipped</b> — <c>is_wall()</c> is a foothold standing on
+    /// its end, and <see cref="Foot.SurfaceAt"/> already returns null for one, so
+    /// asking it is the same test written once.</item>
+    /// <item><b>The 8px dedupe</b> — two footholds meeting at a seam have the same
+    /// height at their shared vertex, and without it a stair-step decal draws one
+    /// copy of every tile twice.</item>
+    /// <item><b><c>round</c>, not truncate</b> — the surface is interpolated
+    /// (<see cref="Foot.SurfaceAt"/>) and rounded once here, matching
+    /// <c>std::round</c> rather than a cast.</item>
+    /// </list>
+    /// <para>
+    /// <see cref="Foot.SurfaceAt"/> is the one interpolation already in this
+    /// file, so this does not re-derive the surface from the endpoints: a second
+    /// formula for "how high is the ground at x" is a second answer, and the
+    /// walking physics and the decals would disagree on a slope.
+    /// </para>
+    /// <para>
+    /// The reference keeps its footholds in a <c>footholdsbyx</c> multimap indexed
+    /// by every X each foothold spans (<c>FootholdTree.cpp:85-89</c>) and this
+    /// file has a flat list, so this is a linear scan. It runs a handful of times
+    /// per cast and never on a frame — <see cref="FindBelow"/> already accepts the
+    /// same cost, and an index would be paid for on every walk step to speed up
+    /// something that happens when a skill is cast.
+    /// </para>
+    /// </remarks>
+    public List<int> GetFootholdRange(int x, int top, int bottom)
+    {
+        var result = new List<int>();
+        foreach (Foot f in _footholds)
+        {
+            int? surface = f.SurfaceAt(x);
+            if (surface is not { } ground)
+                continue;
+            if (ground < top || ground > bottom)
+                continue;
+
+            bool duplicate = false;
+            foreach (int existing in result)
+            {
+                if (Math.Abs(existing - ground) <= 8)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate)
+                result.Add(ground);
+        }
+        return result;
+    }
 
     /// <summary>
     /// One foothold as geometry: two endpoints and the links the data carries.
@@ -386,19 +503,87 @@ public sealed class FootholdPhysics
     /// path, and treating it as one is what makes a naive implementation report
     /// every map as sealed.
     /// </remarks>
-    public Foot? FindWall(int x, int y, bool movingRight = true)
+    /// <summary>
+    /// A wall to the left of the character, or null.
+    /// </summary>
+    /// <remarks>
+    /// The probe point and the layer test are both from the reference. Walking
+    /// right, MapleCharacter.cs:855-860:
+    /// <code>
+    /// WallFH = FootholdTree.Instance.FindWallL(new Vector2(X - 4, Y - 4));
+    /// if ((WallFH != null) &amp;&amp; (X &gt;= WallFH.X1) &amp;&amp; (BelowFH.Z == WallFH.Z))
+    /// { X = WallFH.X1 - 1; SpeedR = 0; }
+    /// </code>
+    ///
+    /// Two details are load-bearing and were both missing:
+    ///
+    /// <para><b>The probe is (X - 4, Y - 4), not (X, Y).</b> A character standing
+    /// at y=216 on a floor whose wall ends at y=215 clears a wall test that
+    /// queries y=216, and walks straight through it into the void. Offsetting
+    /// the probe up by 4 catches it. This was a real, reproduced fall-through
+    /// on f1/Map/Map0/000030000.img.</para>
+    ///
+    /// <para><b>The layer must match.</b> Without <c>z == wallZ</c>, a wall on
+    /// another floor blocks the character on this one — which is why a wall
+    /// query used to report nearly every map as sealed.</para>
+    /// </remarks>
+    public Foot? FindWall(int x, int y, bool movingRight = true, long? z = null)
     {
+        // NOTE: x and y arrive already offset by the caller. CharacterPhysics.cs
+        // :398-399 does `wallX = X ± 4, wallY = Y - WallProbeUp(4)`, which is the
+        // reference's `FindWallL(new Vector2(X - 4, Y - 4))`
+        // (MapleCharacter.cs:855). Do not subtract again in here — doing so put
+        // the probe at Y-8 and missed walls the reference catches.
         Foot? best = null;
         foreach (Foot f in _footholds)
         {
             if (!f.IsWall)
                 continue;
+            // MapleCharacter.cs:856 `BelowFH.Z == WallFH.Z` — same floor only.
+            // Passing null means "any layer", which is the old behaviour; the
+            // caller should always pass the lead ground's Z.
+            if (z is { } want && f.Z != want)
+                continue;
             if (f.Y1 > y || f.Y2 < y)
                 continue;
-            if (movingRight ? f.X1 < x : f.X1 > x)
+            // The X comparison is the WHOLE of this function and it was inverted.
+            //
+            // Footholds.cs:130, the rightward query:
+            //     if (F.IsWall() && F.X1 <= P.X && F.Y1 <= P.Y && F.Y2 >= P.Y)
+            //         ... keep, then keep the one with the LARGEST X1
+            // Footholds.cs:162, the leftward query:
+            //     if (F.IsWall() && F.X1 >= P.X && ...)
+            //         ... keep, then keep the one with the SMALLEST X1
+            //
+            // Both ask "which wall am I touching RIGHT NOW" -- the wall is AT or
+            // ALREADY PAST the probe column, and the tie-break picks the nearest one.
+            // That is why the caller can then say `X = WallFH.X1 + 1` and mean
+            // "put me on the near side of the wall I just walked into".
+            //
+            // This port asked the opposite question: "which wall comes next anywhere
+            // on the map" -- keep everything at or ahead of the probe, take the
+            // nearest. With no upper bound on the distance.
+            //
+            // MEASURED, walking right on f4/Map/Map1/100000004.img from the spawn
+            // portal at x=1710, probe x=1716, y=-29, layer Z=5:
+            //
+            //     wall = id 92 at x=3189        <- the map's RIGHT BOUNDARY wall
+            //
+            // 1473 pixels away, across the whole map. Then Walk's guard
+            // `if (moveLeft > 0 && _x <= w2.X1)` is true for any wall ahead of the
+            // character however far, so it ran `X = 3189 + 1`, and the handover that
+            // follows snapped X back to the next foothold's X1 -- 1800. Net +90px
+            // per tick, 36x MaxWalkSpeed, changing foothold every single tick:
+            //
+            //     x 1710 -> 1800 -> 1890 -> 1980 -> 2070 -> 2160 -> 2250, then
+            //     3169 (= bounds.Right - EdgeMargin), airborne, out of the map.
+            //
+            // 194 of 200 ticks airborne. That is the "walks around and randomly
+            // flies off" report, and it is this one comparison.
+            if (movingRight ? f.X1 > x : f.X1 < x)
                 continue;
             if (best is null
-                || (movingRight ? f.X1 < best.Value.X1 : f.X1 > best.Value.X1))
+                || (movingRight ? f.X1 > best.Value.X1 : f.X1 < best.Value.X1))
                 best = f;
         }
 

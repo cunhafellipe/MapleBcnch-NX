@@ -111,6 +111,13 @@ export class AnimationPlayer {
 
     // Clicking a thumbnail selects that frame and opens it in the tree, which
     // is how you get from "that frame looks wrong" to editing it.
+    //
+    // A frame may be one canvas (WZ) or a stack of them (NX). `layers` is empty
+    // for the former, and the frame's own path is then the picture. For the
+    // latter `frame.path` is the frame CONTAINER, which has no picture of its
+    // own -- so both the thumbnail and the preload go through the layers.
+    const layersOf = (frame) => (frame.layers?.length ? frame.layers : [frame]);
+
     const strip = el('div', { style: 'display:flex;gap:6px;overflow-x:auto;margin-top:10px;padding-bottom:4px' });
     data.frames.forEach((frame, index) => {
       const thumb = el('button', {
@@ -125,17 +132,48 @@ export class AnimationPlayer {
           this.app.navigate(frame.path);
         },
       }, (() => {
-        const shot = el('img', { alt: '', style: 'image-rendering:pixelated' });
-        shot.addEventListener('load', () => scalePixelArt(shot, 44, 44));
-        shot.src = canvasUrl(frame.path);
-        return shot;
+        // A WZ frame is one canvas, so its thumbnail is that canvas. An NX
+        // frame is several stacked at their own origins, so the thumbnail is
+        // the stack: one <img> per layer, each positioned by its origin against
+        // the shared anchor and scaled into the same 44px box the WZ thumbnail
+        // uses. Same size, same pixelated look, one rule for both.
+        const layers = layersOf(frame);
+        if (layers.length === 1 && !frame.layers?.length) {
+          const shot = el('img', { alt: '', style: 'image-rendering:pixelated' });
+          shot.addEventListener('load', () => scalePixelArt(shot, 44, 44));
+          shot.src = canvasUrl(frame.path);
+          return shot;
+        }
+
+        const scale = 44 / Math.max(1, data.width, data.height);
+        const box = el('div', {
+          style: `position:relative;width:44px;height:44px;overflow:hidden`,
+        });
+        for (const layer of layers) {
+          const shot = el('img', {
+            alt: '',
+            style: 'image-rendering:pixelated;position:absolute',
+          });
+          shot.addEventListener('load', () => {
+            shot.style.left = `${(data.anchorX - layer.originX) * scale}px`;
+            shot.style.top = `${(data.anchorY - layer.originY) * scale}px`;
+            shot.style.width = `${layer.width * scale}px`;
+            shot.style.height = `${layer.height * scale}px`;
+          });
+          shot.src = canvasUrl(layer.path);
+          box.append(shot);
+        }
+        return box;
       })());
       strip.append(thumb);
     });
     this.strip = strip;
 
-    // Preload so playback does not stutter on the first pass.
-    this.images = await Promise.all(data.frames.map((frame) => loadImage(canvasUrl(frame.path))));
+    // Preload so playback does not stutter on the first pass. One entry per
+    // layer per frame, flattened back to the frame order, so `draw` can index
+    // it with the frame number it already uses.
+    this.images = await Promise.all(data.frames.map((frame) =>
+      Promise.all(layersOf(frame).map((layer) => loadImage(canvasUrl(layer.path))))));
     if (this.cancelled) return null;
     this.draw();
     this.updateLabel();
@@ -162,12 +200,23 @@ export class AnimationPlayer {
   draw() {
     if (!this.data || !this.canvas) return;
     const frame = this.data.frames[this.frame];
-    const image = this.images[this.frame];
+    const images = this.images[this.frame] ?? [];
     const context = this.canvas.getContext('2d');
 
     context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (image) context.drawImage(image, frame.offsetX, frame.offsetY);
+
+    // One blit per layer, in the order the server sent -- furthest back first.
+    // A WZ frame yields a single entry, so this is the original single drawImage.
+    // Each layer hangs off the shared anchor by its own origin, which is what
+    // makes the body and the arm of an NX frame line up inside the composed box.
+    const anchorX = this.data.anchorX;
+    const anchorY = this.data.anchorY;
+    images.forEach((image, i) => {
+      if (!image) return;
+      const layer = frame.layers?.[i] ?? frame;
+      context.drawImage(image, anchorX - layer.originX, anchorY - layer.originY);
+    });
 
     if (this.showOrigin) {
       // The anchor is where every frame's origin lands in the composed canvas.

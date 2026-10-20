@@ -37,15 +37,15 @@
          generic .NET one. DesktopShell loads the same file at runtime for
          the window itself. -->
     <ApplicationIcon>MapleBench.ico</ApplicationIcon>
-  </PropertyGroup>
+      </PropertyGroup>
+
+        <ItemGroup>
+          <Content Include="MapleBench.ico" CopyToOutputDirectory="PreserveNewest" />
+        </ItemGroup>
 
   <ItemGroup>
-    <Content Include="MapleBench.ico" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\dependencies\MapleLib\MapleLib.csproj" />
-  </ItemGroup>
+        <ProjectReference Include="..\dependencies\MapleLib\MapleLib.csproj" />
+      </ItemGroup>
 
   <ItemGroup>
     <!-- Hosts the UI in a real window instead of a browser tab. The Edge

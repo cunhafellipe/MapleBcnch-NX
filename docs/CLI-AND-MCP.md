@@ -48,6 +48,25 @@
 `MapleMcp/`，用官方 `ModelContextProtocol` SDK 2.2.0。
 專案內路徑：`MapleMcp/bin/Release/net10.0-windows/maple-mcp.exe`
 
+> **2026-10-14 實測：52 個工具**（原 50），新增兩個把資料變成圖的：
+> `wz_map_render`（整張地圖出 PNG）與 `wz_map_render_mob`（怪物姿勢逐影格出 PNG）。
+> 理由見下方「為什麼需要 render 工具」。
+>
+> **執行陷阱**：`.exe` 不能直接跑，會報 `You must install .NET 10`。
+> 用 SDK 10 跑 DLL：
+> ```bash
+> node tools/probe/mcp-probe.mjs \
+>   "C:/MUWORK/app/scoop/apps/dotnet-sdk/10.0.401/dotnet.exe" \
+>   "MapleMcp/bin/Release/net10.0-windows/maple-mcp.dll"
+> ```
+> **後端埠**：預設 5100，可用環境變數 `WZ_SERVER` 覆寫。開機後先確認哪個埠有服務：
+> ```bash
+> for p in 5480 5100 5531; do
+>   echo "$p -> $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$p/api/files)"
+> done
+> ```
+> Python 呼叫端已封裝好這兩件事：`tools/maple_mcp.py` 的 `MapleMcp()`。
+
 握手實測（2026-10-11，合併 `wz_asset_*` 與 `wz_archive_*` 後）：
 
 ```
@@ -71,6 +90,30 @@ tools   : 41
 
 > 伺服器名稱自 1.3.0 起為 `maplebench-assets`；1.0.0～1.2.0 曾用
 > `maplebench-maps`。若 agent 端有寫死的名稱，請一併更新。
+
+### 為什麼需要 render 工具（2026-10-14 新增）
+
+原本 50 個工具**全部回傳 JSON**，而 JSON 不能顯示一隻史萊姆。
+`wz_map_cast` 給了 foothold、角色軌跡、portal、spawn——畫一張地圖需要的
+全部數字，但 agent 拿著它仍然答不出「這張地圖看起來對不對」。
+`wz_asset_export_canvas` 又只匯出單一 canvas 節點，而 v83 地圖的圖磚是
+`Tile/<set>.img/<variant>/<n>` 上千個葉節點，**沒有任何一個節點是整張地圖**。
+
+這就是 `JOURNAL/TODO.md` 第 10 項「視覺驗收仍然做不了」卡住的原因：
+不是環境擋住（headless Chrome 現在能起），是**沒有任何一條路能把地圖畫成圖**。
+
+兩個工具補的是這一段：
+
+| 工具 | 做什麼 | 實測 |
+|---|---|---|
+| `wz_map_render` | 整張地圖出 PNG：Back 背景 → tile 圖層（依 zm 排序）→ foothold 線 → 角色軌跡 → spawn | 3 張地圖 0.2–0.5 秒，166–284 張圖磚 |
+| `wz_map_render_mob` | 單一姿勢逐影格出 PNG，並回報每格的 `originX` / `delay` / `cornerPivotErrorPx` | 2220100/stand 兩格，80×80，originX=27 delay=180 |
+
+`cornerPivotErrorPx` 是 `-2 × originX`：如果鏡像軸畫在圖的左上角而不是影格
+自己的 origin，怪物會偏這麼多像素。2220100 是 54px，超過角色體型的一半——
+這就是 `walkview.js` 鏡像軸該錨在哪裡的可驗證數字。
+
+實作記錄（含四個踩過的坑）見 `JOURNAL/2026-10-14-0834-mcp-first-plan.md`。
 > 舊的 `maplebench-wz`（另一個 repo，18 個通用工具）仍可同時註冊，
 > 它與本伺服器的 `wz_asset_*` 功能重疊，見下方註記。
 

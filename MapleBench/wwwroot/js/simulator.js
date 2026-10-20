@@ -23,6 +23,7 @@ import { el, clear, toastError } from './ui.js';
 import { emptyState } from './inspector.js';
 import { icon } from './icons.js';
 import { WalkViewer } from './walkview.js';
+import { LiveWalk } from './livewalk.js';
 
 async function call(method, url, body) {
   const init = { method, headers: {} };
@@ -65,11 +66,124 @@ export class SimulatorSection {
     // check while the character stood still, because no check could see the
     // difference between walking and not walking.
     this.viewer = new WalkViewer();
+    // The live body. It owns the arrow keys and asks the server for one frame
+    // per tick; the viewer only draws. Without it this page could only play
+    // back a precomputed walk, which is not a simulator.
+    this.live = new LiveWalk(this.viewer);
+
+    // The map picker is an overlay inside the simulator, not a column beside
+    // it. It is closed on open: the canvas is the thing this section is for,
+    // and a 288px list of 5,366 paths beside it is a permanent cost for a
+    // control that is used once. Opened on demand from the header.
+    this.pickerOpen = false;
+
+    /** Where "exit" goes. Null means the Editors list. */
+    this.onExit = null;
+
+  }
+
+  /**
+   * Take the window: no command bar, no rail, no file tree, no inspector.
+   *
+   * The flag lives on <body> because two of the four things being removed are
+   * not inside #workspace (app.css). It is set on open and cleared by exit(),
+   * never by a timer or a scroll: if the user is looking at a full-screen
+   * simulator with no way back, that is a dead end, and an exit path that
+   * depends on the flag being cleaned up somewhere else is not one.
+   */
+  enterFocus() {
+    document.body.dataset.focus = 'simulator';
+
+    // Escape leaves. A full-screen view with one button as the only exit is
+    // not full-screen, it is a modal with extra steps. Bound here and removed
+    // in exitFocus() so two visits cannot leave two listeners, and bound on
+    // the document because the focus may be anywhere inside the section --
+    // the canvas, the picker's search box, the button itself.
+    //
+    // capture:true, so it runs before the section's own key handling and the
+    // arrow keys / Space that drive the character still work when focused.
+    if (!this._esc) {
+      this._esc = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); this.exit(); }
+      };
+      document.addEventListener('keydown', this._esc, true);
+    }
+  }
+
+  /** Give the window back to the editor. Safe to call twice. */
+  exitFocus() {
+    delete document.body.dataset.focus;
+    this.pickerOpen = false;
+    if (this._esc) {
+      document.removeEventListener('keydown', this._esc, true);
+      this._esc = null;
+    }
+    // The canvas was sized against the pre-collapse width. Without this the
+    // stretched-back editor shows the map at the old scale until something
+    // else forces a resize.
+    requestAnimationFrame(() => this.viewer.draw?.());
+  }
+
+  /** Leave the simulator and go back to the editor. */
+  exit() {
+    this.live.stop?.();
+    this.exitFocus();
+    const go = this.onExit;
+    this.onExit = null;
+    if (go) go();
+    else if (this.app?.sections) this.app.sections.open('mapedit').catch(() => {});
   }
 
   async open() {
+    this.enterFocus();
     this.render();
     await this.refresh();
+    await this.restoreLastMap();
+  }
+
+  /**
+   * Reload whatever map was last walked here, without being asked.
+   *
+   * Opening the simulator onto an empty canvas and then making the user pick
+   * from a 5,366-entry list every single time is a step that buys nothing: the
+   * picker is one button away for anyone who wants a different map, but a
+   * blank canvas is what you get if you do not touch it. The same session had
+   * to re-pick 000000002.img after every reload, which is the friction this
+   * removes.
+   *
+   * Remembered per archive path, not globally: the simulator is opened from a
+   * file that is already open, so the remembered map has to belong to the same
+   * archive or it silently walks the wrong one.
+   */
+  async restoreLastMap() {
+    if (this.selected || this.loading) return;
+    const key = this.mapMemoryKey();
+    if (!key) return;
+
+    let path;
+    try {
+      path = localStorage.getItem(key);
+    } catch {
+      // Private browsing / storage disabled. A simulator that cannot remember
+      // is still a working simulator, so this is not worth failing over.
+      return;
+    }
+    if (!path) return;
+
+    const row = this.maps.find((m) => m.path === path);
+    // Not re-announced when it is gone: the archive may have been swapped under
+    // us, and a remembered path that no longer resolves should fall back to the
+    // picker quietly rather than nag on every open.
+    if (row) await this.walk(row);
+  }
+
+  /** localStorage key scoped to the archive currently open. */
+  mapMemoryKey() {
+    // app.currentPath holds the open archive's file id (e.g. "f16"), which is
+    // what the simulator's map paths are prefixed with, so it is also what
+    // scopes a remembered map to the archive it belongs to.
+    const id = this.app?.currentPath ?? null;
+    return id ? `maplebench.simulator.lastMap.${id}` : null;
   }
 
   async refresh() {
@@ -124,7 +238,22 @@ export class SimulatorSection {
     this.selected = map;
     this.result = null;
     this.advice = null;
+    this.replayError = null;
     this.render();
+
+    // Remembered here rather than in the picker's onchange, because setDirection
+    // re-walks the same map and this is the one place that means "this map is
+    // the one being shown".
+    const key = this.mapMemoryKey();
+    if (key) {
+      try {
+        localStorage.setItem(key, map.path);
+      } catch {
+        // Same reasoning as restoreLastMap: not being able to remember is not a
+        // reason the walk should not happen.
+      }
+    }
+
     try {
       // The CHARACTER, not the chain. The chain walk answers "are the links
       // intact"; this answers "can a character actually cross it", and the
@@ -152,13 +281,36 @@ export class SimulatorSection {
       // between the two is the exact failure this project kept shipping.
       try {
         await this.viewer.load(map.path);
-        await this.viewer.loadWalk({
-          x: this.result.startX ?? 0,
-          y: this.result.startY ?? 0,
-          dir: this.direction,
-          climb: -1,
-          steps: Math.min(300, Math.max(30, Number(this.result.ticks) || 300)),
-        });
+
+        // The batch walk answers a different question -- where an unattended
+        // walk ends -- and it is what the advice above is built on. It is also
+        // a still frame, and the live body below is not, so the body wins the
+        // viewer: loadWalk runs FIRST here and start() stands it down
+        // (WalkViewer.releaseWalk) before the first 60Hz tick. Order alone is
+        // not the whole fix -- if /trace throws, the body still has to start,
+        // because the character is the point of the section and the replay is
+        // not. So the replay is optional here and its failure is reported, not
+        // swallowed, and it is stopped from ever loading after the body runs.
+        try {
+          await this.viewer.loadWalk({
+            x: this.result.startX ?? 0,
+            y: this.result.startY ?? 0,
+            dir: this.direction,
+            climb: -1,
+            steps: Math.min(300, Math.max(30, Number(this.result.ticks) || 300)),
+          });
+        } catch (err) {
+          // Stands down rather than retries: past this point the body owns the
+          // viewer and a late replay would draw over the character.
+          this.viewer.releaseWalk();
+          this.replayError = err.message;
+        }
+
+        // Put a live character on it, at the spawn the CLIENT would use
+        // (no coordinates passed: the server takes the pt==0 portal). From here
+        // the arrow keys drive a body that keeps its speed between frames, which
+        // is what a trace viewer cannot do.
+        await this.live.start({ path: map.path, direction: this.direction });
         this.viewError = '';
       } catch (err) {
         this.viewError = err.message;
@@ -195,9 +347,24 @@ export class SimulatorSection {
           onclick: () => this.setDirection(-1),
         }, ['←']),
       ]),
+      // The picker is an overlay now, so it gets a button that says so. It
+      // toggles rather than opens: once the map is on screen the list is
+      // covering it, and a control that can only close would be a trap.
+      el('button', {
+        class: `btn ghost sim-map-btn${this.pickerOpen ? ' on' : ''}`,
+        title: this.pickerOpen ? 'Close the map list' : 'Choose a map',
+        'aria-expanded': this.pickerOpen ? 'true' : 'false',
+        onclick: () => { this.pickerOpen = !this.pickerOpen; this.renderBodyInto(); },
+      }, [icon('folderOpen', { size: 15 }), this.pickerOpen ? 'Close map list' : 'Maps']),
       el('button', {
         class: 'btn ghost', onclick: () => this.refresh(), title: 'Reload',
       }, [icon('refresh'), 'Refresh']),
+      // The way back. Prominent and last in reading order, which is where a
+      // person looks for it after pressing Escape.
+      el('button', {
+        class: 'btn sim-exit', title: 'Leave the simulator (Esc)',
+        onclick: () => this.exit(),
+      }, [icon('close', { size: 15 }), 'Exit simulator']),
     ]));
 
     if (this.error) {
@@ -219,35 +386,53 @@ export class SimulatorSection {
       return;
     }
 
-    this.root.appendChild(this.renderBody());
+    this.bodyHost = el('div', { class: 'sim-body' });
+    this.root.appendChild(this.bodyHost);
+    this.renderBody(this.bodyHost);
   }
 
-  renderBody() {
-    const left = el('div', { class: 'sim-left' });
+  /**
+ * Build the body into `target`.
+ *
+ * Takes the host rather than returning a fresh root because the picker toggle
+ * repaints the body WITHOUT the header: the exit button must not be rebuilt
+ * and the canvas must not be detached on every open/close of an overlay. A
+ * returned element would have to be either re-parented out of a throwaway
+ * wrapper or diffed against the old one; both are worse than being handed the
+ * element to fill.
+ */
+renderBody(target) {
     const right = el('div', { class: 'sim-right' });
 
-    // ---- map picker
+    // ---- map picker, as an OVERLAY over the canvas
     //
     // A <select>, not a scrolling list of 5,366 paths. The editor opens a map
     // through a search box with the map's Chinese name beside its id
     // (/api/mapedit/maps), and that is what a reader actually recognises --
     // "彩虹岛 : 蘑菇村西入口" rather than "f1/Map/Map0/000000000.img".
+    //
+    // It is positioned over the stage, not beside it. It was a grid column
+    // taking ~288px of the width permanently, for a control used once per
+    // session; on a full-screen canvas that is a quarter of the picture gone
+    // for a list the reader has to dismiss to see the thing they asked for.
     const search = el('input', {
       class: 'sim-search', type: 'search', value: this.filter,
-      placeholder: `${this.caps.mapCount.toLocaleString()} 張地圖 — 以名稱或編號搜尋`,
+      placeholder: `${(this.caps?.mapCount ?? 0).toLocaleString()} 張地圖 — 以名稱或編號搜尋`,
       oninput: (e) => { this.filter = e.target.value; this.renderPicker(); },
     });
 
     const select = el('select', {
-      class: 'sim-select', size: 14,
+      class: 'sim-select', size: 18,
       onchange: (e) => {
         const row = this.visibleMaps().find((m) => m.path === e.target.value);
-        if (row) this.walk(row);
+        // Picking a map closes the overlay. Leaving it open would cover the
+        // map that was just loaded with the list it came from.
+        if (row) { this.pickerOpen = false; this.walk(row); }
       },
     });
 
-    const picker = el('div', { class: 'sim-picker' }, [search, select]);
-    left.appendChild(picker);
+    const picker = el('div', { class: `sim-picker${this.pickerOpen ? ' open' : ''}`, hidden: !this.pickerOpen },
+      [search, select]);
 
     this.pickerHost = select;
 
@@ -255,13 +440,19 @@ export class SimulatorSection {
       right.appendChild(el('p', { class: 'sim-error' }, [`walk view: ${this.viewError}`]));
     }
 
-    if (this.result) {
-      // The picture first: the numbers below are unreadable without it.
-      right.appendChild(el('div', { class: 'sim-viewer' }, [this.viewer.root]));
+    // The replay is optional and the character is not, so a failed /trace must
+    // not be silent: the canvas below is showing the live body and would look
+    // complete. Said where the other view failure is said, in the same words.
+    if (this.replayError) {
+      right.appendChild(el('p', { class: 'sim-note' },
+        [`batch replay unavailable (${this.replayError}); the live character is unaffected`]));
     }
 
+    // The canvas first and as large as the window allows. It is the thing the
+    // section exists for, and it comes before the verdict so the verdict is
+    // read against the picture rather than instead of it.
     right.appendChild(this.result
-      ? this.renderResult()
+      ? el('div', { class: 'sim-viewer' }, [this.viewer.root])
       : emptyState(
           'play',
           'Pick a map',
@@ -269,9 +460,25 @@ export class SimulatorSection {
           + 'by looking at it — the chain has to be walked.',
         ));
 
+    if (this.result) right.appendChild(this.renderResult());
+
     this.renderPicker();
 
-    return el('div', { class: 'sim-grid' }, [left, right]);
+    // One column now. The picker overlays it rather than sitting beside it,
+    // so the stage is the full width at every window size and there is no
+    // breakpoint at which the list has to be given up to keep the picture.
+    target.appendChild(el('div', { class: 'sim-grid' }, [right, picker]));
+  }
+
+  /**
+   * Repaint just the body, so toggling the picker does not rebuild the header
+   * (and with it the exit button) or drop the canvas the reader is looking at.
+   */
+  renderBodyInto() {
+    const host = this.bodyHost;
+    if (!host || !host.parentElement) { this.render(); return; }
+    clear(host);
+    this.renderBody(host);
   }
 
   /** Maps matching the filter, with the Chinese name leading. */

@@ -80,12 +80,30 @@ function candidatesFor(kind, id) {
 
     // Skills are grouped by the job that owns them: 2001005 lives in 200.img,
     // under skill/2001005.
+    //
+    // Neither half of that is a fixed width, and both halves have to be right or
+    // the entry is never reached. MEASURED 2026-10-16, census of every `skill` entry
+    // in Skill.nx: 535 total, 353 seven-digit and 182 eight-digit. The 182 are ids
+    // >= 10^7; below that the archive zero-pads to seven. So the reference's branch
+    // is the rule, not a guess --
+    // `clean-client/src/Character/Buffs/PassiveBuffs.cpp:229-238`:
+    //     if (skill_id < 10000000) strid = extend_id(skill_id, 7);
+    //     else                   strid = std::to_string(skill_id);
+    //     const auto book = extend_id(skill_id / 10000, 3);
+    // Same 3-digit book at Data/SkillData.cpp:33-35, Character/Player.cpp:340,
+    // Gameplay/Combat/Combat.cpp:264.
+    //
+    // The BOOK is 3 wide for the low books: 45 of the 76 book stems are three digits
+    // (`000`, `100`, `110`, ...) and 26 are four. `f8/000.img/skill/0000008` answers
+    // 200 while `f8/0000.img/...` and `f8/0.img/...` both answer 404 -- and those two
+    // are the only books this used to try, so all 25 entries under 000.img were
+    // unreachable. Measured: these candidates resolved 510 of 535; the reference's
+    // spelling resolves 535 of 535.
     case 'skill': {
       const book = Math.floor(id / 10000);
-      return [
-        { image: `${book}.img`, children: [`skill/${id}`] },
-        { image: `${pad(book, 4)}.img`, children: [`skill/${id}`] },
-      ];
+      const entry = id < 10000000 ? pad(id, 7) : `${id}`;
+      const books = [...new Set([pad(book, 3), `${book}`, pad(book, 4)])];
+      return books.map((b) => ({ image: `${b}.img`, children: [`skill/${entry}`] }));
     }
 
     case 'item':
@@ -93,7 +111,15 @@ function candidatesFor(kind, id) {
       // everything else is grouped in hundred-thousands.
       if (Math.floor(id / 1000000) === 1) return [{ image: `${pad(id, 8)}.img` }];
       if (Math.floor(id / 10000) === 500) return [{ image: `${pad(id, 7)}.img` }, { image: `${id}.img` }];
-      return [{ image: `${pad(Math.floor(id / 10000), 4)}.img`, children: [pad(id, 8)] }];
+      // The grouped entry key is not uniformly 8 digits: Consume 2293/2293, Cash
+      // 484/484, Etc 2375/2375 and Install 294/294 are, but Special is 4 of 584 --
+      // 0910.img holds 538 seven-digit keys and 0911.img five. Same measurement and
+      // same reasoning as IconService.cs; see the long note there. D8 first because
+      // it wins for 5,450 of 5,554, bare second for the 543 it misses.
+      return [
+        { image: `${pad(Math.floor(id / 10000), 4)}.img`, children: [pad(id, 8)] },
+        { image: `${pad(Math.floor(id / 10000), 4)}.img`, children: [`${id}`] },
+      ];
 
     default:
       return [];

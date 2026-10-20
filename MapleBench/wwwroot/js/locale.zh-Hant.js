@@ -582,7 +582,15 @@ export const zhHant = {
   'Nothing was given to write for this row.': '這一列沒有任何要寫入的內容。',
 
   // ---- mobs --------------------------------------------------------------
-  'Mobs': 'Mob',
+  // W-081: 'Mobs' read 'Mob' -- the archive's own name for the image, not the
+  // word a person uses for the creature. The bookmark row puts this on a button
+  // next to 裝備 and 技能, so it has to read as the same kind of word as those.
+  'Mobs': '怪物',
+  'Mob': '怪物',
+  'Equipment': '裝備',
+  'Simulator bookmarks': '模擬器書籤',
+  'Go to': '前往',
+  'That bookmark could not open': '這個書籤打不開',
   'Reading the mobs…': '正在讀取 Mob…',
   'Search by mob ID or name…': '以 Mob ID 或名稱搜尋…',
   'The archive holds more mobs than one listing returns, so this is a partial list. Scope to a single archive, or search, to be sure you are seeing everything.':
@@ -649,6 +657,39 @@ export const zhHant = {
   'airborne': '在空中',
   'foothold': '地面',
   'footholds': '段地面',
+  'missing avatar layers': '缺少角色圖層',
+  'missing tile art': '缺少地圖圖塊素材',
+  'the character is dead — attack and skills do nothing until you revive':
+    '角色已死亡 — 復活之前攻擊與技能都不會生效',
+  'revive at the portal': '在傳送點復活',
+  'reviving': '復活中',
+  'take no damage': '不受傷害',
+  // ---- equipment -----------------------------------------------------------
+  // Slot names are the reference's own (AvatarForm.Designer.cs), so they are
+  // left Latin: they are also the keys the API takes, and a reader copying one
+  // into a request should get the string that works.
+  'Cap-1': '帽子 1',
+  'Coat': '上衣',
+  'Pants': '褲子',
+  'Shoes': '鞋子',
+  'Glove': '手套',
+  'Cape': '披風',
+  'Shield': '盾牌',
+  'Weapon-1': '武器 1',
+  'Weapon-2': '武器 2',
+  'Longcoat': '長衣',
+  'Hair-1': '髮型 1',
+  'Face-1': '臉型 1',
+  'Strip': '脫下',
+  'wearing': '裝備中',
+  'not equipped': '無法裝備',
+  'no equipment folders in the open archives': '已開啟的封存中沒有任何裝備資料夾',
+  'real mob art': '真實怪物圖',
+  'placeholder mobs': '替代怪物方塊',
+  'NPC': 'NPC',
+  'NPCs': 'NPC',
+  'mob': '怪物',
+  'no {0} art for {1} in the open archives': '已開啟的封存中沒有 {1} 的{0}圖',
   'ladders': '座梯子',
   'portals': '個傳送門',
   'No geometry loaded': '尚未載入地圖資料',
@@ -658,6 +699,61 @@ export const zhHant = {
   'walk view: {msg}': '行走畫面：{msg}',
   'No map archive is open': '尚未開啟任何地圖封存',
   'Pick a map': '選一張地圖',
+  // The summon cluster -- MobForm.cs:107-143's two buttons. `Mob ID` and `Count`
+  // already existed above (the close-out term block); only the two buttons, the
+  // two outcomes and the two failures are new.
+  'Summon': '召喚',
+  'Remove summoned': '移除召喚的怪物',
+  'Spawn these mobs around the character': '在角色周圍生成這些怪物',
+  'Remove every mob this control summoned': '移除這個控制項所召喚的所有怪物',
+  'Summoned {spawned} of {requested}': '已召喚 {requested} 個中的 {spawned} 個',
+  'Removed {n} summoned': '已移除 {n} 個召喚的怪物',
+  'The count must be a whole number': '數量必須是整數',
+  'Could not summon that mob': '無法召喚該怪物',
+  'Could not remove the summoned mobs': '無法移除召喚的怪物',
+  // The skill hotkey panel -- SkillForm.cs:30-38, :51, :60 and :149-182. The two
+  // label strings are the reference's own captions, kept verbatim because they are
+  // what the two grids are called there (SkillForm.Designer.cs:72,:82).
+  'Skills…': '技能…',
+  'Hotkey Settings': '熱鍵設定',
+  'Use List': '使用清單',
+  'Key': '按鍵',
+  'in use': '使用中',
+  'Unnamed skill': '未命名的技能',
+  'Pick a key for a skill. Each key holds one skill, and each skill one key.':
+    '替技能選一個按鍵。每個按鍵只能對應一個技能，每個技能也只能對應一個按鍵。',
+  'Bind a skill to a key while walking': '行走中用按鍵施放技能',
+  'Remove this binding': '移除這個綁定',
+  'Clear all': '全部清除',
+  '{n} bound': '已綁定 {n} 個',
+  'Cleared {n} bindings': '已清除 {n} 個綁定',
+  'No skill is bound to a key': '沒有技能綁定到按鍵',
+  'No skills can be cast from the open archives':
+    '已開啟的封存裡沒有可施放的技能',
+  'Could not bind that skill': '無法綁定該技能',
+  'Could not clear the bindings': '無法清除綁定',
+  'Could not list the castable skills: {msg}': '無法列出可施放的技能：{msg}',
+  // The geometry overlay switch (foothold lines, ropes, portals, the boundary box).
+  'Overlays': '輔助線',
+  'Show the foothold lines and markers': '顯示落腳點線條與標記',
+  'Hide the foothold lines and markers': '隱藏落腳點線條與標記',
+  // The mob picker (MobForm.cs:107-124 is a grid, not a text field).
+  'Browse…': '瀏覽…',
+  'Browse the mobs this archive holds': '瀏覽這個封存裡的怪物',
+  'Summon a mob': '召喚怪物',
+  'Pick one to put its id in the box': '選一隻，把它的 id 填進欄位',
+  'Search by name or id': '以名稱或 id 搜尋',
+  'Search mobs': '搜尋怪物',
+  'Loading mobs…': '載入怪物中…',
+  '{shown} of {total} mobs': '{total} 隻中的 {shown} 隻',
+  'Could not list the mobs: {msg}': '無法列出怪物：{msg}',
+  // Pre-existing gaps, not from the picker: walkReasons() and renderControls()
+  // have been calling these since before this file was touched. They were hidden
+  // from an audit by the checker reading this file without an explicit encoding,
+  // which mangles every CJK value in it and makes the comparison meaningless.
+  'Play the walk at the client\'s frame rate': '以客戶端的影格率播放這段行走',
+  'real avatar': '真實角色',
+  'placeholder figure': '替代人物',
   'Walkable': '可走',
   'Blocked': '走不過去',
   'The editor files could not be read.': '無法讀取編輯器的檔案。',

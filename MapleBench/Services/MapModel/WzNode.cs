@@ -211,11 +211,41 @@ public sealed class WzNode
     public static List<WzNode> ReadImage(WzImage image, out bool complete)
     {
         ArgumentNullException.ThrowIfNull(image);
+        WzPropertyCollection? roots = new WzWalk().From(image);
+        return ReadRoots(new WzWalk(), roots, out complete);
+    }
 
-        WzWalk walk = new();
+    /// <summary>
+    /// The same walk, over an image's properties rather than over an image.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An NX map is a <see cref="WzImageProperty"/>, not a
+    /// <see cref="WzImage"/>. The editor lifts it into a real image so it can be
+    /// edited and written back (MapEditorService.cs:501), which deep-clones every
+    /// property -- and an NX map is 0.1 MB in the archive and 2.5 GB once cloned.
+    /// Measured: 308 MB with two archives open, 3,282 MB after one walk, after
+    /// which the process died twice with no exception.
+    /// </para>
+    /// <para>
+    /// This shares <see cref="ReadRoots"/> with <see cref="ReadImage"/> rather
+    /// than repeating the loop. The first attempt wrote a parallel walk and the
+    /// model it produced differed -- one map took 26 frames where the editor's
+    /// took 1 -- so the duplication was the hazard, not the sharing.
+    /// </para>
+    /// </remarks>
+    public static List<WzNode> ReadProperties(WzPropertyCollection properties, out bool complete)
+    {
+        ArgumentNullException.ThrowIfNull(properties);
+        return ReadRoots(new WzWalk(), properties, out complete);
+    }
+
+    /// <summary>One walk, whichever container it starts from.</summary>
+    private static List<WzNode> ReadRoots(
+        WzWalk walk, WzPropertyCollection? roots, out bool complete)
+    {
         List<WzNode> nodes = new();
 
-        WzPropertyCollection roots = walk.From(image);
         if (roots != null)
         {
             foreach (WzImageProperty property in roots)

@@ -1,4 +1,4 @@
-using MapleBench.Services.MapModel;
+﻿using MapleBench.Services.MapModel;
 using MapleBench.Services.Nx;
 using MapleLib.WzLib;
 using MapleLib.WzLib.Util;
@@ -255,36 +255,162 @@ public sealed partial class MapEditorService
     /// loader that guessed the shape differently would disagree with the editor
     /// about the same map, which is worse than having no simulator at all.
     /// </remarks>
-    private MapDocument LoadForReading(string path)
+    private MapDocument LoadForReading(string path) => LoadForReading(path, 0);
+
+    /// <summary>
+    /// Follows an <c>info/link</c> stub to the map that actually has the geometry.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A map whose <c>info/link</c> names another map is not an empty map -- it is
+    /// the SAME map under a second id, which the archive keeps to avoid storing
+    /// the geometry twice. The client never loads the stub. MapleNecrocer,
+    /// <c>MainForm.cs:759-765</c>:
+    /// </para>
+    /// <code>
+    /// var Node = Wz.GetNode(NodePath + "/info/link");
+    /// if (Node == null)
+    ///     Map.ID = ID;
+    /// else
+    ///     Map.ID = Node.Value.ToString();
+    /// </code>
+    /// <para>
+    /// and then everything after that line -- <c>Map.Img</c>, the footholds, the
+    /// portals, the bounds -- is read from <c>Map.ID</c>, never from the id the
+    /// caller asked for. <c>MapleMap.LoadMap</c> (:162-199) has no link handling
+    /// at all precisely because the id has already been swapped by the time it runs.
+    /// </para>
+    /// <para>
+    /// Without this, a stub parses to a document with no footholds at all and
+    /// every later stage reports "nothing to stand on" -- measured over 400
+    /// sampled maps: 155 of them refused, and <b>all 155 were link stubs</b>
+    /// (99 to <c>100020100</c>, the rest to <c>1030404x0</c> and
+    /// <c>103000300</c>), every one of which has a walkable target carrying 41-101
+    /// footholds.
+    /// </para>
+    /// <para>
+    /// The hop is bounded rather than looping: a stub whose link chain loops, or
+    /// names a map that is not in the archive, must stop and say so instead of
+    /// walking forever.
+    /// </para>
+    /// </remarks>
+    private MapDocument LoadForReading(string path, int hops)
     {
         lock (_session.Gate)
         {
             OpenFile file = _session.GetFileForPath(path);
             WzObject node = _session.Resolve(path);
 
-            if (node is WzImage resolved)
+            MapDocument document = ReadMapDocument(node, file, path);
+
+            // The link check runs on the PARSED document rather than on the raw
+            // property list, so it reads `info/link` through MapInfo.Link -- the
+            // accessor that already handles both spellings the archive ships:
+            // String on 6,695 maps and Int on 155. A raw read that accepted only
+            // one of them would silently leave 155 stubs unfollowed, which is
+            // exactly the population that fails.
+            if (document.Info?.Link is { Length: > 0 } target)
             {
-                byte[] iv = file.CustomIv ?? WzTool.GetIvByMapleVersion(file.MapleVersion);
-                MapLoadResult verified = MapRoundTrip.LoadVerified(resolved, iv);
-                if (!verified.Ok)
-                    throw new InvalidOperationException(verified.Reason ?? "The map could not be read.");
-                return verified.Document!;
+                if (hops >= MaxLinkHops)
+                    throw new InvalidOperationException(
+                        $"'{path}' is a link to '{target}' and the chain did not end after "
+                        + $"{MaxLinkHops} hops, so it cannot be read as a map.");
+                return LoadForReading(LinkTargetPath(path, target), hops + 1);
             }
 
-            if (IsNx(file))
-            {
-                // No verification round trip for NX, same as the editor: there
-                // is no block on disk to verify against. Reading is what matters
-                // here and reading is identical in both.
-                MapLoadResult loaded = MapDocument.Load(NxMapImage(node));
-                if (!loaded.Ok)
-                    throw new InvalidOperationException(loaded.Reason ?? "The map could not be read.");
-                return loaded.Document!;
-            }
-
-            throw new InvalidOperationException(
-                $"'{path}' is a {node.GetType().Name}, which carries no map geometry to walk.");
+            return document;
         }
+    }
+
+    /// <summary>
+    /// Reads one map image into a document, without following any link it names.
+    /// </summary>
+    /// <remarks>
+    /// Split out of <see cref="LoadForReading(string, int)"/> so the link hop is
+    /// decided on a document that has already been parsed. The two branches are
+    /// unchanged from the single-loader version and carry their own reasons for
+    /// existing.
+    /// </remarks>
+    private MapDocument ReadMapDocument(WzObject node, OpenFile file, string path)
+    {
+        if (node is WzImage resolved)
+        {
+            byte[] iv = file.CustomIv ?? WzTool.GetIvByMapleVersion(file.MapleVersion);
+            MapLoadResult verified = MapRoundTrip.LoadVerified(resolved, iv);
+            if (!verified.Ok)
+                throw new InvalidOperationException(verified.Reason ?? "The map could not be read.");
+            return verified.Document!;
+        }
+
+        if (IsNx(file))
+        {
+            // No verification round trip for NX, same as the editor: there
+            // is no block on disk to verify against. Reading is what matters
+            // here and reading is identical in both.
+            // No copy. NxMapImage deep-clones every property so the editor
+            // can write back safely (MapEditorService.cs:501); a walk has no
+            // reason to. An NX map is 0.1 MB in the archive and 2.5 GB cloned,
+            // and the process dies of the difference without an exception --
+            // measured at 308 MB with two archives open, 3,282 MB after one
+            // walk, then two silent deaths.
+            string leaf = node.Name is { Length: > 0 } n ? n : "map.img";
+            MapLoadResult shared = MapDocument.LoadShared(NxMapProperties(node), leaf);
+            if (!shared.Ok)
+                throw new InvalidOperationException(shared.Reason ?? "The map could not be read.");
+            return shared.Document!;
+        }
+
+        throw new InvalidOperationException(
+            $"'{path}' is a {node.GetType().Name}, which carries no map geometry to walk.");
+    }
+
+    /// <summary>How many <c>info/link</c> hops a load will follow before giving up.</summary>
+    /// <remarks>
+    /// A stub may name another stub. Real chains are one hop deep, so this only
+    /// has to be large enough to catch a loop, and small enough that a cycle
+    /// costs a millisecond instead of a stack overflow.
+    /// </remarks>
+    private const int MaxLinkHops = 8;
+
+    /// <summary>
+    /// The path of a link target, built the way the client builds one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>MapleMap.LoadMap:157-162</c> splits a map id on its FIRST digit to find
+    /// the <c>Map&lt;n&gt;</c> directory:
+    /// </para>
+    /// <code>
+    /// string LeftNum = ID.LeftStr(1);
+    /// Map.Img = Wz.GetNode("Map/Map/Map" + LeftNum + "/" + ID + ".img");
+    /// </code>
+    /// <para>
+    /// The directory therefore comes from the TARGET's own first digit, not the
+    /// stub's, and a link that crossed a digit would move directory. Everything
+    /// above that -- the archive id and the role root -- is shared by both maps
+    /// and is carried over verbatim from the stub's own path, which is the only
+    /// source that is certainly resolvable (it resolved a moment ago).
+    /// </para>
+    /// <para>
+    /// So this replaces exactly the last TWO segments: <c>f1/Map/Map1/100020101.img</c>
+    /// to a target <c>100020100</c> becomes <c>f1/Map/Map1/100020100.img</c>.
+    /// </para>
+    /// </remarks>
+    private static string LinkTargetPath(string stubPath, string target)
+    {
+        string[] segments = WzPath.SplitRaw(stubPath);
+        if (segments.Length < 2)
+            throw new InvalidOperationException(
+                $"'{stubPath}' is a link to '{target}', but it does not sit under a Map<n> "
+                + "directory, so there is no path its target could be read from.");
+
+        string[] rebuilt =
+        [
+            .. segments[..^2],
+            "Map" + target[0],
+            target + ".img",
+        ];
+        return string.Join("/", rebuilt);
     }
 
     /// <summary>

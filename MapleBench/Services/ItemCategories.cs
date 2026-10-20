@@ -1,4 +1,4 @@
-﻿namespace MapleBench.Services;
+namespace MapleBench.Services;
 
 /// <summary>
 /// Maps MapleStory item IDs onto the categories the cash shop UI groups by.
@@ -143,6 +143,15 @@ public static class ItemCategories
     {
         if (itemId / 1000000 == 1)
             return itemId.ToString("D8") + ".img";
+        // Pets are the third shape, and they are NOT grouped: 5000000 is one file
+        // of its own. Without this branch the group arithmetic names "0500.img",
+        // which does not exist -- MEASURED 2026-10-16: of the 155 images at the
+        // Item.nx root, 0 is named 0500.img, while all 54 pets are seven-digit
+        // per-pet files (5000000.img .. 5000102.img, 54 of 54 carrying info/icon).
+        // `IconService.cs:117-121` already branches this way; this was a stale copy
+        // of it that had lost the branch.
+        if (itemId / 10000 == 500)
+            return itemId.ToString("D7") + ".img";
         return (itemId / 10000).ToString("D4") + ".img";
     }
 }

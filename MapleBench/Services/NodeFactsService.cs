@@ -1,4 +1,5 @@
 using MapleLib.WzLib;
+using MapleLib.WzLib.WzProperties;
 
 namespace MapleBench.Services;
 
@@ -7,6 +8,41 @@ public sealed class NodeFactDto
 {
     /// <summary>The child's <c>info/cash</c> is present and non-zero.</summary>
     public bool Cash { get; set; }
+
+    /// <summary>True when this child is a canvas and the values below describe it.</summary>
+    public bool Canvas { get; set; }
+
+    /// <summary>Decoded width in pixels, 0 when this child is not a canvas.</summary>
+    public int Width { get; set; }
+
+    /// <summary>Decoded height in pixels, 0 when this child is not a canvas.</summary>
+    public int Height { get; set; }
+
+    /// <summary>
+    /// The canvas's own <c>origin</c>, which is what places it rather than its top-left.
+    /// </summary>
+    /// <remarks>
+    /// Both components are 0 when the canvas has no origin, which is a real answer: plenty
+    /// of one does not, and the default is the corner the client then draws from.
+    /// </remarks>
+    public int OriginX { get; set; }
+
+    /// <inheritdoc cref="OriginX"/>
+    public int OriginY { get; set; }
+
+    /// <summary>The canvas's pixel format, e.g. <c>Format2</c> (BGRA8888).</summary>
+    public string? Format { get; set; }
+
+    /// <summary>How long this canvas is held, in ms, when it is one frame of an animation.</summary>
+    public int? Delay { get; set; }
+
+    /// <summary>The canvas's <c>z</c> layer name, when it has one.</summary>
+    /// <remarks>
+    /// NX names the draw layer (<c>"body"</c>, <c>"armOverHair"</c>) instead of numbering it,
+    /// and which layer is in front of which is the z map rather than the node. Map tiles
+    /// store an integer here instead, which is why this is a string and null when absent.
+    /// </remarks>
+    public string? Layer { get; set; }
 }
 
 /// <summary>
@@ -312,10 +348,28 @@ public sealed class NodeFactsService
             try
             {
                 bool? cash = ReadCash(_session.Resolve(childPath));
-                if (cash == true)
-                    dto.Facts[childPath] = new NodeFactDto { Cash = true };
+
+                // Replaced rather than removed when the child is not cash: a canvas fact
+                // was read for this same child when the folder was built, and dropping the
+                // whole entry here would erase it on the first edit anywhere in the session.
+                // The cash flag and the canvas facts are independent, so an entry that
+                // carries one is not evidence about the other.
+                NodeFactDto fact = dto.Facts.TryGetValue(childPath, out NodeFactDto? existing)
+                    ? existing
+                    : new NodeFactDto { Cash = false };
+
+                fact.Cash = cash == true;
+
+                // Only children that have something to say appear, so a child with neither
+                // a cash flag nor a canvas leaves no trace — same as it did before.
+                if (fact.Canvas || fact.Cash)
+                {
+                    dto.Facts[childPath] = fact;
+                }
                 else
+                {
                     dto.Facts.Remove(childPath);
+                }
             }
             catch
             {
@@ -337,6 +391,7 @@ public sealed class NodeFactsService
 
         List<(WzObject Child, string Path)> work = new();
         NodeFactsDto result = new() { Path = path };
+        bool carriesCanvasInTree = false;
 
         lock (_session.Gate)
         {
@@ -362,6 +417,25 @@ public sealed class NodeFactsService
                     result.Truncated = true;
             }
             result.Total = seen.Values.Sum();
+
+            // Asked about a canvas, the answer is about that canvas.
+            //
+            // This endpoint otherwise only ever describes a node's CHILDREN, which is why
+            // querying an NX canvas answered "not applicable": its children are its metadata
+            // — group, origin, z — and not one of them is a canvas, so a folder of nothing
+            // but canvases is exactly the case the sample was built to reject. The node the
+            // caller named is a canvas here, and reporting nothing about it would mean the
+            // one node in this request that is actually a canvas is the one node described
+            // least.
+            //
+            // Keyed by its own path, so a caller reading the map back finds it under the
+            // same convention as every other entry, and the child scan below still runs and
+            // adds whatever the canvas happens to hold.
+            if (ReadCanvasFacts(node) is { } self)
+            {
+                result.Facts[path] = self;
+                carriesCanvasInTree = true;
+            }
         }
 
         // --- the sample ---------------------------------------------------
@@ -369,6 +443,7 @@ public sealed class NodeFactsService
         // flags costs 32 images instead of all of them.
         List<(WzObject Child, string Path)> probe = Sample(work, ProbeSize);
         bool carriesCash = false;
+        bool carriesCanvas = carriesCanvasInTree;
         int probeScanned = 0;
 
         bool probed = _session.TryRunChunked(generation, probe, item =>
@@ -376,12 +451,18 @@ public sealed class NodeFactsService
             probeScanned++;
             if (ReadCash(item.Child) != null)
                 carriesCash = true;
+
+            // Sampled for the same reason and with the same failure it is allowed: a
+            // folder that has never held a canvas answers "no" and is reported as not
+            // carrying canvas facts, rather than being scanned in full to find nothing.
+            if (item.Child is WzCanvasProperty or WzPngProperty)
+                carriesCanvas = true;
         }, ChunkSize, interleave, cancel);
 
         if (!probed)
             return null;
 
-        if (!carriesCash)
+        if (!carriesCash && !carriesCanvas)
         {
             result.Applicable = false;
             result.Scanned = probeScanned;
@@ -398,8 +479,15 @@ public sealed class NodeFactsService
         bool complete = _session.TryRunChunked(generation, work, item =>
         {
             count++;
+            NodeFactDto? canvas = ReadCanvasFacts(item.Child);
             if (ReadCash(item.Child) == true)
-                result.Facts[item.Path] = new NodeFactDto { Cash = true };
+            {
+                result.Facts[item.Path] = Merge(canvas, cash: true);
+            }
+            else if (canvas is not null)
+            {
+                result.Facts[item.Path] = canvas;
+            }
         }, ChunkSize, interleave, cancel);
 
         if (!complete)
@@ -482,5 +570,92 @@ public sealed class NodeFactsService
         // almost every image, but at least one Cap in a v232 client stores it as
         // the String "1", and a client that stored 2 would still mean "cash".
         return long.TryParse(cash.WzValue?.ToString(), out long value) && value != 0;
+    }
+
+    /// <summary>
+    /// A canvas child's own shape, or null when the child is not a canvas.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the answer <c>applicable: false</c> used to withhold from every NX canvas.
+    /// It reads the dimensions off the canvas property itself, so it is the same numbers
+    /// <c>/api/inspect</c> reports and the same ones <c>/api/canvas</c> encodes from —
+    /// verified on <c>f2/00002000.img/stand1/0/body</c> at 21x31, and on the map tile
+    /// <c>f1/Tile/ThemeGL.img/bsc/0</c> at 90x60.
+    /// </para>
+    /// <para>
+    /// The dimensions come from the node record and are set at conversion time, so this
+    /// costs no decode: an NX canvas reports 21x31 without touching its WebP payload. The
+    /// payload is only read when the browser actually asks for the image.
+    /// </para>
+    /// <para>
+    /// A UOL is followed to the canvas it names, because that is the canvas that would be
+    /// drawn. A broken link yields null, which is the same answer as "not a canvas".
+    /// </para>
+    /// </remarks>
+    private static NodeFactDto? ReadCanvasFacts(WzObject child)
+    {
+        WzCanvasProperty? canvas = child as WzCanvasProperty;
+        if (canvas is null && child is WzUOLProperty uol)
+        {
+            try { canvas = uol.LinkValue as WzCanvasProperty; }
+            catch { return null; }
+        }
+
+        if (canvas is null)
+        {
+            return null;
+        }
+
+        WzPngProperty? png = canvas.PngProperty;
+        if (png is null)
+        {
+            return null;
+        }
+
+        var fact = new NodeFactDto
+        {
+            Canvas = true,
+            Width = png.Width,
+            Height = png.Height,
+            Format = png.Format.ToString(),
+        };
+
+        try
+        {
+            if (canvas[WzCanvasProperty.OriginPropertyName] is WzVectorProperty origin)
+            {
+                fact.OriginX = origin.X?.Value ?? 0;
+                fact.OriginY = origin.Y?.Value ?? 0;
+            }
+        }
+        catch { /* a canvas with no origin draws from its corner, which is 0,0 */ }
+
+        // NX names the draw layer on the canvas; a map tile stores an integer there
+        // instead, which is not a layer name and is reported as no layer.
+        try
+        {
+            if (canvas["z"] is WzStringProperty layer)
+            {
+                fact.Layer = layer.Value;
+            }
+        }
+        catch { /* no usable z property */ }
+
+        return fact;
+    }
+
+    /// <summary>
+    /// Combines a canvas's own facts with a cash flag, so one entry carries both.
+    /// </summary>
+    /// <remarks>
+    /// A child can be both — a canvas that also carries an <c>info/cash</c> flag — and the
+    /// two facts are independent, so neither pass may discard the other's.
+    /// </remarks>
+    private static NodeFactDto Merge(NodeFactDto? canvas, bool cash)
+    {
+        NodeFactDto fact = canvas ?? new NodeFactDto();
+        fact.Cash = cash;
+        return fact;
     }
 }

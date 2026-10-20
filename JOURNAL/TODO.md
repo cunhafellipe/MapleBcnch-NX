@@ -378,3 +378,20 @@ node tools/probe/acceptance.mjs          15/15 PASS
 7. **188 條 unreachable 翻譯條目**待批次清理。
 8. `_t2/` 下的驗證腳本（shot.mjs / editor.mjs / palette.mjs）未進 git。
    應該移進 `tools/` 並在 README 記錄用法——它們是唯一能重跑視覺驗收的東西。
+
+---
+
+## 2026-10-14 09:10 — 第 10 項（視覺驗收）已解
+
+`wz_map_render` + `wz_map_render_mob` 上線，MCP 52 個工具。
+從此「數字對但看不出來」不再是盲區。
+
+| 待辦 | 狀態 |
+|---|---|
+| ~~10. 視覺驗收（截圖比對 sprite）~~ | **已解**，見 `2026-10-14-0910-mcp-render-tools.md` |
+| 11. 手機/直排 viewport 視覺驗收 | 待辦（現在有 render 工具了，成本大降）|
+| 12. npm publish maplebench-assets | 待辦 |
+
+**行動準則（本輪血的教訓）**：動手前先讀專案根目錄的文件清單。
+`docs/CLI-AND-MCP.md` 與 `工作室守則.md` 兩份都寫了現成的 MCP，
+前一輪卻用 curl 手寫 CDP 浪費 2.5 小時。

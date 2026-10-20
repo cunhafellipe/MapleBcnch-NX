@@ -39,15 +39,49 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-3); }
 
-/* Scrollbars that don't fight the theme. */
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
+/* Scrollbars that don't fight the theme.
+ *
+ * SIZED FOR THE THUMB, NOT THE TRACK. The thumb is drawn inside a transparent
+ * border with `background-clip: content-box`, so the DRAGGABLE part is
+ * `width - 2 * border`. At the original 10px / 3px that was **4px** — a target
+ * you can miss, and the 3px either side of it is the content underneath, so a
+ * near-miss selects a row instead of scrolling it.
+ *
+ * Two rounds to get here, both measured the same way and both too small: 20px
+ * with a 4px border gave a 12px handle and was still reported as too thin. The
+ * third step is 30px with a 5px border — a **20px** handle. Going the rest of
+ * the way to a solid 30px handle would mean the scrollbar taking a third of a
+ * narrow panel's width, which trades one unusable control for a different one.
+ *
+ * `scrollbar-width: auto` rather than `thin`: Firefox's `thin` is a fixed width
+ * the page cannot size, and the WebKit rules below do not apply to it at all.
+ * `auto` honours the OS preference and still cannot be made to match exactly —
+ * that is a platform limit, not an oversight here.
+ */
+* { scrollbar-width: auto; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 30px; height: 30px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-3) 35%, transparent);
-  border-radius: 6px; border: 3px solid transparent; background-clip: content-box;
+  background: color-mix(in srgb, var(--text-3) 55%, transparent);
+  border-radius: 10px;
+  /* 30px track - 2 * 5px border = a 20px-wide thumb. */
+  border: 5px solid transparent;
+  background-clip: content-box;
+  /* A long list would otherwise shrink the handle to a few pixels — the same
+     complaint on the other axis. */
+  min-height: 64px;
 }
-*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-3) 60%, transparent); background-clip: content-box; }
+/* Brighter while the pointer is on it, and brightest while it is being dragged,
+   so it is findable. The previous 35% / 60% gave a hover state that was hard to
+   distinguish from the resting one at 1x zoom. */
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-3) 85%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--accent, #4299e1) 80%, transparent);
+  background-clip: content-box;
+}
 
 /* ============================================================
    SHELL
@@ -61,6 +95,12 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .workspace {
   display: grid;
   grid-template-columns: var(--rail-w) var(--tree-w, 288px) minmax(0, 1fr) var(--inspector-w, 384px);
+  /* Its own row is stretched by `align-self: stretch` (the grid default), which
+     already sizes it to the track it is placed in. `grid-template-rows` and
+     `height` were tried here to stop the 56px collapse and changed nothing:
+     a percentage height resolves against the track the item is placed in, so
+     asking a row-1 item to be 100% tall just makes it 56px tall. The collapse
+     is a PLACEMENT bug, not a sizing one -- see the pinning block below. */
   min-height: 0;
   gap: var(--sp-2);
   padding: var(--sp-2);
@@ -70,6 +110,70 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .workspace[data-mode="cashshop"] { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
 .workspace[data-mode="cashshop"] .side-panel,
 .workspace[data-mode="cashshop"] .inspector { display: none; }
+
+/* ---- FOCUS MODE ---------------------------------------------------------
+   One section owns the window: the rail, the file tree, the inspector, the
+   command bar and the status bar are all removed from the grid rather than
+   merely hidden, so the stage gets the whole viewport instead of the 288px +
+   384px + rail that were eating it.
+
+   `data-focus` on <body>, not on the workspace: the chrome to remove lives
+   OUTSIDE #workspace (topbar, statusbar), so a rule scoped to the workspace
+   could not reach them. The section sets it, and clears it on the way out --
+   the exit path is what restores the editor, so the flag is not left to a
+   reload. */
+body[data-focus] .topbar,
+body[data-focus] .statusbar { display: none; }
+
+/* --- Focus mode must not reflow the shell -------------------------------
+   .app is a three-track grid: topbar (--topbar-h), 1fr, statusbar, and the
+   children are AUTO-PLACED into rows 1/2/3. Focus mode hides the chrome with
+   `display:none` -- and display:none removes a grid item from the grid
+   entirely, so .workspace stops being the second item and becomes the only
+   one. Auto-placement then drops it into row 1, the 56px --topbar-h track,
+   and the whole stage collapses to 56px with the canvas clipped out of view.
+
+   Pinning each child to its track makes the layout independent of how many
+   items happen to be in flow; dropping the two dead tracks reclaims the space
+   focus mode was meant to give.
+
+   MEASURED, toggling only these three lines, in the simulator (focus on),
+   at 1584x844, after finishing the running transitions:
+
+     grid-row:auto   ->  .workspace 0px,  .sections 0px    (black screen)
+     grid-row:1/2/3  ->  .workspace 844px, .sections 796px  (canvas 1290x724)
+
+   The same collapse reproduces in a live session with one injected rule and
+   reverses on remove, so this is the whole fix.
+
+   WHY SIZING DECLARATIONS CANNOT FIX IT, because that was tried first and
+   wrongly assumed to be the fix: `grid-template-rows: minmax(0,1fr)` plus
+   `height:100%` written into .workspace changes nothing here -- 0px before,
+   0px after. A percentage height on a grid item resolves against the track it
+   is placed in, so "100% of row 1" IS 56px. The item is in the wrong row; no
+   height value on the item can move it out of one. That is also why the same
+   declarations appeared to "work inline": set as an INLINE style they win the
+   cascade, so they landed on .app -- where overwriting grid-template-rows
+   collapsed the three tracks into one and the item stopped mattering which row
+   it was in. Inline fixed a different element than the stylesheet edit did. */
+.topbar    { grid-row: 1; }
+.workspace { grid-row: 2; }
+.statusbar { grid-row: 3; }
+body[data-focus] .app { grid-template-rows: 0 minmax(0, 1fr) 0; }
+body[data-focus] .workspace {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+  gap: 0;
+  background: var(--bg-surface);
+}
+body[data-focus] .rail,
+body[data-focus] .side-panel,
+body[data-focus] .inspector { display: none; }
+body[data-focus] .stage {
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-surface);
+}
 .workspace[data-panel="hidden"] {
   grid-template-columns: var(--rail-w) 0 minmax(0, 1fr) var(--inspector-w, 384px);
 }
@@ -1335,10 +1439,30 @@ dialog::backdrop { background: var(--bg-overlay); }
 
 /* ============================================================
    RESIZE HANDLES
+
+   The gutter is declared ONCE and used twice — once as this padding, once as
+   the handle's width — because they are the same number and must not be allowed
+   to drift: the handle is an absolutely positioned overlay at the pane's edge, and
+   its hit area has to land in padding that is reserved for it and nowhere else.
+
+   WHY THE PADDING IS NOT COSMETIC. `.tree-scroll` and `.inspector-body` are the
+   scroll containers and they fill the pane. Their scrollbar therefore occupies
+   the pane's outermost 30px, which is exactly where `.resize-handle`
+   (`right: 0` / `left: 0`, `z-index: 5`) sits. Without the padding the handle
+   covered the right 10px of the scrollbar, so pressing the scrollbar resized the
+   panel and only its left 20px scrolled — reported as "the interaction is further
+   left than the scrollbar, and where the scrollbar is I resize". At the original
+   10px track it was worse than partial: the handle covered the WHOLE scrollbar.
+   Two controls cannot share one edge; the padding gives each its own.
    ============================================================ */
+:root { --resize-gutter: 10px; }
+#tree-pane { padding-right: var(--resize-gutter); }
+#inspector { padding-left: var(--resize-gutter); }
+
 .resize-handle {
-  position: absolute; top: 0; bottom: 0; width: 10px;
+  position: absolute; top: 0; bottom: 0; width: var(--resize-gutter);
   cursor: col-resize; z-index: 5;
+  background: transparent;
 }
 .resize-handle::after {
   content: ""; position: absolute; top: 50%; left: 50%;

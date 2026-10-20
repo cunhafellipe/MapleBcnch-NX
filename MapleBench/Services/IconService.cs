@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Drawing;
 using System.Drawing.Imaging;
 using MapleLib.WzLib;
@@ -67,7 +67,14 @@ public sealed class IconService
         }
         catch (Exception ex)
         {
-            _log.LogDebug(ex, "Icon lookup failed for {ItemId}", itemId);
+            // W-059: this was LogDebug, and Program.cs:91 configures
+            // AddSimpleConsole with the default minimum level -- Information. So the
+            // line was never emitted: 200,000 consecutive `info:` lines in the
+            // server log and not one `dbug:`. An exception here did not merely fail
+            // quietly, it failed with the evidence switched off, which is why
+            // "every item icon is 404" had no cause to point at. Warning is the
+            // lowest level this host actually prints.
+            _log.LogWarning(ex, "Icon lookup failed for {ItemId}", itemId);
         }
 
         if (_cache.Count >= MaxCacheEntries)
@@ -124,7 +131,28 @@ public sealed class IconService
         // Everything else is grouped: Item.wz/<group>/0204.img/02040000/info/icon
         string groupImage = (itemId / 10000).ToString("D4") + ".img";
         WzImage? grouped = FindImage("Item", groupImage);
-        return grouped == null ? null : ReadIcon(grouped, itemId.ToString("D8"));
+        if (grouped == null) return null;
+        // The entry key is NOT uniformly eight digits, and reading it as though it
+        // were costs 543 items their icon. MEASURED 2026-10-16, full census of every
+        // numeric entry key in Item.nx: Consume 2293/2293 eight-digit, Cash 484/484,
+        // Etc 2375/2375, Install 294/294 -- but Special is 4 of 584, because
+        // 0910.img holds 538 seven-digit keys and 0911.img five, while 0900.img holds
+        // four eight-digit ones. `f7/Special/0910.img/9100000` answers 200 and
+        // `…/09100000` answers 404, which is exactly the key this line used to ask for.
+        //
+        // Both widths, in the reference's order. `UICashShop.cpp:1111` builds
+        // `item["Special"]["0910.img"][std::to_string(commodity.itemid)]["icon"]` --
+        // UNPADDED -- and `MapleNecrocer/ItemTooltipRender2.cs:78` likewise formats
+        // `{1}` with no width beside a `{0:D4}` group. `MapDrops.cpp:40-45` uses
+        // literal eight-digit keys, but only for 0900, which is the one Special image
+        // that is eight-digit. So: D8 first (it wins for 5,450 of 5,554 entries), then
+        // bare. Reachable from `GET /api/cash/icon/{itemId}` (Endpoints.cs:266).
+        foreach (string key in new[] { itemId.ToString("D8"), itemId.ToString() })
+        {
+            WzImageProperty? icon = ReadIcon(grouped, key);
+            if (icon != null) return icon;
+        }
+        return null;
     }
 
     /// <summary>

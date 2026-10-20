@@ -34,6 +34,11 @@ public static class Endpoints
         MapAssets(api);
         api.MapDomains();
         api.MapSkills();
+        // Cast simulation. Separate from the skill EDITOR above: that one writes
+        // the archive, this one only derives a plan from it.
+        api.MapSkillCasts();
+        // Animation defect reporting. Reads the same AnimationService the viewer does.
+        api.MapAnimationAudits();
         api.MapTransfers();
         api.MapImport();
         api.MapAudit();
@@ -283,6 +288,39 @@ public static class Endpoints
     private static void MapSession(RouteGroupBuilder api)
     {
         api.MapGet("/files", (WzSessionService session) => Results.Ok(session.ListFiles()));
+
+        // What archives sit in a folder, by path.
+        //
+        // Added so the client can open a WHOLE client folder without being told
+        // its contents: the archives in a client arrive together or not at all
+        // (Map.nx without Character.nx is a map with no people on it), and a
+        // caller that had to name them all was a caller with a hard-coded list
+        // -- wrong for every client whose file set differs from the one it was
+        // written against.
+        //
+        // A listing, not an open: this is the question "what is there", which
+        // /api/files/open-many cannot answer because it needs the answer first.
+        api.MapGet("/files/listing", (string path) =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return Results.BadRequest(new { error = "a folder path is required" });
+            try
+            {
+                string full = Path.GetFullPath(path);
+                if (!Directory.Exists(full))
+                    return Results.NotFound(new { error = $"no folder at '{path}'" });
+                return Results.Ok(Directory
+                    .EnumerateFiles(full, "*.nx", SearchOption.TopDirectoryOnly)
+                    .Select(f => new { name = Path.GetFileName(f), path = f })
+                    .OrderBy(f => f.name, StringComparer.OrdinalIgnoreCase)
+                    .ToList());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or ArgumentException or NotSupportedException)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
 
         api.MapPost("/files/open", (OpenRequest request, WzSessionService session,
             StringPoolService strings, IconService icons, WzSaveService save, WarmupService warmup) =>

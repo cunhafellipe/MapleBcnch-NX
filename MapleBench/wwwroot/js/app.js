@@ -313,6 +313,59 @@ class App {
     return this.propertyTypes;
   }
 
+  /**
+   * Open every archive in a client folder, once one of them is open.
+   *
+   * The folder is read, not a list of names: a v83 client has sixteen archives
+   * and a modern one has more than that, and a hard-coded list is a list that
+   * is wrong on whichever client it was not written for. Whatever `.nx` is in
+   * the folder next to the archive already open is what gets opened.
+   *
+   * They go in ONE request. /api/files/open-many takes the whole list, so a
+   * sixteen-archive client is one round trip rather than sixteen, and nothing
+   * here depends on any other archive opening first.
+   *
+   * By name, never by id: ids are handed out per session in open order, so "f3"
+   * is a different archive on a different server.
+   *
+   * A folder with nothing to add is not a failure, and neither is one that is
+   * missing some of its archives -- a client that has no Item.nx still draws
+   * everything else. A failure here is only ever "this one did not open", and
+   * the consumers that need it say so by name.
+   */
+  async preloadClient() {
+    if (this._preloading) return this._preloading;
+    const anchor = (this.files ?? []).find((f) => f?.filePath && !f.readOnly);
+    if (!anchor?.filePath) return;
+
+    const root = anchor.filePath.replace(/[\\/][^\\/]+$/, '');
+    let listing = [];
+    try {
+      listing = await api.listFolder(root);
+    } catch {
+      return;                       // not a folder this server can list
+    }
+    const names = (Array.isArray(listing) ? listing : (listing?.files ?? []))
+      .filter((f) => /\.nx$/i.test(f.name ?? f.filePath ?? ''))
+      .map((f) => f.name);
+    if (!names.length) return;
+
+    const have = new Set((this.files ?? []).map((f) => f.name));
+    const missing = names.filter((n) => !have.has(n));
+    if (!missing.length) return;
+
+    this._preloading = api.openMany(missing.map((name) => `${root}\\${name}`))
+      .catch(() => null)
+      .then(() => {
+      // The opens registered server-side; refresh once so the tree, the sections
+      // and this.files all agree, and clear the guard so a later archive can
+      // trigger another pass.
+      this._preloading = null;
+      return this.refreshFiles();
+    }).catch(() => { this._preloading = null; });
+    return this._preloading;
+  }
+
   async refreshFiles(pending) {
     const previousIds = this.files.map((file) => file.id).sort().join('|');
     this.files = await (pending ?? api.files());
@@ -334,6 +387,23 @@ class App {
     this.updateStatus();
     rememberSession(this.files);
     if (this.panel === 'changes') renderChanges($('#panel-changes'), this);
+
+    // Pre-load the rest of the client, the moment one archive of it is open.
+    //
+    // A client folder is fifteen archives and they arrive together or not at
+    // all: Map.nx without Character.nx draws a map with no people on it, Mob.nx
+    // without String.nx cannot name a spawn, Effect.nx without Base.nx has no
+    // damage glyphs. Nothing about opening the first one says the rest are
+    // wanted, so the session used to sit on exactly the archives the picker
+    // named -- and every consumer of a missing one reported it as missing art
+    // rather than as a half-open client.
+    //
+    // Done HERE because this is the one place that already runs on every change
+    // to the file set, and it already knows whether the set changed. Opening
+    // them at the point of use instead -- the walk, the mob cache, the look --
+    // costs a round trip per consumer and shows a figure with no face for the
+    // frames in between.
+    if (fileSetChanged) await this.preloadClient();
 
     // The welcome screen belongs only to an empty session. Select the first
     // archive as soon as a client opens so the stage, breadcrumb and inspector

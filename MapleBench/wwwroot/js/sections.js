@@ -163,6 +163,13 @@ export class Sections {
     this.active = section?.id ?? REAL[0];
     localStorage.setItem(STORE_KEY, this.active);
 
+    // Where the simulator's exit button should go: the section that was on
+    // screen before it took the window. Recorded BEFORE `active` moves, and
+    // only when leaving for somewhere else -- re-opening the simulator from a
+    // reload keeps the last real destination instead of overwriting it with
+    // 'simulator', which would make exit a no-op.
+    if (previous !== this.active) this.previousSection = previous;
+
     this.render({ animate: previous !== this.active });
     if (!this.app.files.length) return;
     // Capabilities are asked once per visit rather than per keystroke: they
@@ -187,6 +194,14 @@ export class Sections {
     }
     this.host.className = 'stage-body sections';
     this.host.dataset.navCollapsed = this.navCollapsed ? 'true' : 'false';
+
+    // Focus mode is the simulator's, and it is the ONLY thing that takes the
+    // whole window. Any section change that is not the simulator hands the
+    // window back, here rather than in the simulator's own exit path -- because
+    // the section list is how a user leaves a full-screen view without
+    // finding the button, and a flag nothing clears on that route leaves an
+    // editor with no chrome and no way to see it.
+    if (this.active !== 'simulator') delete document.body.dataset.focus;
 
     this.paintList();
 
@@ -447,6 +462,16 @@ export class Sections {
         clear(stage);
         stage.className = 'stage-body';
         stage.append(simulator.root);
+        // Where "exit" goes. Set here because only the section list knows the
+        // previous section -- the simulator cannot know what the user came from,
+        // and guessing wrong would drop them somewhere they did not ask for.
+        //
+        // Leaving the simulator through any OTHER path -- the section list, a
+        // link, an error that reopens a section -- must also give the window
+        // back, so render() clears the flag rather than trusting this one
+        // callback to be the only exit. Without that, switching sections while
+        // the simulator is focused leaves the editor invisible.
+        simulator.onExit = () => { this.open(this.previousSection ?? 'mapedit'); };
         await simulator.open();
       } catch (error) {
         clear(stage);

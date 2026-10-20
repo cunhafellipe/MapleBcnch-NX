@@ -57,32 +57,61 @@
 }
 
 .sim-grid {
-  display: grid;
-  /* The verdict is the point of this page, so the picker is capped rather than
-     proportional: at 3fr/1fr the reason sentence wrapped to one word per line
-     on a 1600px window.
-     `minmax(0, 1fr)` is load-bearing on the second column. Without it the
-     verdict column sized to its content, the definition list inside it collapsed
-     its second column to zero width, and every value rendered as nothing while
-     the labels still showed. Grid items default to min-content minimum; this
-     column needs permission to shrink and then take the space.
+  /* One column. The picker no longer sits beside the verdict -- it overlays the
+     canvas (see .sim-picker below) -- so there is nothing to split the width
+     with and no breakpoint at which the list has to be given up to keep the
+     picture. `position: relative` is what the overlay is positioned against.
   */
-  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
-  gap: var(--gap-4, 16px);
+  grid-template-columns: minmax(0, 1fr);
+  position: relative;
   min-height: 0;
   min-width: 0;
   flex: 1;
 }
 
-@media (max-width: 900px) {
-  .sim-grid { grid-template-columns: 1fr; }
-}
+/* ---- map picker, as an overlay ------------------------------------------
+   Absolutely positioned over the canvas rather than laid out beside it. It is
+   opened from the header and closed by picking a map or pressing the button
+   again; `hidden` keeps it out of the way entirely when closed, so it cannot
+   swallow clicks on the canvas underneath.
 
+   The shadow and the opaque backdrop are not decoration: without them the
+   list over a dark map reads as part of the map, and the reader cannot tell
+   where the overlay stops. */
 .sim-picker {
+  position: absolute;
+  z-index: 20;
+  inset: 12px auto 12px 12px;
+  width: min(420px, calc(100% - 24px));
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  padding: 10px;
+  border: 1px solid var(--line, #333);
+  border-radius: var(--radius, 8px);
+  background: color-mix(in srgb, var(--surface, #1a1a1a) 96%, transparent);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+  backdrop-filter: blur(6px);
+}
+
+.sim-picker[hidden] { display: none; }
+
+/* The exit button. Deliberately the loudest control in the header: it is the
+   only way out of a full-screen view, and a user who cannot find it is stuck
+   looking at a map with no editor. */
+.sim-exit {
+  font-weight: 650;
+  border-color: color-mix(in srgb, var(--accent, #3498db) 45%, transparent);
+}
+
+.sim-exit:hover {
+  background: color-mix(in srgb, var(--accent, #3498db) 14%, transparent);
+}
+
+.sim-map-btn.on {
+  border-color: var(--accent, #3498db);
+  background: color-mix(in srgb, var(--accent, #3498db) 12%, transparent);
 }
 
 .sim-search {
@@ -368,6 +397,97 @@
 
 .walkview-controls .check-row { display: flex; align-items: center; gap: 6px; margin: 0 0 0 8px; }
 
+/* The equipment bar: one row per set of slots, sitting between the transport
+   controls and the HUD. Twelve <select>s at 1000 ids apiece would be an
+   unreadable wall at any width, so they wrap into labelled rows and each one
+   is capped -- the id is eight digits and the reader is looking at a
+   character, not a catalogue. */
+.walkview-equip {
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+  font-size: var(--fs-12);
+}
+.walkview-equip:empty { display: none; }
+.walkview-equip-row { display: flex; align-items: center; gap: 4px; margin: 0; }
+.walkview-equip-row > span { color: #a0aec0; white-space: nowrap; }
+.walkview-equip-select {
+  font-size: var(--fs-12);
+  padding: 2px 4px;
+  max-width: 9.5em;
+  background: var(--bg-2, #2d3748);
+  color: inherit;
+  border: 1px solid var(--border, #4a5568);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.walkview-equip-none { color: #e07a5f; }
+
+/* Equipment picker: slot tabs, then a wall of thumbnails.
+   The twelve <select>s it replaced are gone because a picker that shows
+   "01040005.img" is not a picker. Thumbnails come from the WZ at native size
+   and CSS fits them, matching the benchmark: AvatarForm.cs has no Resize or
+   Scale call anywhere, ImageListView.ThumbnailSize does the fitting at paint
+   time. Hence image-rendering: pixelated rather than smooth -- the art is
+   26..45px and smoothing it would invent colours that are not in the WZ. */
+.walkview-equip {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: var(--fs-12);
+  min-width: 0;
+}
+.walkview-equip:empty { display: none; }
+.walkview-equip-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.walkview-equip-tab {
+  font-size: var(--fs-12); padding: 2px 8px; cursor: pointer;
+  background: var(--bg-2, #2d3748); color: inherit;
+  border: 1px solid var(--border, #4a5568); border-radius: 4px;
+}
+.walkview-equip-tab.is-active {
+  background: var(--accent, #4299e1); color: #fff; border-color: var(--accent, #4299e1);
+}
+/* W-081: how many images the slot holds, beside its name. Every id is listed --
+   `loadEquipSlots` asks `api.children` for the whole folder and caps nothing -- but
+   a picker that pages silently reads as one that stops early, so the count is on
+   the tab rather than only in the tooltip. */
+.walkview-equip-count {
+  margin-left: 6px; opacity: .65; font-variant-numeric: tabular-nums;
+}
+.walkview-equip-tab.is-active .walkview-equip-count { opacity: .9; }
+
+/* W-081: the bookmarks. Numbered because they answer to their digit, and a
+   control that looks reachable but is not is the complaint they exist to remove. */
+.walkview-bookmark { font-size: var(--fs-12); padding: 2px 8px; white-space: nowrap; }
+.walkview-bookmark::first-letter { font-weight: 700; }
+/* One slot at a time, and Cap/ alone holds 908 images -- so the grid scrolls
+   inside a fixed band instead of pushing the controls off the panel. */
+.walkview-equip-grid {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  max-height: 11rem; overflow-y: auto; overflow-x: hidden;
+  padding: 2px; align-content: flex-start;
+}
+.walkview-equip-tile {
+  position: relative; width: 46px; height: 52px; padding: 2px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  cursor: pointer; background: var(--bg-1, #1a202c); color: var(--muted-fg, #a0aec0);
+  border: 1px solid var(--border, #4a5568); border-radius: 4px;
+}
+.walkview-equip-tile:hover { border-color: var(--accent, #4299e1); }
+/* is-worn is the one piece of state that has to survive a re-render: the grid
+   is rebuilt on every equip, so without it the worn tile loses its mark the
+   instant you click it. */
+.walkview-equip-tile.is-worn {
+  border-color: var(--accent, #4299e1);
+  box-shadow: inset 0 0 0 1px var(--accent, #4299e1);
+  background: var(--bg-2, #2d3748);
+}
+.walkview-equip-tile img {
+  width: 40px; height: 32px; object-fit: contain;
+  image-rendering: pixelated; pointer-events: none;
+}
+.walkview-equip-id {
+  font-size: 9px; line-height: 1; opacity: .75;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.walkview-equip-strip { font-size: 10px; align-self: center; margin: auto 0; }
+
 .walkview-hud {
   font-size: var(--fs-12);
   color: #a0aec0;
@@ -375,6 +495,114 @@
   min-height: 1.4em;
   word-break: break-word;
 }
+
+/* THE DEAD BANNER.
+   It replaces the HUD's run-on line rather than joining it, because the one fact
+   that matters when the character is dead is that the keys do nothing — and a fact
+   appended after "x=1710 y=-25 · foothold 114 · on ground" is a fact nobody reads
+   while wondering why the attack button stopped working.
+   The button is the prompt the reference puts on screen
+   (UIStateGame.cpp:548-556 -> UIRevive): one action, and it is the only way out. */
+.walkview-dead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+.walkview-dead-text {
+  color: #fc8181;
+  font-weight: 500;
+}
+.walkview-revive { flex: none; }
+
+/* The invincibility toggle. Its own row because it is a MODE, not a fact: the
+   HUD reports what is, this decides what will be. */
+.walkview-god-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-12);
+}
+.walkview-god {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #a0aec0;
+  cursor: pointer;
+  user-select: none;
+}
+.walkview-god input { accent-color: var(--accent, #4fd1c5); cursor: pointer; }
+
+/* The character sheet: its own row, above the HUD's run-on line.
+   `.walkview-hud` is a `·`-joined list of facts about the MAP and the VIEW;
+   the sheet is a fact about the CHARACTER, and a reader who wants to know what
+   a weapon just did should not find it between "missing tile art" and a
+   foothold count. Every number in it comes from `frame.status`. */
+.walkview-sheet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: var(--fs-12);
+  color: #a0aec0;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 0;
+}
+.walkview-sheet:empty { display: none; }
+.walkview-sheet-group { white-space: nowrap; }
+.walkview-sheet-group b { color: #e2e8f0; font-weight: 500; }
+
+/* HP as a bar rather than a fraction alone: it is the one number on screen that
+   decides whether the next hit matters, and a fraction in a row of numbers is
+   something to read rather than something to see. MP stays a fraction — the
+   base pool is 10 (Character.cs:16) and a bar for ten points is noise. */
+.walkview-sheet-pool {
+  position: relative;
+  display: inline-block;
+  min-width: 74px;
+  height: 14px;
+  border-radius: 3px;
+  background: #2d3748;
+  overflow: hidden;
+}
+.walkview-sheet-pool i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  background: #48bb78;
+  transition: width 120ms linear;
+}
+.walkview-sheet-pool.is-low i { background: #e07a5f; }
+.walkview-sheet-pool u {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  text-decoration: none;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+  font-size: var(--fs-11);
+}
+
+/* The camera row: nudge each way, and hand the camera back to the character.
+   OWN DESIGN — the reference has no camera controls; MapleCharacter.cs:749-755
+   drives the camera from the character every frame and nothing else moves it.
+   It is kept out of the flex-wrap controls cluster so the four arrows stay
+   together instead of being split across a wrap boundary. */
+.walkview-camera-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border, #2a3140);
+}
+/* Grab cursor only while the camera is actually free, so the canvas does not
+   advertise a drag that follow() will undo on the next frame. */
+.walkview-canvas.is-free { cursor: grab; }
+.walkview-canvas.is-panning { cursor: grabbing; }
 
 /* The map list is a <select> now: a Chinese name is something a reader can
    recognise, and 5,366 of them in a scrolling div is neither. */

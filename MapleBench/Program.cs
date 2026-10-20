@@ -90,6 +90,25 @@ public static class Program
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
         builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
 
+        // ASP.NET logs SIX Information lines per HTTP request at the default
+        // level: Request starting, Executing endpoint, Setting status, Writing
+        // value, Executed endpoint, Request finished. The simulator alone calls
+        // POST /api/simulate/session/{id}/frames at 60 Hz, and the gate runs 26
+        // suites of hundreds of requests each.
+        //
+        // MEASURED 2026-10-17: one working session produced a 70 MB
+        // mb-5591.out.log, ~87% of it those per-request lines. Nothing was wrong
+        // with the backend; it was simply writing a diary of every frame. On a
+        // laptop that is 70 MB of pointless disk and it buries the lines that
+        // DO matter -- a failed bind, a save refusal, an encoding error -- in
+        // noise nobody will scroll to the bottom of.
+        //
+        // So the framework's request logging drops to Warning and stays there.
+        // The application's own services log at Information and are unaffected:
+        // `MapleBench.Services.*` is what a reader actually came for.
+        builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+        builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+
         builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
         {
             options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -122,7 +141,44 @@ public static class Program
         builder.Services.AddSingleton<WzSaveService>();
         builder.Services.AddSingleton<WzSearchService>();
         builder.Services.AddSingleton<WzRenderService>();
+        // String.wz-backed ids and names. Registered here rather than
+        // auto-registered because PortService takes it as a constructor
+        // argument and DI does not auto-resolve constructor dependencies.
         builder.Services.AddSingleton<StringPoolService>();
+        // Swing boxes and mob geometry, read from whichever Character and Mob
+        // archives are open. A singleton so every caller shares one reader.
+        builder.Services.AddSingleton<Services.Simulate.CombatService>();
+        // Cast-time resolution for skills. Reads the same archives as
+        // CombatService and is a singleton for the same reason.
+        builder.Services.AddSingleton<Services.Simulate.SkillCastService>();
+        // Animation defect reporting over the existing animation reader.
+        builder.Services.AddSingleton<Services.Simulate.AnimationAuditService>();
+        // The mob bestiary page: Mob.nx/<id>.img/info plus the String.nx
+        // MonsterBook entry. Same archives as CombatService, same reason for a
+        // singleton.
+        builder.Services.AddSingleton<Services.Simulate.MobBestiaryService>();
+        // Equipment totals, read off each item's own info/inc* nodes.
+        builder.Services.AddSingleton<Services.Simulate.EquipStatsService>();
+        // What each NPC can say and the balloon it says it in. The lookup is two
+        // hops -- Npc.nx names string KEYS, String.nx carries the lines -- so it
+        // cannot be folded into the label reader that only needs the name.
+        builder.Services.AddSingleton<Services.Simulate.NpcChatService>();
+        // The standing simulation audit: a query over ONE live session, so it is
+        // scoped rather than shared.
+        builder.Services.AddScoped<Services.MapEditor.SimAuditService>();
+        // One live body per session id, shared by every caller. The store
+        // holds the parsed map AND the character, so a per-request service
+        // would give each frame a different body -- which is the reason this
+        // exists at all rather than being another stateless /step.
+        builder.Services.AddSingleton<Services.Simulate.MapSimSessionStore>();
+        // MemoryPressureService below: as a singleton so the diagnostics
+        // endpoint can ask it for one pass, and as a hosted service so the SAME
+        // instance ticks on a heartbeat. This is what makes a body advance with
+        // no request in flight -- before it, POST /session/{id}/frame was the
+        // only thing that moved a character, so the game ran at the speed of
+        // whoever was watching.
+        builder.Services.AddSingleton<Services.Simulate.SimClockService>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<Services.Simulate.SimClockService>());
         builder.Services.AddSingleton<IconService>();
         builder.Services.AddSingleton<CashShopService>();
         builder.Services.AddSingleton<MobService>();
@@ -134,6 +190,17 @@ public static class Program
         builder.Services.AddSingleton<PortService>();
         builder.Services.AddSingleton<NodeFactsService>();
         builder.Services.AddSingleton<AnimationService>();
+
+        // Resolves a mob id to the frames it can draw. Singleton for the same
+        // reason AnimationService is: it reads the same open archives under the
+        // same session gate, and a per-request copy would re-walk Mob.nx's image
+        // tree for every mob on the map on every frame.
+        builder.Services.AddSingleton<Services.MapEditor.MobSpriteService>();
+
+        // The look composer is a singleton for the same reason AnimationService
+        // is: it reads the same open archives under the same session gate, and a
+        // per-request copy would rebuild the zmap/smap tables on every draw.
+        builder.Services.AddSingleton<LookService>();
         builder.Services.AddSingleton<ExportService>();
         builder.Services.AddSingleton<XmlExportService>();
         builder.Services.AddSingleton<DumpService>();

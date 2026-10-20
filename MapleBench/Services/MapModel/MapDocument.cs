@@ -222,6 +222,35 @@ public sealed class MapDocument
     /// list empty, which is indistinguishable from a legitimately empty image
     /// unless the return value is checked.
     /// </param>
+    /// <summary>
+    /// Read a map from an NX image's properties, WITHOUT copying them.
+    /// </summary>
+    /// <remarks>
+    /// The editor cannot use this: it needs a tree it can edit and write back
+    /// without disturbing the archive, which is why it deep-clones an NX map into
+    /// a fresh <c>WzImage</c> (MapEditorService.cs:501). That copy is 2.5 GB
+    /// resident against 0.1 MB for the original, and the process dies of it
+    /// without an exception.
+    ///
+    /// A read-only caller pays no reason for it. The resulting document shares the
+    /// archive's nodes, so it must not be written through and must not outlive the
+    /// session lock it was read under.
+    /// </remarks>
+    public static MapLoadResult LoadShared(WzPropertyCollection properties, string name)
+    {
+        ArgumentNullException.ThrowIfNull(properties);
+
+        List<WzNode> nodes = WzNode.ReadProperties(properties, out bool complete);
+        if (!complete)
+        {
+            return MapLoadResult.Refused(
+                name, MapRefusal.WalkStopped,
+                $"'{name}' could not be read completely, so part of it is not in the model.");
+        }
+
+        return MapLoadResult.Loaded(new MapDocument(name, nodes));
+    }
+
     public static MapLoadResult Load(WzImage image)
     {
         ArgumentNullException.ThrowIfNull(image);

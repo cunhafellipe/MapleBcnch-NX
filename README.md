@@ -7,6 +7,30 @@ MapleBench is a Windows WZ editor and dependency-aware client importer for Maple
 
 ---
 
+# 專案狀態在哪裡
+
+**專案控制權威在 [`pm/`](pm/README.md)。** 這份 README 說這個工具是什麼；
+`pm/` 說這個專案現在到哪裡、接下來做什麼、以及為什麼。
+
+```powershell
+python tools/pm.py status     # 整個專案，一個畫面
+python tools/pm.py next       # 接下來 3 件事
+python tools/pm.py show W-030 # 單一工作項目的完整內容
+python tools/pm.py check      # 結構稽核
+python tools/pm.py gate       # 建置、部署、跑完所有門檻
+```
+
+- 狀態只存在 `pm/work/*.md` 的 frontmatter，`tools/pm.py` 是唯一寫入者。
+- `pm/STATE.md` 由 `status` 生成，不可手改。
+- **沒有 `evidence=` 就不准 close 一個工作項目**（工具會拒絕）。
+- `JOURNAL/` 是歷史，**不是**用來回答「現在狀態是什麼」的。
+  見 [`pm/archive-index.md`](pm/archive-index.md)。
+
+新接手（人或 agent）請先讀：`pm/README.md` → `pm/RULES.md` →
+`pm/GATE.md` → `pm/TRAPS.md` → `pm/PARITY.md`。五分鐘內可以上手。
+
+---
+
 # 這個專案是誰做出來的
 
 先講人，再講功能。

@@ -24,6 +24,12 @@
 .sections {
   display: grid;
   grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  /* `grid-template-rows: minmax(0,1fr)` + `height:100%` were added here to fix
+     the simulator's 56px collapse and are NOT the fix -- measured identical at
+     every viewport from 400px to 1200px tall, with and without them. .sections
+     is stretched to its track by the default `align-self: stretch` anyway, and
+     its own single row is sized by that stretched box. The real fix is the
+     grid-row pinning in app.css; see the comment there for the measurements. */
   min-height: 0;
   overflow: hidden;
   padding: 0;

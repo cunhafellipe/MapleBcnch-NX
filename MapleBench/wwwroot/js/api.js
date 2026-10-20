@@ -127,6 +127,9 @@ export const api = {
   preflight: (fileId) => get(`/api/files/${q(fileId)}/preflight`),
   browse: (path) => get(`/api/browse${path ? `?path=${q(path)}` : ''}`),
   openMany: (paths, options = {}) => post('/api/files/open-many', { paths, ...options }),
+  /** What archives a folder holds, by absolute path. Lets the client open a
+   * whole client folder without a hard-coded list of its file names. */
+  listFolder: (path) => get(`/api/files/listing?path=${q(path)}`),
   openImgFolder: (path, options = {}) => post('/api/files/open-img-folder', { path, ...options }),
   scan: (path) => get(`/api/scan?path=${q(path)}`),
   changes: () => get('/api/changes'),
@@ -206,6 +209,64 @@ export const api = {
 
   /* ---------- media ---------- */
   animation: (path) => get(`/api/animation?path=${q(path)}`),
+
+  /* The COMPOSED look for one pose -- every layer, its zmap rank, its slot mask,
+     its priority, the anchor that applies to it, and the paint order. The
+     browser blits what this returns and makes no decision of its own; sorting
+     or anchoring on this side would be a second implementation of
+     CharLook.cpp, and the two would eventually disagree. */
+  look: (opts = {}) => {
+    const p = new URLSearchParams();
+    if (opts.fileId) p.set('fileId', opts.fileId);
+    if (opts.hair) p.set('hair', opts.hair);
+    if (opts.face) p.set('face', opts.face);
+    p.set('stance', opts.stance ?? 'stand1');
+    p.set('frame', String(opts.frame ?? 0));
+    return get(`/api/simulate/look?${p}`);
+  },
+  /* The same look WITH equipment on, as a slot map.
+     POST rather than a GET with more query keys, and that is the server's
+     decision too (SimulatorEndpoints.cs:189-205): nineteen optional keys in a
+     query string is not a shape anything should have to spell, and a GET that
+     ignored a misspelled slot would be indistinguishable from a cap that
+     resolved and drew nothing. The POST answers with the identical DTO and
+     names every slot it could not wear in `unresolved`. */
+  lookEquipped: (opts = {}) => post('/api/simulate/look', {
+    fileId: opts.fileId || undefined,
+    stance: opts.stance ?? 'stand1',
+    frame: opts.frame ?? 0,
+    equip: opts.equip || {},
+  }),
+
+  /* Every pose the open Character archive carries, and how many frames each
+     has. 157 entries on the v83 sheets.
+
+     This is the answer a caller needs BEFORE it picks a frame. A sweep over 80
+     stance/frame pairs once found 56 that returned nothing, and every one was
+     a caller mistake: six of those stance names ("sitted", "move",
+     "ladder-rope", "ladder-bottom", "sit-stand", "prone-stand") are not names
+     any sheet in Character.nx uses -- they are MapleNecrocer-ish spellings of
+     things the archive calls something else -- and the rest were frame indices
+     past the end of a real pose. Both came back HTTP 200 with an empty part
+     list, which is why they could not be told apart from the outside.
+
+     clampFrame() below is the caller-side half of that fix. */
+  lookStances: (fileId) => get(`/api/simulate/look/stances${fileId ? `?fileId=${q(fileId)}` : ''}`),
+
+  /* The slots there are, how many images each holds, and five to start with.
+     Asked before anything is composed, because a picker cannot offer a cap
+     whose id it does not know (SimulatorEndpoints.cs:209-217). */
+  lookSlots: (fileId) => get(`/api/simulate/look/slots${fileId ? `?fileId=${q(fileId)}` : ''}`),
+
+  /* Every child of a node, for the full image list of a slot's folder. The
+     slot table above samples five per slot; a picker needs all of them, and
+     this is the same listing the slot table itself reads. */
+  children: (path) => get(`/api/children?path=${q(path)}`),
+
+  /* Which session file ids are open, so a caller can address `f3/Cap/...`
+     without hardcoding a file id that is assigned per session. */
+  files: () => get('/api/files'),
+
   preview: (path, limit = 60) => get(`/api/preview?path=${q(path)}&limit=${limit}`),
   thumbUrl: (path) => `/api/thumb?path=${q(path)}`,
   canvasUrl: (path) => `/api/canvas?path=${q(path)}`,
@@ -234,6 +295,20 @@ export const api = {
 
   /* ---------- mobs ---------- */
   mobCapabilities: () => get('/api/mob/capabilities'),
+
+  /* Every action one mob or NPC can draw, with each frame's own origin and
+     delay and where its art really lives when info/link moved it. The kind
+     ('m' or 'n') is sent because a map's mobs and NPCs name ids from two
+     different archives under one key -- omitting it asks the wrong archive and
+     gets the same empty answer as "no art". */
+  mobSprite: ({ mobId, kind, fileId } = {}) => {
+    const p = new URLSearchParams();
+    p.set('mobId', mobId ?? '');
+    p.set('kind', kind || 'm');
+    if (fileId) p.set('fileId', fileId);
+    return get(`/api/simulate/mob-sprite?${p}`);
+  },
+
   // fileId is optional and omitted rather than sent empty: no fileId means
   // "every open Mob archive", which is not the same request as fileId="".
   mobList: (fileId, names = true) =>
