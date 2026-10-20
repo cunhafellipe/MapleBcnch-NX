@@ -46,7 +46,26 @@
 | B7 | `Validate` 的 touching 規則可能誤報出廠地圖 | **未量測**，語料記 38/784,735 例外 | 🟡 |
 | B8 | 單筆 `delete` 留下斷鏈（批次刪有做） | **實測**：每次刪除產生 4 個斷鏈錯誤，懸空 id 會解析到其他圖層同名 id | 🟡 |
 | B9 | `NxArchive.GetAudioOffset` 回傳未驗證 offset | 唯讀。今日無活洞（消費者都走 `NxAudio.EncodedRange`） | 🟡 |
-| B10 | `tools/NxMergeMap/Program.cs` 無 flush 保護 | 靜態 | 🔄 **task-12** |
+
+> ~~B10 `tools/NxMergeMap` 無 flush 保護~~ → **2026-08-20 結案：整支工具已刪除。**
+> 稽核發現它在 `Program.cs:35` 就必定拋 `InvalidCastException`（NX 轉出的檔案裡沒有 `WzDirectory`），
+> 所以「沒有 flush」本來就在不可達路徑上，而且全 repo 沒有任何程式或文件呼叫它。
+> 保留它等於保留一支從未成功執行過的工具。已由使用者決定刪除（commit 見 git log）。
+
+---
+
+## A（續）. 2026-08-20 新完成的四條
+
+| # | 缺陷 | 影響 | 證據 | 提交 |
+|---|---|---|---|---|
+| A18 | `InvalidDataException` 落進 catch-all | 所有「檔案損壞」回 **HTTP 500** + `Something went wrong.` | 損壞 fixture → 400 + 真正的訊息；正向控制 404/200 未退化 | `796fcd4` |
+| A19 | `NxWriter.Ensure` 的 `size *= 2` int 溢出自旋 | **存 Mob.nx 永久卡死後端**：100% CPU、記憶體不動、**永久持有 session gate** | 重現：探針印出 `size` 走 1073741824 → -2147483648 → 0 → 0 永久。修後 **4.1 秒**存完，峰值 7,212 MB | `b4acf6f` |
+| A20 | 模擬時鐘的 `try` 在 `while` 外 | 任一例外**永久殺死整個時鐘**，症狀只有一行 log | 故障注入：session A `frame=5` 後隔離、session B 正常推進到 663；log 共 5 行後靜默 | 未提交（見下） |
+| A21 | `session.Frame++` 在例外時不前進 | 效果回收條件永不成立 → **容器無界成長 + 畫面殘留閃光永久掛著** | 同上：`frame=5` 證明 `finally` 生效 | 未提交（見下） |
+
+> A20/A21 已在 `MapleBench/Services/Simulate/` 修好，但該目錄**從基線起就不是 git 追蹤的**
+> （基線 `4816856` 與 HEAD 都是 0 個檔案）。2026-08-20 由使用者決定納入版控，11,559 行、12 檔。
+> 沒有版控的話這個已驗證的 P0 修復會遺失，而且 `git diff` 完全看不到它。
 
 ---
 
@@ -54,14 +73,25 @@
 
 | 工單 | 內容 | 負責 |
 |---|---|---|
-| task-7 (T7a) | `NxArchive.Validate` 註解錯誤 + Node record 驗證缺口（先分析） | `analyst-nx` |
-| task-8 (TB2) | `NxWriter` ≥1 GiB 的實際行為與可達性 | `verifier-nx` |
-| task-4 (TC2-1) | `MapSimSessionStore.cs` 3,779 行 session 生命週期 | `analyst-reverify` |
-| task-9 (TC2-2) | `SkillCastService` + `CombatService` 4,527 行 NaN / 每 tick 配置 | `analyst-map` |
-| task-10 (TC2-3) | Simulate 其餘 9 檔 2,125 行，含 SimClock `try` 位置查證 | `verifier-comments` |
-| task-5 (TC1) | MapEditor 快照讀取點全清點 | `reviewer-nx` |
-| task-11 (T404) | `InvalidDataException` 進例外階梯（**本輪唯一寫入者**） | `implementer-nx` |
-| task-12 (T405) | `tools/NxMergeMap/Program.cs` 存檔保證比對 | `tooling-auditor` |
+| task-17 (P1) | `NodeCount = -1` 讓 Validate 的 node block 檢查整個失效 → `0xC0000005` | 待派 |
+| task-16 (P1) | 檔案提供的 `mobCount` / `Radius` 直接當迴圈上界，可撐出數億次配置 | 待派 |
+| task-14 (T406) | 例外階梯有兩份副本，`DumpEndpoints` 那份仍把損壞檔案回成 500 | 待派 |
+| task-18 (P2) | `NxSink` 把整個封存在記憶體裡組裝，Mob.nx 峰值 7.2 GB | 待派 |
+
+## C2. 已完成並結案的工單
+
+| 工單 | 結論 |
+|---|---|
+| task-4 (TC2-1) | `MapSimSessionStore`：`Gate` 就是全域 WZ session 鎖；**每幀傳送門會在鎖內做封存讀取**；session 無數量上限；`Mobs` 清單只增不減 |
+| task-5 (TC1) | MapEditor 快照讀取：**無剩餘**會讓壞地圖靜默通過的點。我給的四個行號線索全是錯的 |
+| task-7 (T7a) | 六個 node record 欄位裡**只有 `firstChild`/`childCount` 沒防護**，其餘四個在使用點會拋。Validate 不該掃 node 表 |
+| task-8 (TB2) | B2 成立且 Mob.nx 已中招；**B3 被 B2 遮蔽，目前不可達** |
+| task-9 (TC2-2) | **NaN 假設被推翻** —— HP 全是 `int`，NaN 到不了 HP 比較。但 `mobCount`/`Radius` 無界是真的 |
+| task-10 (TC2-3) | SimClock 的 `try` 確實在迴圈外；`DamageRoll` 是零呼叫點的死碼 |
+| task-11 (T404) | `InvalidDataException` → 400，已提交 |
+| task-12 (T405) | 工具在第 35 行就死，整支刪除 |
+| task-13 (P0) | 時鐘死亡 + `Frame` 凍結，已修並驗證 |
+| task-15 (P0) | `NxWriter` 溢出自旋，已修並驗證 |
 
 ---
 

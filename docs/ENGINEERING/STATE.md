@@ -255,12 +255,34 @@ TOTAL PROCESS DEATHS: 0
 
 ## 待決事項（等 lead 或使用者決定）
 
-- `tools/NxMergeMap/Program.cs` 是獨立工具，自己做 backup + `File.Move`，**沒走已加固的 flush 路徑**。是否開工單？
-- PID 29852：同 repo 的後端跑在 port 5600，鎖住 `bin\Release`。歸屬不明，未動。
-  > 2026-08-20 更新：另抓到 pid 22228（`--browser --port 5591`）。
-  > 現在首選解法是 `-p:OutDir=$env:TEMP\mb-build\`，**不必殺任何程序**。
-- task-2：模擬器 **11,431 行的**無界工作與每 tick 配置量測，已開單未派。
-  > 修正：先前記的「10,581 行」是錯的 —— `Measure-Object -Line` 不數空白行。
+- ~~`tools/NxMergeMap/Program.cs` 是獨立工具，自己做 backup + `File.Move`，**沒走已加固的 flush 路徑**。是否開工單？~~
+  → **2026-08-20 結案並刪除。** 稽核發現它在 `Program.cs:35` 就必定拋 `InvalidCastException`
+  （`NxToWzFile` 轉出的根目錄只放 `WzImage`，不會有 `WzDirectory`），
+  所以它**從來沒跑到過存檔程式碼** —— 「沒有 flush」本來就在不可達路徑上。
+  且全 repo 沒有任何程式或文件呼叫它。由使用者決定刪除。
+- ~~PID 29852：同 repo 的後端跑在 port 5600~~ → **已結案。** 後來是 PID 16948（port 5591，帶 `--browser`）
+  與 PID 22116（port 5623）。**全部保留，不殺** —— 首選解法是 `-p:OutDir="$env:TEMP\..."` 建置，
+  既能跑閘門又不干擾任何人。
+- ~~task-2~~ → **已拆成 task-4 / 9 / 10 三張，全部完成。**
+  （先前記的「11,431 行」也不準 —— `Measure-Object -Line` 不數空白行；實際 11,559 行、12 檔。）
+
+---
+
+## 2026-08-20 的兩個 P0（都已修並實測）
+
+| | 缺陷 | 症狀 | 證據 |
+|---|---|---|---|
+| A | `NxWriter.Ensure` 的 `size *= 2` int 溢出 | **存 Mob.nx 永久卡死後端**：100% CPU、記憶體不動、**永久持有全域 session gate**、從不產生 scratch 檔 | 重現時探針印出 `size`：1073741824 → -2147483648 → 0 → 0 永久。修後存檔 **4.1 秒** |
+| B | `SimClockService` 的 `try` 在 `while` 外 | 任一 session 拋例外 → **整個模擬時鐘永久死亡**，症狀只有一行 log | 故障注入：壞的 session 隔離在 `frame=5`，正常的推進到 `frame=663`；log 共 5 行後靜默 |
+
+> B 的註解 `:76-81` 宣稱「One bad pass is logged and the loop carries on」—— **與程式碼相反**。
+> 這是本專案同一缺陷類（「程式碼與自己的相鄰註解矛盾」）的第 4 次實例。
+
+### 一個必須記錄的版控事實
+
+`MapleBench\Services\Simulate\` **從基線 `4816856` 到 HEAD 都是 git 未追蹤的**（0 個檔案）。
+已驗證的 P0 修復因此不在版控內、`git diff` 完全看不到它。2026-08-20 由使用者決定納入版控
+（12 檔、11,559 行）。**下一個人若再遇到「改了檔但 diff 是空的」，先確認那個檔案有沒有被追蹤。**
 
 ---
 
