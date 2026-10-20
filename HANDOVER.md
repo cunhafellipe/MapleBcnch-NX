@@ -51,7 +51,8 @@ MapleStory 的 WZ/NX 檔案編輯器。`.wz` 是 Maplesoft 的私有格式，
 | P0-1 | `PaletteSets` 回報素材真的有像素（`drawableEntries`） | AI 選素材需要誠實的可用性 | 109/109 set 有像素、有縮圖 |
 | P0-2 | `/validate` 端點：地圖規則檢查 | 斷鏈在畫面上看不出來 | 故意切斷→抓到→undo 修復；10/10 抽樣地圖與人工分析一致 |
 | P1-1 | `/batch` 端點：多次編輯 = 單一 undo | undo 堆疊只有 200 格 | 300 操作→歷史只加一筆→單次 undo 全撤 |
-| P2-2 | **`MapleMcp`：10 個地圖工具的 MCP 伺服器** | 舊 MCP 有 18 工具但 0 個能操作地圖 | 只經 MCP 跑完整流程 ALL PASSED |
+| P2-2 | **`MapleMcp`：10 個地圖工具 + 通用 `wz_asset_*` 的 MCP 伺服器** | 舊 MCP 有 18 工具但 0 個能操作地圖 | 只經 MCP 跑完整流程 ALL PASSED |
+| — | **`wz_asset_merge_nx`：候選 IMG 合併進 `.nx`**（SAO 第一層 `910870003`） | 合併是作者流程最後一步，做成 MCP 工具而非腳本 | 實機 `Map.nx` 已合併：8,400,281→8,400,592 節點、27.6 秒、`verified: true`、舊地圖未動；18 footholds / 3 portals / 7 life 經獨立解析器確認 |
 | — | 地圖結構規格（10 張地圖解剖） | 後續所有工作的依據 | `docs/MAP-STRUCTURE.md` |
 
 ### 2.2 上一輪（2026-10-11 稍早）做的事

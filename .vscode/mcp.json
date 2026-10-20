@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "maplebench": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/wz-mcp-map.cmd",
+      "env": {
+        "WZ_SERVER": "http://127.0.0.1:5100"
+      }
+    }
+  }
+}

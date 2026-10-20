@@ -40,6 +40,8 @@ public static class Endpoints
         // Animation defect reporting. Reads the same AnimationService the viewer does.
         api.MapAnimationAudits();
         api.MapTransfers();
+        api.MapNxMerge();
+        api.MapNxMerge();
         api.MapImport();
         api.MapAudit();
         api.MapRepair();

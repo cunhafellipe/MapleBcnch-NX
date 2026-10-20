@@ -108,6 +108,15 @@ public static class Program
                     art is the right art. Do not report a rendering as
                     verification of anything beyond that.
 
+                    To put a finished candidate .img INTO an archive the client
+                    opens, use wz_asset_merge_nx. It takes the target .nx and a
+                    list of {source, target} entries, previews with commit=false,
+                    then rewrites the whole archive (it keeps a timestamped
+                    backup and verifies the bytes by re-reading them). The target
+                    archive must NOT be open in this session. Use this for map
+                    IMGs and their object art; wz_map_save is for edits inside an
+                    archive that is already open.
+
                     SAFETY. Every mutating tool takes commit and defaults to
                     false, which reports what it would do and changes nothing.
                     Preview, read the result, then commit. Nothing touches disk
