@@ -100,8 +100,17 @@ public sealed partial class MapEditorService
             //
             // Ids are unique only inside a layer/group, so "the id exists" proves
             // nothing about whether the character can step onto it. The client
-            // never asks: CreateFootholds resolves the link while building the
-            // chain and stores it as an object reference.
+            // never asks: it resolves the link BY ID, map-wide, and never
+            // compares endpoints.
+            //
+            // WHICH foothold the client would actually resolve to is the FIRST
+            // one carrying that id, in the order the tree is read. clean-client
+            // keys its footholds by id ALONE (FootholdTree.h:120, an
+            // unordered_map<uint16_t, Foothold>) and emplaces them, so a
+            // duplicated id keeps the first one emplaced; get_fh() then looks
+            // the id up with no layer filter at all (FootholdTree.cpp:369-377).
+            // There is no layer condition here for the same reason there is
+            // none there: adding one would report maps the client plays fine.
             foreach (MapFoothold fh in footholds)
             {
                 if (!TryEndpoints(fh, out int ax1, out int ay1, out int ax2, out int ay2))
@@ -113,20 +122,27 @@ public sealed partial class MapEditorService
                     if (string.IsNullOrEmpty(value) || value == "0")
                         continue;
 
-                    bool meets = false;
+                    // The candidate the client would resolve to: the FIRST
+                    // foothold carrying this id, in read order.
+                    MapFoothold? candidate = null;
                     foreach (MapFoothold cand in footholds)
                     {
-                        if (!string.Equals(cand.Id, value, StringComparison.Ordinal))
-                            continue;
-                        if (TryEndpoints(cand, out int bx1, out int by1, out int bx2, out int by2)
-                            && Touches(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2))
+                        if (string.Equals(cand.Id, value, StringComparison.Ordinal))
                         {
-                            meets = true;
+                            candidate = cand;
                             break;
                         }
                     }
 
-                    if (meets)
+                    // NO foothold carries this id: rule 2 above has already
+                    // reported it ("which does not exist"). Reporting it here
+                    // as well counted every dangling id twice and put two
+                    // contradictory messages in one response.
+                    if (candidate is null)
+                        continue;
+
+                    if (TryEndpoints(candidate, out int bx1, out int by1, out int bx2, out int by2)
+                        && Touches(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2))
                         continue;
 
                     result.BrokenChains++;
