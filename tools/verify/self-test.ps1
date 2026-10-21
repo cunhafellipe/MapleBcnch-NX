@@ -4,10 +4,10 @@
 # must first pass a known-answer smoke test that shows it produces a non-zero
 # and correct result."
 #
-# This file is that smoke test for the six tools in this directory. Every case
-# reproduces one of the five recorded tool failures, or the two new ones found
-# while building the toolkit, and asserts that the tool now gives the RIGHT
-# answer instead of the plausible wrong one.
+# This file is that smoke test for the seven tools in this directory. Every
+# case reproduces one of the six recorded tool failures, or the two new ones
+# found while building the toolkit, and asserts that the tool now gives the
+# RIGHT answer instead of the plausible wrong one.
 #
 # All fixtures are built at run time under the temp directory. This file
 # contains no non-ASCII characters; the CJK characters used in the fixtures are
@@ -350,6 +350,37 @@ foreach ($f in @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File 
 }
 Add-Case -Id 'R1-all-tools-are-ascii' -Expectation 'no tool file contains a non-ASCII byte' `
     -Ok ($nonAsciiFiles.Count -eq 0) -Evidence ("offenders: " + ($nonAsciiFiles -join '; '))
+
+# =========================================================================
+# INCIDENT 12 : a renamed DTO field read as a missing property, counting 0
+# =========================================================================
+# The payload carries the name the DTO had BEFORE the rename, and the script
+# reads the name it has AFTER. In PowerShell a property that is not there is
+# $null, $null added to a counter is 0, and the run reports a number: "0
+# candidates were excluded", while the truth was 924.
+#
+# The payload travels base64 so the case needs no fixture file and no quoting
+# on a command line.
+$inc12Json = '{"playerDamage":12,"status":{"hp":50,"maxHp":50},"mobs":[{"hp":30,"maxHp":40}],"excludedByOrientation":0}'
+$inc12B64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($inc12Json))
+
+# The direction that matters: the field the script is about to read is NOT in
+# the payload, and the tool has to say so by name and exit non-zero.
+$rInc12Missing = Invoke-Tool -Script 'require-fields.ps1' -ToolArgs @(
+    '-JsonBase64', $inc12B64, '-Fields', 'excludedByNotForwardOriented', '-Context', 'the foothold probe')
+$inc12Message = [string](Get-ToolField -Out $rInc12Missing.Out -Field 'MESSAGE')
+Add-Case -Id 'INC12-renamed-field-fails' -Expectation 'a field the payload does not carry fails by name, instead of being counted as zero' `
+    -Ok (($rInc12Missing.Exit -eq 1) -and $inc12Message.Contains('excludedByNotForwardOriented')) `
+    -Evidence ("exit=" + $rInc12Missing.Exit + ' ' + $inc12Message)
+
+# The other direction, and it is not optional: without it the case above is
+# also satisfied by a tool that fails on everything. This one says the tool
+# still passes on the fields that ARE there.
+$rInc12Present = Invoke-Tool -Script 'require-fields.ps1' -ToolArgs @(
+    '-JsonBase64', $inc12B64, '-Fields', 'playerDamage,status.hp,mobs[].hp')
+Add-Case -Id 'INC12-present-fields-pass' -Expectation 'the fields the payload does carry pass, so the failure above is about the missing field and not about the tool' `
+    -Ok ($rInc12Present.Exit -eq 0) `
+    -Evidence ("exit=" + $rInc12Present.Exit + ' ' + [string](Get-ToolField -Out $rInc12Present.Out -Field 'MESSAGE'))
 
 # --- summary --------------------------------------------------------------
 Write-Output ''

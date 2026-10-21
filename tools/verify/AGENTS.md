@@ -1,12 +1,16 @@
 # AGENTS.md — `tools/verify`
 
 Scripts that decide whether a change is correct. **These tools have been wrong
-five times, and every time they returned a plausible-looking wrong answer rather
+six times, and every time they returned a plausible-looking wrong answer rather
 than an obvious failure.** That is the failure mode to design against.
 
 ---
 
 ## Every failure here returned valid-looking data
+
+The numbers in the first column are **project-wide incident numbers**, not a
+count of the rows: #12 is the twelfth failure of this shape in the project and
+the sixth recorded in this directory.
 
 | # | What happened | Why it was dangerous | Rule it produced |
 |---|---|---|---|
@@ -15,6 +19,7 @@ than an obvious failure.** That is the failure mode to design against.
 | 3 | `Where-Object { $_ -notlike '??*' }` — PowerShell's `-like` treats `?` as a single-character wildcard, so the filter matched **everything**. 35 genuinely modified files were reported as 0. | A filter bug that reported "clean tree". | Use `-notmatch '^\?\?'`, never `-like` with `?`. |
 | 4 | `Get-Content` on a UTF-8 file without a BOM mangled the Chinese text, making intact code look corrupted. | Looked like data loss; would have prompted a bogus "fix". | Use `read-text-safe.ps1`. |
 | 5 | A regex was written across a message split over three concatenated string literals, so a **fixed** file was reported as **not fixed**. | The gate said "fail" on correct code. | Assert with `content-assert.ps1 -NeedleFile`, which matches the file's real bytes. |
+| 12 | A DTO field was renamed (`excludedByOrientation` -> `excludedByNotForwardOriented`) and a measurement script kept the old name. In PowerShell a property that is not there is `$null`; `$null` added to a counter is `0`. The run reported **"0 candidates were excluded"** while the filter had in fact removed **924**. It threw nothing, printed no error, and exited 0. | A **missing** field and a **zero** are indistinguishable in the output. Read on its own, the CSV says the filter does nothing at all. | **Name every field you are about to read, and check that it exists first.** See `require-fields.ps1` and rule 9. |
 
 Two of these were **the same bug twice**: #5 had already produced a dedicated
 tool, and the tool was not used.
@@ -26,23 +31,37 @@ tool, and the tool was not used.
 1. **A tool that cannot measure must fail loudly.** Return non-zero, or emit a
    token the caller greps for. Never let a measurement collapse to `0`, `""`,
    `null`, or an empty array and let that pass as data.
-2. **Always run `self-test.ps1` after changing anything here.** It carries 23
-   known-answer cases precisely so the five failures above cannot return.
+2. **Always run `self-test.ps1` after changing anything here.** It carries 25
+   known-answer cases precisely so the six failures above cannot return.
    **It takes no `-RepoRoot`** — its only parameter is `-KeepFixtures`.
 
    ```powershell
    powershell -File tools\verify\self-test.ps1
    ```
 
-   Expected on a healthy tree, verified 2026-08-20:
+   Expected on a healthy tree. The counts depend on the environment, so read
+   the case list rather than the totals when you are checking a specific
+   number. Of the twenty-five cases, **seven need git** (the two
+   `git-status-report` groups and the two `eol-check` groups) and **two more
+   need a usable `DOTNET_ROOT`**; every case that cannot run reports SKIP
+   rather than silently disappearing.
+
+   The environment the 2026-08-20 numbers were taken in had git but no usable
+   `DOTNET_ROOT`:
 
    ```
-   CASES_PASS=21
+   CASES_PASS=23
    CASES_FAIL=0
    CASES_SKIP=1
    RESULT=PASS
    TRUST=HIGH
    ```
+
+   That is the old `21/0/1` plus the two incident-12 cases, which need neither
+   git nor `DOTNET_ROOT` and so run everywhere. Where `DOTNET_ROOT` is usable
+   the two conditional cases run as well and the skip disappears:
+   `CASES_PASS=25 CASES_FAIL=0 CASES_SKIP=0`. Where git is missing, seven more
+   cases skip: `CASES_PASS=18 CASES_FAIL=0 CASES_SKIP=2`.
 
    Anything else means this tooling is now unreliable.
 3. **Known-answer tests only.** A test that cannot fail proves nothing.
@@ -98,6 +117,29 @@ tool, and the tool was not used.
    that check was unreachable by any existing artifact — it was reachable and
    the artifact was there. **List the directory before concluding an input
    does not exist.**
+
+9. **Name every field you are about to read, and check it exists first.**
+   A missing field and a field whose value is 0 look identical in the
+   output, and only one of them is a measurement. In PowerShell a property
+   that is not there is `$null`; in JavaScript it is `undefined`; in Python
+   `d['x']` raises but `d.get('x')` returns `None` and keeps going. None of
+   them stops a script, and none of them prints anything.
+
+   Use `require-fields.ps1`. It takes the payload and the list of field paths
+   the script is about to read, and fails with the field **named** and a
+   non-zero exit when one of them is not there:
+
+   ```powershell
+   # -JsonBase64 carries the JSON without quoting it onto a command line.
+   $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+   & "$PSScriptRoot\require-fields.ps1" -JsonBase64 $b64 `
+       -Fields 'playerDamage','status.hp','mobs[].hp' -Context 'the session frame'
+   if ($LASTEXITCODE -ne 0) { throw 'the frame did not carry the fields this script reads' }
+   ```
+
+   A field that is present but **null**, and an array path whose array is
+   **empty**, are failures too: both are a measurement that measured nothing.
+   Use `-AllowNull` only when a null is a value the script really accepts.
 
 ---
 
