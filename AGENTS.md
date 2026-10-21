@@ -28,7 +28,6 @@ two traps make it fail on this machine. This is the command that works,
 verified 2026-08-20 (0 warnings, 0 errors):
 
 ```powershell
-$env:DOTNET_ROOT = 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current'
 & 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current\dotnet.exe' build `
     MapleBench\MapleBenchX.csproj -c Release -v minimal --nologo
 ```
@@ -36,6 +35,17 @@ $env:DOTNET_ROOT = 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current'
 **Trap 1 — wrong SDK on `PATH`.** `dotnet` on `PATH` is **8.0.425**; the only
 .NET 10 SDK is the scoop one (**10.0.401**). A bare `dotnet build` fails with
 `NETSDK1045`. There is **no `global.json`** here, so nothing redirects you.
+
+**Setting `DOTNET_ROOT` is NOT enough** — verified 2026-10-22: with
+`DOTNET_ROOT` exported, `dotnet` on `PATH` still resolved to
+`C:\Program Files\dotnet\dotnet.exe` (8.0.425) and the build failed with
+`NETSDK1045`. **Invoke the 10.0.401 muxer by absolute path**, as above.
+(Pinning `DOTNET_ROOT` only affects which runtime an *apphost* picks up; it
+does not change which SDK the `dotnet` command resolves.)
+
+**A `global.json` pinning 10.0.401 would remove the ambiguity** — it does not
+exist yet, and adding one is a separate decision because it changes what
+happens for anyone using the PATH `dotnet`.
 
 **Trap 2 — a running backend locks the build output.** `MSB3021`/`MSB3027`
 "cannot access … being used by another process" means a backend is still alive.
