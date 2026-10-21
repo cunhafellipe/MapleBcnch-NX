@@ -1,0 +1,332 @@
+# SPEC.yaml — MapleBench 的唯一真實來源（SPEC v2）
+#
+# 這份檔案回答三個問題，而這三個問題以前只能靠記性：
+#   1. 這個專案有那些功能組件（areas）？哪些壞了會傷到使用者（criticality）？
+#   2. 每一個判官（suite）覆蓋哪些組件？它報綠用什麼標記？它報得出紅嗎？
+#   3. 哪些東西不該被破壞（invariants）？
+#
+# 格式刻意沿用 pm.py 的最小 YAML 子集：純量、方括號陣列、兩層縮排。
+# 冷啟動的 agent 不需要 parser、schema 或相依套件就能讀它。
+#
+# 路由數是 2026-10-16 實測的（Api/*.cs 裡 MapGet/MapPost 的第一段路徑），
+# 判官與其涵蓋面是掃 25 支 suite 腳本實際呼叫的端點前綴得出來的，不是推測。
+
+areas:
+  - id: save
+    title: 存檔鏈路
+    criticality: high
+    routes: ["/api/files/save", "/api/files/open", "/api/files/open-many", "/api/files/open-img-folder"]
+    note: >
+      壞掉會吃掉使用者的原始資料。README 的承諾在這裡。2026-10-16 實測：
+      使用者的 16 個封存全是 .nx，所以實際走的是 SaveNx，不是 README 描述的
+      SaveArchive —— 後者對他們是死碼。
+  - id: node
+    title: 節點瀏覽與編輯
+    criticality: high
+    routes: ["/api/node", "/api/children", "/api/inspect", "/api/search", "/api/replace", "/api/edit", "/api/delete", "/api/clone", "/api/browse"]
+    note: 編輯器每天在用的那條路。2026-10-16 起有第一個判官（node-verify, W-068）。
+  - id: mapedit
+    title: 地圖編輯器
+    criticality: high
+    routes: ["/api/maps", "/api/mapasset", "/api/minimap", "/api/batch", "/api/validate", "/api/place", "/api/create", "/api/auto-foothold", "/api/foothold-chain", "/api/set-layer-ts", "/api/undo", "/api/redo", "/api/history", "/api/changes", "/api/palette"]
+    note: 這個分支相對上游的招牌功能，也是 README 拿來對標的。
+  - id: simulate
+    title: 模擬器
+    criticality: med
+    routes: ["/api/simulate", "/api/session", "/api/walk", "/api/character", "/api/step", "/api/cast", "/api/trace", "/api/geometry", "/api/advice", "/api/probe", "/api/capabilities", "/api/debug"]
+  - id: skill
+    title: 技能
+    criticality: med
+    routes: ["/api/skill", "/api/skill-cast", "/api/db"]
+  - id: mob
+    title: 怪物
+    criticality: med
+    routes: ["/api/mob", "/api/mob-sprite", "/api/mob-info", "/api/mob-attacks", "/api/mob-catalog"]
+  - id: npc
+    title: NPC
+    criticality: med
+    routes: ["/api/npc", "/api/npc-chat", "/api/npc-name"]
+  - id: string
+    title: 字串
+    criticality: low
+    routes: ["/api/string"]
+  - id: items
+    title: 道具與商城
+    criticality: med
+    routes: ["/api/items", "/api/item", "/api/icon", "/api/cashshop"]
+  - id: repair
+    title: 修復服務
+    criticality: low
+    routes: ["/api/repair"]
+  - id: dump
+    title: 傾出與匯出
+    criticality: low
+    routes: ["/api/dump", "/api/export"]
+  - id: import
+    title: 匯入
+    criticality: med
+    routes: ["/api/import"]
+  - id: compose
+    title: 客戶端合成
+    criticality: low
+    routes: ["/api/compose"]
+  - id: port
+    title: 移植
+    criticality: low
+    routes: ["/api/port"]
+  - id: family
+    title: 客戶端家族
+    criticality: low
+    routes: ["/api/family", "/api/families"]
+  - id: render
+    title: 繪製與預覽
+    criticality: low
+    routes: ["/api/canvas", "/api/thumb", "/api/preview", "/api/raw", "/api/audio", "/api/scan", "/api/look", "/api/animation", "/api/portal-icons"]
+
+# --------------------------------------------------------------------------- #
+# 判官註冊表。gate.ps1 消費這份表，不再維護一份手寫清單。
+#
+# asserts=false 的 suite 不能報紅，那正是 W-057 存在的理由；
+# one_shot=true 的 suite 每個伺服器只能跑一次（2026-10-16 實測：
+# save-audit 固定路徑第一次綠、第二到四次全在複製那一步 Errno 22）。
+# --------------------------------------------------------------------------- #
+suites:
+  - id: ladder-all
+    file: ladder-all.ps1
+    runner: powershell
+    verdict: "ALL LADDERS PASS"
+    asserts: true
+    areas: [simulate]
+  - id: attack-test
+    file: attack-test.ps1
+    runner: powershell
+    verdict: "VERDICT:"
+    asserts: true
+    areas: [simulate]
+  - id: skill-test
+    file: skill-test.ps1
+    runner: powershell
+    verdict: "VERDICT: skill-test"
+    asserts: true
+    areas: [simulate, skill]
+  - id: mob-attack-verify
+    file: mob-attack-verify.ps1
+    runner: powershell
+    verdict: "closed the distance"
+    asserts: true
+    areas: [simulate, mob]
+  - id: first-attack-verify
+    file: first-attack-verify.ps1
+    runner: powershell
+    verdict: "PASS:"
+    asserts: true
+    areas: [simulate, mob]
+  - id: npc-label-check
+    file: npc-label-check.ps1
+    runner: powershell
+    verdict: "VERDICT: npc-label-check"
+    asserts: true
+    areas: [npc, string]
+    added: W-069
+    note: >
+      W-069 修好了。原本 28 行全是 Invoke-RestMethod 與 Write-Host，零比較零 throw，
+      gate 因此對一個不可能失敗的 suite 顯示 ok。還有第三種更安靜的失敗：迴圈在第一個
+      有 NPC 的區域 break、沒有的 continue，所以「整張圖都沒有 NPC」時它什麼都沒驗
+      就通過。現在那個情況會大聲報紅。
+  - id: sim-skills-check
+    file: MapleBench/tools/sim-skills-check.mjs
+    runner: node
+    verdict: "passed,"
+    asserts: true
+    areas: [simulate, skill]
+  - id: npc-chat
+    file: npcchat-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, npc]
+  - id: sim-health
+    file: simhealth-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate]
+    flaky: true
+    note: 2026-10-16 實測：單跑 BAD=0，在 gate 上下文曾 BAD=1，原因未查清。
+  - id: npc-chat-frame
+    file: npcchat-frame-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, npc]
+  - id: knockback
+    file: knockback-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, mob]
+  - id: attack-drop
+    file: attackdrop-verify.py
+    runner: python
+    verdict: ""
+    asserts: true
+    red_marker: ">>> RED"
+    areas: [simulate, mob]
+  - id: skill-key
+    file: skillkey-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, skill]
+  - id: projectile
+    file: projectile-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, mob]
+  - id: hold-key
+    file: holdkey-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate]
+  - id: npc-name
+    file: npcname-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [npc, string]
+  - id: mob-fly
+    file: mobfly-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, mob]
+  - id: ball-art
+    file: ballart-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, mob]
+  - id: attack-after
+    file: attackafter-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, mob]
+    note: >
+      W-067 修好了。它原本把「探針第一次看到 entry 的幀」當成「entry 被建立的幀」，
+      於是對一個已經被解釋並收工（W-040）的正確行為報 BAD=2。實測：entry 在第一次
+      被看到時已經 1383ms 老，而 delay 是 1600ms，正確答案是 (1600-1383)/16.67 = 13.0
+      幀，它量到的也正是 13。現在斷言的是「延遲到之前沒有任何一幀可測」。
+  - id: node-verify
+    file: node-verify.py
+    runner: python
+    verdict: "VERDICT: node-verify"
+    asserts: true
+    areas: [node]
+    added: W-068
+    note: >
+      `node` 區域的第一個判官，2026-10-16。在此之前 234 條路由裡編輯器日常那條路
+      完全沒有判官。斷言的是承諾，不是今天的性質：descriptor 不得帶 value（R-2）、
+      節點名大小寫不敏感（T-10）、缺席必須是 null/錯誤而不是 0（R-5）、
+      編輯只留在記憶體且檔案被標記 dirty（README）。
+  - id: skill-e2e
+    file: skill-e2e.py
+    runner: python
+    verdict: "VERDICT: skill-e2e"
+    asserts: true
+    areas: [simulate, skill]
+    added: W-070
+    note: >
+      技能施放的完整鏈路，一次走完：面板綁定 → 按鍵解析 → 施放 → 姿勢 → 傷害 → 怪的 HP。
+      它同時讀取**實際載入的** livewalk.js 原始碼，用正則斷言 onKeyDown 裝的是
+      skill.skillId 而不是 skill.key（W-065 的那個字元），所以客戶端那一半不是複製品。
+      實測 14 斷言 3/3 綠，傷害 103-104，封存的 level/1/damage 是 135。
+  - id: browser-verify
+    file: MapleBench/tools/browser-verify.mjs
+    runner: node
+    verdict: "VERDICT: browser-verify"
+    asserts: true
+    areas: [simulate, skill]
+    added: W-079
+    note: >
+      唯一看得到 canvas 的判官。用 **playwright-core**——DSH 自己就帶著那份
+      (DSH_PROFILE_DIR\node_modules\playwright-core)，真按鍵、真等待，不用 npm install。
+      ADR-0005 的四條驗收標準全部在這裡斷言：鍵送出數字 id、姿勢是封存寫的 brandish1、
+      特效畫在 anchor - origin 且等於封存原尺寸 (DrawArgument.h:143)、怪的 HP 1000 -> 900。
+      **不要自己寫 CDP。** 第一版用 Node 內建 WebSocket 手寫了 300 行 CDP client，
+      還得手動 await live.tick() 灌幀；--headless=new 會跑 requestAnimationFrame，
+      頁面自己的 loop 和手動灌幀搶同一個 LiveWalk，輸的那次 this.busy 已經是 true 而
+      什麼都沒做——同一台伺服器、同一份 build，綠一次紅一次。page.keyboard.down/up 和
+      page.waitForFunction 讓這兩件事根本不會發生。實測 12 斷言連續 4 次全綠。
+    file: revive-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate]
+  - id: mobinfo-verify
+    file: mobinfo-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [mob]
+  - id: equipstats-verify
+    file: equipstats-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [items, simulate]
+  - id: equipset-verify
+    file: equipset-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [items, simulate]
+  - id: sheetfields-verify
+    file: sheetfields-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate]
+  - id: sheet-verify
+    file: sheet-verify.py
+    runner: python
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate]
+  - id: save-audit
+    file: save-audit.py
+    runner: python
+    verdict: "VERDICT: save-audit"
+    asserts: true
+    areas: [save]
+    one_shot: true
+    fresh_server: true
+    in_gate: false
+    note: >
+      不在 gate 裡，這是結論不是遺漏。沒有 POST /api/files/close，每個開過的
+      封存都保持記憶體映射，外部程序開不了它寫入。固定路徑每個伺服器只能跑
+      一次；每輪唯一路徑則每輪洩漏一個封存（實測跑到 36 個，之後 sim-health
+      在 gate 裡變紅）。依 pm/GATE.md「會亂叫的 gate 比沒有 gate 更糟」。
+
+# --------------------------------------------------------------------------- #
+# invariants — 不可破壞的東西。doctor 會逐條檢查。
+# --------------------------------------------------------------------------- #
+invariants:
+  - id: avatar-md5
+    kind: md5
+    file: "MapleBench/wwwroot/js/avatar.js"
+    md5: a1eb2eb47af42e07ee048762c2592456
+    why: 這個專案不應該碰它。變了代表有東西伸進了不該碰的檔案。
+  - id: data-root-untouched
+    kind: mtime-newer-than
+    path: 'C:\MUWORK\GAME\MPSHS'
+    why: >
+      測試一律用副本。任何測試寫進這個目錄都是在改使用者的原始資料。
+      2026-10-16 的 save-audit 每次都assert MPSHS 的 md5 前後一致。
+  - id: gate-has-verdict-markers
+    kind: file-contains
+    file: "gate.ps1"
+    contains: ">>> RED"
+    why: gate 只認顯式標記；這一條是 gate 自己可信的前提。

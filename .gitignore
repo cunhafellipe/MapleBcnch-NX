@@ -420,3 +420,9 @@ tools/probe/acc.json
 
 # Local test data: a copy of Map.nx used for simulator runs.
 .simdata/
+
+# PM-generated reports. Reproducible from pm/SPEC.yaml with `python tools/pm.py`,
+# so version control keeps the source and not the output.
+pm/STATE.md
+pm/COVERAGE.md
+pm/START-HERE.md

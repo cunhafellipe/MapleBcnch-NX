@@ -1,0 +1,93 @@
+# MapleBench — project configuration.
+#
+# The single place a value that appears in more than one command lives. If you
+# are about to type a path or a port into a second file, it belongs here first.
+
+name: MapleBench
+goal: >
+  A WZ/NX file browser and MapleStory map simulator, at parity with two
+  reference clients. "Parity" means: for a named reference behaviour, this
+  project produces the same observable result, and where it cannot, it says so
+  in code with the citation that stopped it.
+
+# --------------------------------------------------------------------------
+# the two references, and which one wins
+# --------------------------------------------------------------------------
+references:
+  primary:
+    name: MapleNecrocer (C#)
+    root: 'C:\MUWORK\GAME\_necrocer_src\MapleNecrocer'
+    role: >
+      The tool this project is a browser for. It is a STRIPPED FORK of Kagamia's
+      WzComparerR2: the stat-aggregation layer and the weapon damage table are
+      present, the damage-application layer is NOT vendored at all.
+  authority:
+    name: clean-client (C++)
+    root: 'C:\MUWORK\GAME\MPSH\clean-client\src'
+    role: >
+      The actual game client. Wins on any conflict (studio rule 7.6) because it is
+      the thing being reproduced, not a viewer of it.
+conflict_rule: >
+  On any conflict the C++ wins. Record the disagreement in the work item; do not
+  average, do not silently pick. Note that a C# construct with no C++ counterpart
+  is not thereby wrong — port it and cite it.
+
+# --------------------------------------------------------------------------
+# data
+# --------------------------------------------------------------------------
+data_root: 'C:\MUWORK\GAME\MPSHS'
+archives: [Character, Base, String, Map, Mob, Npc, Item, Skill, Quest,
+           Effect, Etc, Morph, Reactor, Sound, TamingMob, UI]
+archive_note: >
+  The list above is the ORDER used by scripts/open-archives.py. Archive file ids
+  f1..fN depend on open order, so never hard-code "f5 is Mob" — re-derive from
+  GET /api/files every session.
+measured_facts:
+  Map_nx_size: 678 MB
+  Map_nx_ram: ~13.5 GB
+  mob_images: 2053
+  monster_book_entries: 344
+  mob_info_paddamage_present: 342 of 343 sampled
+  mob_info_category_present: 14 of 343 sampled
+  mob_info_icon_present: 0 of 2053
+
+# --------------------------------------------------------------------------
+# build and run
+# --------------------------------------------------------------------------
+sdk: 'C:\MUWORK\app\scoop\apps\dotnet-sdk\10.0.401\dotnet.exe'
+sdk_note: >
+  ONLY this SDK builds this project. `dotnet` on PATH is SDK 8 and fails.
+  Never pass -p:BaseIntermediateOutputPath — it produces duplicate AssemblyInfo
+  and 22x CS0579.
+target_framework: net10.0-windows
+output_dir: bin/Release/net10.0-windows
+launch: >
+  <sdk10>/dotnet.exe MapleBenchX.dll --port <N> --allow-multiple --no-browser
+  NEVER run MapleBenchX.exe directly.
+test_port: 5591
+banned_ports: [5480]
+test_map: 'f4/Map/Map1/100000004.img'
+test_spawn: [1710, -25]
+scratch_dir: '%LOCALAPPDATA%\hermes\cache\scratch'
+
+# --------------------------------------------------------------------------
+# the loop
+# --------------------------------------------------------------------------
+gate_command: python tools/pm.py gate
+status_command: python tools/pm.py status
+check_command: python tools/pm.py check
+step: 1000/60
+frame_rule: >
+  Every duration is FRAME-COUNTED. Never Environment.TickCount for gameplay —
+  replays then differ by client frame rate.
+
+# --------------------------------------------------------------------------
+# project control
+# --------------------------------------------------------------------------
+work_dir: pm/work
+state_file: pm/STATE.md
+journal: JOURNAL
+journal_rule: >
+  JOURNAL/ is history and is never read to answer "what is the state". A new
+  agent reads pm/STATE.md and pm/work/. Journal entries stay because the
+  measurements in them are not reproducible cheaply.
