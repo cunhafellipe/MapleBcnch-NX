@@ -63,21 +63,29 @@ MapleBench\bin\Release\net10.0-windows\MapleBenchX.exe --no-browser --port 5100
 
 Verification scripts. These run on **Windows PowerShell 5.1**. Check the real
 signature with `Get-Help <script> -Full` before passing switches — several take
-no `-RepoRoot` at all:
+no `-RepoRoot` at all.
+
+**Use forward slashes in the path.** `powershell -File tools\verify\self-test.ps1`
+breaks in a shell that rewrites backslashes: the argument arrives as
+`toolsverifyself-test.ps1`. Forward slashes work identically on Windows and
+survive that rewrite.
 
 ```powershell
 # every tool in this directory, against fixtures whose correct answer is known
-# in advance. Takes NO -RepoRoot. Expected: 21 pass / 0 fail / 1 skip, TRUST: HIGH
-powershell -File tools\verify\self-test.ps1
+# in advance. Takes NO -RepoRoot.
+# Expected counts depend on the environment (git present? DOTNET_ROOT usable?) --
+# read the case list, not the totals; the branches are documented in
+# tools/verify/AGENTS.md.
+powershell -File tools/verify/self-test.ps1
 
 # refuse to start a build whose preconditions are not met
-powershell -File tools\verify\prebuild-check.ps1 -RepoRoot . -Project MapleBench\MapleBenchX.csproj
+powershell -File tools/verify/prebuild-check.ps1 -RepoRoot . -Project MapleBench/MapleBenchX.csproj
 
 # line-ending churn detector. -Path is MANDATORY and is a string[]
-powershell -File tools\verify\eol-check.ps1 -RepoRoot . -Path <file>
+powershell -File tools/verify/eol-check.ps1 -RepoRoot . -Path <file>
 
 # assert exact bytes are present. Note: -Path, not -File; no -RepoRoot
-powershell -File tools\verify\content-assert.ps1 -Path <file> -NeedleFile <file>
+powershell -File tools/verify/content-assert.ps1 -Path <file> -NeedleFile <file>
 ```
 
 ---

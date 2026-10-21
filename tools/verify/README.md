@@ -70,24 +70,24 @@ Exit codes: `0` PASS, `1` FAIL, `2` INCONCLUSIVE, `3` TOOL_ERROR.
 
 ```powershell
 # regression suite first, always
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify\self-test.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify/self-test.ps1
 
 $env:DOTNET_ROOT = 'C:\MUWORK\app\scoop\apps\dotnet-sdk\current'
 
 # working tree, with the count asserted instead of eyeballed
-powershell -File tools\verify\git-status-report.ps1 -ExpectUntracked 3 -RequireClean
+powershell -File tools/verify/git-status-report.ps1 -ExpectUntracked 3 -RequireClean
 
 # after an edit: did the file get rewritten wholesale?
-powershell -File tools\verify\eol-check.ps1 -Path MapleBench\Services\WzSaveService.cs
+powershell -File tools/verify/eol-check.ps1 -Path MapleBench/Services/WzSaveService.cs
 
 # is the fix actually in the code? (needle via FILE when it contains CJK)
-powershell -File tools\verify\content-assert.ps1 -Path src\Foo.cs -NeedleFile needle.txt
+powershell -File tools/verify/content-assert.ps1 -Path src/Foo.cs -NeedleFile needle.txt
 
 # before every build
-powershell -File tools\verify\prebuild-check.ps1 -Project MapleBench\MapleBenchX.csproj
+powershell -File tools/verify/prebuild-check.ps1 -Project MapleBench/MapleBenchX.csproj
 
 # after a measurement run
-powershell -File tools\verify\assert-measurement.ps1 -Values '2348,87,100,3'
+powershell -File tools/verify/assert-measurement.ps1 -Values '2348,87,100,3'
 ```
 
 ## Measured facts on this machine (2026-10-20)

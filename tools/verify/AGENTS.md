@@ -36,7 +36,7 @@ tool, and the tool was not used.
    **It takes no `-RepoRoot`** — its only parameter is `-KeepFixtures`.
 
    ```powershell
-   powershell -File tools\verify\self-test.ps1
+   powershell -File tools/verify/self-test.ps1
    ```
 
    Expected on a healthy tree. The counts depend on the environment, so read
