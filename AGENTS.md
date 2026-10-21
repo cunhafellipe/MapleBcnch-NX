@@ -88,6 +88,20 @@ powershell -File tools/verify/eol-check.ps1 -RepoRoot . -Path <file>
 powershell -File tools/verify/content-assert.ps1 -Path <file> -NeedleFile <file>
 ```
 
+**`eol-check.ps1` compares `git diff --numstat` against `--ignore-all-space`, and
+they must match — with one exception that is easy to mistake for a defect.**
+On a LARGE rewrite the two runs can differ because git picks a different
+alignment for the same edit, not because any line's whitespace changed.
+Tell the two apart before you "fix" anything:
+
+- A real whitespace change is stable: the delta keeps the same sign and size
+  under `--diff-algorithm=myers`, `patience` and `histogram`. **A delta that
+  changes sign between algorithms is git's alignment choice, not the file.**
+- A real whitespace change shows up in a whitespace-insensitive LCS as a pair of
+  lines matching after trimming. Zero such pairs means there is nothing to fix.
+- For a small change the two numstat runs must be equal. For a rewrite, read the
+  diff before concluding the file is damaged.
+
 ---
 
 ## Two ways to use this

@@ -1,7 +1,7 @@
 # AGENTS.md — `tools/verify`
 
 Scripts that decide whether a change is correct. **These tools have been wrong
-six times, and every time they returned a plausible-looking wrong answer rather
+seven times, and every time they returned a plausible-looking wrong answer rather
 than an obvious failure.** That is the failure mode to design against.
 
 ---
@@ -10,7 +10,8 @@ than an obvious failure.** That is the failure mode to design against.
 
 The numbers in the first column are **project-wide incident numbers**, not a
 count of the rows: #12 is the twelfth failure of this shape in the project and
-the sixth recorded in this directory.
+the sixth recorded in this directory; #13 is the thirteenth in the project and
+the seventh here.
 
 | # | What happened | Why it was dangerous | Rule it produced |
 |---|---|---|---|
@@ -20,6 +21,7 @@ the sixth recorded in this directory.
 | 4 | `Get-Content` on a UTF-8 file without a BOM mangled the Chinese text, making intact code look corrupted. | Looked like data loss; would have prompted a bogus "fix". | Use `read-text-safe.ps1`. |
 | 5 | A regex was written across a message split over three concatenated string literals, so a **fixed** file was reported as **not fixed**. | The gate said "fail" on correct code. | Assert with `content-assert.ps1 -NeedleFile`, which matches the file's real bytes. |
 | 12 | A DTO field was renamed (`excludedByOrientation` -> `excludedByNotForwardOriented`) and a measurement script kept the old name. In PowerShell a property that is not there is `$null`; `$null` added to a counter is `0`. The run reported **"0 candidates were excluded"** while the filter had in fact removed **924**. It threw nothing, printed no error, and exited 0. | A **missing** field and a **zero** are indistinguishable in the output. Read on its own, the CSV says the filter does nothing at all. | **Name every field you are about to read, and check that it exists first.** See `require-fields.ps1` and rule 9. |
+| 13 | A measurement script defined `function Measure { ... }` and called `Measure`. PowerShell resolves **Alias > Function > Cmdlet**, and `measure` is a built-in alias for `Measure-Object`, so the alias ran and **the function never did**. | `Measure-Object` also produces numbers, so an argument-shaped call would have printed a plausible set of numbers and passed. The call that did happen failed with *"a positional parameter cannot be found"* — an error that points at the **arguments** rather than at the shadowing, so the obvious "fix" is to change the call, not the name. | **Give every helper a name that cannot collide with an alias, and prove the helper ran.** See rule 10. |
 
 Two of these were **the same bug twice**: #5 had already produced a dedicated
 tool, and the tool was not used.
@@ -32,7 +34,7 @@ tool, and the tool was not used.
    token the caller greps for. Never let a measurement collapse to `0`, `""`,
    `null`, or an empty array and let that pass as data.
 2. **Always run `self-test.ps1` after changing anything here.** It carries 25
-   known-answer cases precisely so the six failures above cannot return.
+   known-answer cases precisely so the seven failures above cannot return.
    **It takes no `-RepoRoot`** — its only parameter is `-KeepFixtures`.
 
    ```powershell
@@ -140,6 +142,29 @@ tool, and the tool was not used.
    A field that is present but **null**, and an array path whose array is
    **empty**, are failures too: both are a measurement that measured nothing.
    Use `-AllowNull` only when a null is a value the script really accepts.
+
+10. **A helper you define can be shadowed by an alias, and the script still
+    runs.** PowerShell resolves **Alias > Function > Cmdlet**, so a function
+    named `Measure` is never reached while `measure` — the built-in alias for
+    `Measure-Object` — is. The script keeps going and keeps printing numbers,
+    because `Measure-Object` also prints numbers.
+
+    Measured 2026-10-22: a probe script's per-arm function was named
+    `Measure`. The alias ran instead, and the call failed with *"a positional
+    parameter cannot be found that accepts argument '2220100'"* — an error
+    that points at the **arguments**, not at the shadowing, so the obvious
+    "fix" is to change the call rather than the name. An argument shape that
+    happened to bind would have printed a plausible set of numbers and the
+    script would have passed.
+
+    Two habits that prevent it:
+
+    - Give helpers a **verb-noun** name that no alias can take
+      (`Invoke-CastArm`, not `Measure`). Before you commit to one, ask
+      `Get-Alias <name>`; if it answers, the name is taken.
+    - **Prove your own code ran.** A function that sets a sentinel
+      (`$script:Called++`) and a script that asserts the sentinel afterwards
+      turns "my function was never called" from a mystery into one line.
 
 ---
 
