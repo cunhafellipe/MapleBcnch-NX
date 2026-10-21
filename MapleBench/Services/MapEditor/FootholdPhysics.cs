@@ -444,33 +444,106 @@ public sealed class FootholdPhysics
     /// do — there the answer depends on document order rather than geometry.
     /// </para>
     /// </remarks>
-    public Foot? FindBelow(int x, int y, bool falling = true)
+    /// <param name="diagnostics">
+    /// Optional. When supplied it is filled with the reason each candidate was
+    /// rejected, counted by reason. The parameter is observation-only: passing
+    /// null runs no recording statement, and passing one runs recording
+    /// statements alongside the same tests.
+    ///
+    /// NOTE: it is NOT true that passing null makes this method behave as it did
+    /// before the `x1 &gt;= x2` test and the 0.5px tolerance were added. Those
+    /// two changed the answer and are documented below; this parameter changed
+    /// neither. An earlier version of this comment claimed otherwise and was
+    /// wrong — the claim was written without diffing against HEAD.
+    /// </param>
+    public Foot? FindBelow(int x, int y, bool falling = true, FindBelowDiagnostics? diagnostics = null)
     {
         Foot? best = null;
         double bestSurface = 0;
+        diagnostics?.Begin(_footholds.Count, falling);
 
         // Compared in FLOAT against the exact interpolated height, so a gentle slope
         // is not quantised into a staircase -- see SurfaceAtExact.
         //
-        // No tolerance. The version that needed one was the step-query model,
-        // where the character asked "what is under me" and the answer had to
-        // absorb a rounding gap that did not exist in the geometry. The model
-        // that replaced it holds a foothold and never asks, so the question is
-        // back to being exact: a surface strictly below the feet, or nothing.
+        // The tolerance is NOT here: it is applied below, once, and differs per
+        // branch. An earlier version of this comment said "no tolerance" and
+        // described a step-query model the caller no longer uses; it sat directly
+        // above a 0.5px tolerance and contradicted it. The reasoning that
+        // survives is the one at the comparison itself.
         foreach (Foot f in _footholds)
         {
+            // GroundEd query only. FootholdTree.cpp:556-559, quoted from
+            // C:\MUWORK\GAME\MPSH\clean-client\src\Gameplay\Physics\FootholdTree.cpp:
+            //
+            //   // CWvsPhysicalSpace2D::GetFootholdUnderneath/Above only considers
+            //   // footholds with x1 < x2; reverse-oriented segments are not supports.
+            //   if (fh.x1() >= fh.x2())
+            //       continue;
+            //
+            // It is NOT redundant with the range test below, and that is the part
+            // worth stating: Foot.Left/Right are Math.Min/Math.Max of the two
+            // endpoints (:359/:362), so a reverse foothold is NORMALISED into a
+            // perfectly ordinary [x2, x1] span and sails straight through
+            // `x < f.Left || x > f.Right`. The reference has the same normalising
+            // pair -- Foothold::l()/r() are m_horizontal.smaller()/greater()
+            // (Foothold.cpp:57-65) -- which is exactly why get_fhid_below, the
+            // OTHER function, needed no such filter, while get_fhid_underneath,
+            // which tests the RAW x1()/x2(), does.
+            //
+            // Left out of the falling branch on purpose: get_fhid_below uses the
+            // normalised l()/r() and keeps reverse segments, and matching one
+            // reference function here and the other there is the point.
+            //
+            // MEASURED 2026-10-21 over all 5,366 maps of Map.nx (333,884 footholds):
+            // 432 reverse (x1 > x2) across 130 maps, and 100,673 zero-length
+            // (x1 == x2) across 2,314 maps. `>=` excludes the zero-length ones too,
+            // which is correct -- Foothold.h:69 calls x1 == x2 a wall -- and it is
+            // also the larger half of the change. That is a measurement, not an
+            // estimate, and it is the reason this is guarded rather than assumed.
+            if (!falling && f.X1 >= f.X2)
+            {
+                if (diagnostics is not null) { diagnostics.ExcludedByNotForwardOriented++; }
+                continue;
+            }
+
             if (x < f.Left || x > f.Right)
+            {
+                if (diagnostics is not null) { diagnostics.ExcludedByRange++; }
                 continue;
+            }
             if (f.SurfaceAtExact(x) is not { } sy)
+            {
+                if (diagnostics is not null) { diagnostics.ExcludedByNoSurface++; }
                 continue;
-            // One pixel of slack, and only for a GROUNDED query. The feet rest
-            // ON a surface, but the sub-step that put them there advances in whole
-            // pixels while the surface is interpolated, so they can settle a
-            // fraction under it. A strict test then cannot see the ground the
-            // character is standing on. Measured: after a jump it stood at y=369
-            // on a surface of y=368 and was reported as having fallen out.
-            if (sy < y - (falling ? 0 : 1))
+            }
+
+            // The tolerance, and which branch gets it.
+            //
+            // The two reference functions differ and so do the two branches here:
+            //
+            //   falling  -> get_fhid_below        (FootholdTree.cpp:495)
+            //                if (comp >= ycomp && ycomp >= (fy - 0.5))   -> 0.5px
+            //   grounded -> get_fhid_underneath    (FootholdTree.cpp:564)
+            //                if (ground >= y && ground < best_y)           -> no tolerance
+            //
+            // The selection rule settles which is which, and it is not a guess:
+            // `comp >= ycomp` walks DOWN from the top and keeps the highest
+            // surface still below the feet -- falling. `ground < best_y` walks
+            // down from y_max and keeps the lowest, the one the feet rest on --
+            // grounded. Those are the same two rules as below (:484).
+            //
+            // This used to be 1px on the grounded branch and 0 on the falling
+            // one, which is the INVERSE of the reference, and the 1px had no
+            // citation at all: its comment described a sub-step rounding gap that
+            // the model below no longer has, since the caller now holds a foothold
+            // and never asks what is under it.
+            if (sy < y - (falling ? 0.5 : 0))
+            {
+                if (diagnostics is not null) { diagnostics.ExcludedByTolerance++; }
                 continue;
+            }
+
+            if (diagnostics is not null) { diagnostics.Eligible++; }
 
             if (best is null)
             {
@@ -490,6 +563,84 @@ public sealed class FootholdPhysics
         }
 
         return best;
+    }
+
+    /// <summary>
+    /// Why each candidate foothold was not chosen, counted by reason.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Diagnostic only, and deliberately produced by <see cref="FindBelow"/>
+    /// itself rather than by a second filter in a diagnostic endpoint. A second
+    /// filter is a second answer: it would agree with <see cref="FindBelow"/> on
+    /// the day it was written and drift from it the first time somebody edits a
+    /// condition, which is the shape of failure this project has paid for before.
+    /// </para>
+    /// <para>
+    /// There are four counters because the scan has four <c>continue</c>s. A
+    /// zero-length foothold (<c>X1 == X2</c>) is rejected by
+    /// <see cref="ExcludedByNotForwardOriented"/> on the grounded branch, and by
+    /// <see cref="ExcludedByNoSurface"/> on the falling branch — because
+    /// <see cref="Foot.IsWall"/> makes <see cref="Foot.SurfaceAtExact"/> return
+    /// null. Reporting the latter as "out of range" would be false: the point is
+    /// standing exactly on that foothold.
+    /// </para>
+    /// </remarks>
+    public sealed class FindBelowDiagnostics
+    {
+        /// <summary>How many footholds the scan looked at.</summary>
+        public int Scanned { get; private set; }
+
+        /// <summary>Which branch was asked for. Decides which filters ran at all.</summary>
+        public bool Falling { get; private set; }
+
+        /// <summary><c>x</c> outside the foothold's normalised [Left, Right] span.</summary>
+        public int ExcludedByRange { get; internal set; }
+
+        /// <summary>
+        /// Rejected by the <c>x1 &gt;= x2</c> test. Named for the PREDICATE, not
+        /// for a geometric concept, because it covers two populations that mean
+        /// different things: reverse segments (<c>X1 &gt; X2</c>, 432 in the corpus)
+        /// and zero-length ones (<c>X1 == X2</c>, 100,673).
+        ///
+        /// <para>
+        /// Which counter a given foothold lands in DEPENDS ON THE BRANCH, and
+        /// that is not a defect in the reporting — it is what the two reference
+        /// functions do. A zero-length foothold hits this counter on the grounded
+        /// branch, where the test runs; on the falling branch the test does not
+        /// run at all and the same foothold is caught by
+        /// <see cref="ExcludedByNoSurface"/> instead, because
+        /// <see cref="Foot.IsWall"/> makes <see cref="Foot.SurfaceAtExact"/>
+        /// return null. So this counter answers "how many did <c>x1 &gt;= x2</c>
+        /// reject", not "how many are not forward-oriented in some wider sense".
+        /// </para>
+        /// </summary>
+        public int ExcludedByNotForwardOriented { get; internal set; }
+
+        /// <summary>
+        /// No surface at this x. In practice a wall (<c>X1 == X2</c>), because
+        /// that is the only case <see cref="Foot.SurfaceAtExact"/> returns null
+        /// for. Never fold this into <see cref="ExcludedByRange"/>: a
+        /// zero-length foothold's own x is exactly on it, not outside it.
+        /// </summary>
+        public int ExcludedByNoSurface { get; internal set; }
+
+        /// <summary>Surface too far above the feet: <c>sy &lt; y - 0.5</c> falling, <c>sy &lt; y</c> grounded.</summary>
+        public int ExcludedByTolerance { get; internal set; }
+
+        /// <summary>Footholds that passed every filter. More than one means the branch picked between them.</summary>
+        public int Eligible { get; internal set; }
+
+        internal void Begin(int scanned, bool falling)
+        {
+            Scanned = scanned;
+            Falling = falling;
+            ExcludedByRange = 0;
+            ExcludedByNotForwardOriented = 0;
+            ExcludedByNoSurface = 0;
+            ExcludedByTolerance = 0;
+            Eligible = 0;
+        }
     }
 
     /// <summary>

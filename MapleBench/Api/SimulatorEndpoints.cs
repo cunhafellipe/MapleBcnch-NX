@@ -251,6 +251,27 @@ public static class SimulatorEndpoints
         // the only way to ask without opening the map in the editor.
         group.MapGet("/probe", (string path, int x, int y, MapEditorService maps) =>
             Results.Ok(maps.ProbeGround(path, x, y)));
+
+        // The foothold under one point, AND what was thrown away to get there.
+        //
+        // /probe answers "which foothold" for both branches. It cannot answer
+        // "why is there no foothold here", because a point with nothing under it
+        // produced an empty answer that looked exactly like a point whose ground
+        // was simply below the map. Measured on the corpus: 100,673 zero-length
+        // footholds across 2,314 maps, 30% of all footholds, and not one of them
+        // distinguishable from an absence.
+        //
+        // `falling` is not decoration. It selects between the two reference
+        // functions with OPPOSITE rules — get_fhid_below walks down keeping the
+        // highest surface still below the feet, get_fhid_underneath keeps the
+        // lowest — and only the grounded branch rejects a foothold for
+        // `x1 >= x2`. So the same point can and does answer differently per
+        // branch. If both branches ever agree here, the endpoint is wired to the
+        // wrong branch rather than the geometry being symmetric.
+        group.MapGet("/debug/foothold-at",
+            (string path, int x, int y, bool? falling, MapEditorService maps) =>
+            Results.Ok(maps.FootholdAt(path, x, y, falling ?? true)));
+
         // A LIVE character, as opposed to the batch endpoints above.
         //
         // Everything else here answers in one shot: give a path, get a verdict.
