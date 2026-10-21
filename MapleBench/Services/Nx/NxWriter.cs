@@ -55,53 +55,92 @@ public static unsafe class NxWriter
     public const long MaxOutputBytes = 0x7FFFFFC4;
 
     /// <summary>
-    /// Appends little-endian values to a growable buffer, and knows exactly how long it is at
-    /// every moment.
+    /// Appends little-endian values to a seekable destination, and knows exactly how long it
+    /// is at every moment.
     /// </summary>
     /// <remarks>
-    /// This exists because <c>BinaryWriter</c> buffers, and <c>BaseStream.Position</c> does not
-    /// advance until it flushes. Reading a position to record where a table started therefore
-    /// returned a stale value, and every offset derived from it pointed into the middle of the
-    /// node block —which the reader rejects as an overlap. Flushing before each read papers
-    /// over it; not buffering at all removes the possibility. The header is also patched by
-    /// seeking backwards, which a buffered writer and a raw position cannot both do safely.
+    /// <para>
+    /// This used to grow one in-memory byte[] to the size of the whole archive and hand it
+    /// back as a single array. For Mob.nx that meant a 1.55 GB buffer, a second 1.55 GB copy
+    /// made by ToArray, and a third when the caller wrote it out with File.WriteAllBytes —
+    /// a 7,212 MB peak, measured. On a 9 GB machine that is an out-of-memory crash, and it
+    /// happens after the gigabytes are already allocated, so there is no moment left to say
+    /// anything useful.
+    /// </para>
+    /// <para>
+    /// Now the bytes go straight to the destination and the archive is never held whole. A
+    /// small staging buffer keeps the write count sane — one byte at a time to a FileStream
+    /// would be 168 million calls for Map.nx's node block alone — and it is handed over and
+    /// reused rather than grown.
+    /// </para>
+    /// <para>
+    /// The two things that made the old buffer necessary are gone with it. The growth loop
+    /// that could overflow an int and spin forever is gone, because there is no longer a
+    /// length to double. And the patches no longer overwrite bytes in place: the destination
+    /// is seekable, so a patch is a seek back, a write, and a seek forward. That is why the
+    /// position is a long — the output can pass 2 GB, and a patch at an offset above 2 GB has
+    /// to land in the right place.
+    /// </para>
     /// </remarks>
     private sealed class NxSink
     {
-        private byte[] _buffer = new byte[1 << 16];
-        private int _length;
+        /// <summary>How much is staged in memory before it is handed to the destination.</summary>
+        private const int StagingBytes = 1 << 16;
 
-        internal int Position => _length;
+        private readonly Stream _stream;
+        private readonly byte[] _staging = new byte[StagingBytes];
+        private int _staged;
+        private long _length;
+        private readonly List<PendingPatch> _patches = new();
+
+        internal NxSink(Stream stream) => _stream = stream;
+
+        /// <summary>Bytes written so far. A long, because the output can pass 2 GB.</summary>
+        internal long Position => _length;
+
+        /// <summary>
+        /// A patch to apply once the whole archive has been written.
+        /// </summary>
+        /// <remarks>
+        /// Deferred rather than applied immediately. Every patch target is behind the current
+        /// write position — the audio and bitmap tables are patched after their own data has
+        /// been written, and the header is patched last of all — so applying them at the end
+        /// changes nothing about where they land, and it lets the whole run of a table be
+        /// written in one go instead of a seek per entry.
+        /// </remarks>
+        private readonly record struct PendingPatch(long Offset, ulong Value, int Width);
 
         internal void Write(byte value)
         {
-            Ensure(1);
-            _buffer[_length++] = value;
+            Reserve(1);
+            if (_staged == _staging.Length)
+            {
+                FlushStaged();
+            }
+
+            _staging[_staged++] = value;
+            _length++;
         }
 
         internal void Write(ushort value)
         {
-            Ensure(2);
-            _buffer[_length++] = (byte)value;
-            _buffer[_length++] = (byte)(value >> 8);
+            Span<byte> b = stackalloc byte[2];
+            BinaryPrimitives.WriteUInt16LittleEndian(b, value);
+            Write(b);
         }
 
         internal void Write(uint value)
         {
-            Ensure(4);
-            for (int i = 0; i < 4; i++)
-            {
-                _buffer[_length++] = (byte)(value >> (i * 8));
-            }
+            Span<byte> b = stackalloc byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(b, value);
+            Write(b);
         }
 
         internal void Write(ulong value)
         {
-            Ensure(8);
-            for (int i = 0; i < 8; i++)
-            {
-                _buffer[_length++] = (byte)(value >> (i * 8));
-            }
+            Span<byte> b = stackalloc byte[8];
+            BinaryPrimitives.WriteUInt64LittleEndian(b, value);
+            Write(b);
         }
 
         internal void Write(long value) => Write((ulong)value);
@@ -112,12 +151,30 @@ public static unsafe class NxWriter
 
         internal void Write(float value) => Write((uint)BitConverter.SingleToUInt32Bits(value));
 
-        internal void Write(byte[] value)
+        internal void Write(ReadOnlySpan<byte> value)
         {
-            Ensure(value.Length);
-            Buffer.BlockCopy(value, 0, _buffer, _length, value.Length);
+            Reserve(value.Length);
+            if (value.Length > _staging.Length)
+            {
+                // A canvas payload is bigger than the staging buffer and does not fit in it.
+                // Hand it straight over rather than growing a buffer to hold it.
+                FlushStaged();
+                _stream.Write(value);
+                _length += value.Length;
+                return;
+            }
+
+            if (_staged + value.Length > _staging.Length)
+            {
+                FlushStaged();
+            }
+
+            value.CopyTo(_staging.AsSpan(_staged));
+            _staged += value.Length;
             _length += value.Length;
         }
+
+        internal void Write(byte[] value) => Write(value.AsSpan());
 
         /// <summary>Pads to a multiple of <paramref name="multiple"/>.</summary>
         internal void Align(int multiple)
@@ -129,78 +186,124 @@ public static unsafe class NxWriter
         }
 
         /// <summary>Overwrites four bytes already written.</summary>
-        internal void PatchUInt32(int offset, uint value)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                _buffer[offset + i] = (byte)(value >> (i * 8));
-            }
-        }
+        internal void PatchUInt32(long offset, uint value) =>
+            _patches.Add(new PendingPatch(offset, value, 4));
 
         /// <summary>Overwrites eight bytes already written.</summary>
-        internal void PatchUInt64(int offset, ulong value)
-        {
-            for (int i = 0; i < 8; i++)
-            {
-                _buffer[offset + i] = (byte)(value >> (i * 8));
-            }
-        }
+        internal void PatchUInt64(long offset, ulong value) =>
+            _patches.Add(new PendingPatch(offset, value, 8));
 
-        internal byte[] ToArray() => _buffer[.._length];
-
-        private void Ensure(int extra)
+        /// <summary>
+        /// Flushes what is staged and applies every deferred patch, then leaves the
+        /// destination positioned at the end of the archive.
+        /// </summary>
+        internal void Complete()
         {
-            // Widened before the comparison. `_length + extra` is the number of bytes this
-            // write ends at, and it is the only statement that decides whether the loop
-            // below can ever finish.
-            long target = (long)_length + extra;
-            if (target <= _buffer.Length)
+            FlushStaged();
+            if (_patches.Count == 0)
             {
                 return;
             }
 
-            if (target > MaxOutputBytes)
+            // Sorted so the runs inside a table are written in order. A table's entries are
+            // contiguous, so this turns three long runs of seeks into three seeks.
+            _patches.Sort(static (x, y) => x.Offset.CompareTo(y.Offset));
+
+            Span<byte> buffer = stackalloc byte[8];
+            long end = _length;
+            long cursor = -1;
+            foreach (PendingPatch patch in _patches)
             {
-                // Refusing here is the whole point. The alternative is not a smaller failure,
-                // it is a worse one: see the growth loop below.
+                if (patch.Offset != cursor)
+                {
+                    _stream.Seek(patch.Offset, SeekOrigin.Begin);
+                }
+
+                for (int i = 0; i < patch.Width; i++)
+                {
+                    buffer[i] = (byte)(patch.Value >> (i * 8));
+                }
+
+                _stream.Write(buffer[..patch.Width]);
+                cursor = patch.Offset + patch.Width;
+            }
+
+            _stream.Seek(end, SeekOrigin.Begin);
+            _patches.Clear();
+        }
+
+        private void FlushStaged()
+        {
+            if (_staged == 0)
+            {
+                return;
+            }
+
+            _stream.Write(_staging, 0, _staged);
+            _staged = 0;
+        }
+
+        private void Reserve(int extra)
+        {
+            // The ceiling is unchanged from the buffer era and is still refused before the
+            // first byte is written, but the reason it exists has changed: it was the
+            // array's own limit, and it is now a policy the save path checks up front.
+            // See WzSaveService.SaveNx, which refuses before calling here.
+            if (_length + extra > MaxOutputBytes)
+            {
                 throw new InvalidDataException(
-                    $"This archive needs more than {MaxOutputBytes:N0} bytes to write, and a single " +
-                    "buffer cannot hold that. Nothing was written and the file on disk is unchanged.");
+                    $"This archive needs more than {MaxOutputBytes:N0} bytes to write, which is more than " +
+                    "this writer will produce. Nothing was written and the destination is unchanged.");
             }
-
-            long size = _buffer.Length;
-            while (size < target)
-            {
-                // Clamp rather than double blindly. This used to be `size *= 2` on an int, and
-                // that is the bug: the buffer can only reach 2^30 = 1,073,741,824, so the next
-                // doubling asks for 2^31 — one past int.MaxValue. C# does not check this
-                // (MapleBenchX.csproj sets no CheckForOverflowUnderflow and there is no
-                // Directory.Build.props), so the multiply wrapped to -2,147,483,648, then to 0
-                // on the step after, and `0 < target` is true forever.
-                //
-                // Measured, saving Mob.nx (1,549,688,422 bytes):
-                //     size = 1073741824, target = 1073754162
-                //     step 1: size *= 2 -> -2147483648   (still < target, keep going)
-                //     step 2: size *= 2 -> 0              (still < target, keep going)
-                //     step 3..N: size *= 2 -> 0            (forever)
-                // One core at 100%, memory flat, holding WzSaveService's session gate for the
-                // life of the process, and no scratch file ever created.
-                size = Math.Min(size * 2, MaxOutputBytes);
-            }
-
-            Array.Resize(ref _buffer, (int)size);
         }
     }
-
-    /// <summary>Serialises an archive to NX bytes.</summary>
+    /// <summary>Serialises an archive to NX bytes, in memory.</summary>
+    /// <remarks>
+    /// Kept for the callers that want the bytes rather than a file: the merge path builds
+    /// the whole archive and then moves it into place, and it never had a second copy of a
+    /// 1.5 GB array to give away. The save path uses <see cref="Write(WzFile, Stream, out
+    /// NxWriteReport)"/> instead, because holding the archive in memory is what made that
+    /// path cost 7,212 MB.
+    /// </remarks>
     public static byte[] Write(WzFile file, out NxWriteReport report)
     {
         ArgumentNullException.ThrowIfNull(file);
 
+        using MemoryStream buffer = new();
+        Write(file, buffer, out report);
+
+        // GetBuffer, not ToArray: ToArray copies the whole archive again, and this is
+        // exactly the copy the stream overload exists to avoid. The slice is the logical
+        // length even when the underlying array is larger.
+        return buffer.GetBuffer()[..(int)buffer.Length];
+    }
+
+    /// <summary>
+    /// Serialises an archive straight into a seekable stream, and reports what it wrote.
+    /// </summary>
+    /// <remarks>
+    /// The destination must be seekable: the header's offsets and the two offset tables are
+    /// patched after the fact, and a patch on a stream that cannot seek backwards is not a
+    /// patch. The archive is never held whole — the bytes go to the destination as they are
+    /// produced — so the peak memory of a save is the plan's canvas copies and not a second
+    /// copy of the output.
+    /// </remarks>
+    public static void Write(WzFile file, Stream destination, out NxWriteReport report)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!destination.CanSeek)
+        {
+            throw new ArgumentException(
+                "The destination must be seekable: the archive's header and offset tables are patched " +
+                "after they are written.",
+                nameof(destination));
+        }
+
         var plan = Plan(file);
         var strings = BuildStringPool(plan);
 
-        var w = new NxSink();
+        var w = new NxSink(destination);
 
         // ---- header, patched at the end once every offset is known ----
         w.Write(NxArchive.Magic);
@@ -286,7 +389,7 @@ public static unsafe class NxWriter
 
         for (int i = 0; i < plan.Audio.Count; i++)
         {
-            w.PatchUInt64((int)audioOffset + i * 8, (ulong)audioOffsets[i]);
+            w.PatchUInt64(audioOffset + i * 8, (ulong)audioOffsets[i]);
         }
 
         // ---- bitmap table, then bitmap data ----
@@ -309,7 +412,7 @@ public static unsafe class NxWriter
 
         for (int i = 0; i < plan.Bitmaps.Count; i++)
         {
-            w.PatchUInt64((int)bitmapOffset + i * 8, (ulong)bitmapOffsets[i]);
+            w.PatchUInt64(bitmapOffset + i * 8, (ulong)bitmapOffsets[i]);
         }
 
         // ---- patch the header now that everything is known ----
@@ -331,7 +434,7 @@ public static unsafe class NxWriter
             plan.TypeWidened,
             plan.EncodingErrors);
 
-        return w.ToArray();
+        w.Complete();
     }
 
     private static StringPool BuildStringPool(NxPlan plan)

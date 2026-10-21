@@ -139,8 +139,6 @@ public sealed class WzSaveService
                 "bytes). Nothing was written and the file on disk is unchanged.");
         }
 
-        byte[] bytes = NxWriter.Write(file.WzFile, out NxWriteReport report);
-
         // Beside the target, and named the way NewTempName names the classic
         // scratch files. This used to be target + ".partial", which no sweep could
         // ever recognise, so an NX save killed mid-write -- a crash, a power loss,
@@ -154,11 +152,24 @@ public sealed class WzSaveService
         // working directory is a scratch folder rather than the archive's own. GetDirectoryName
         // returns null only for a volume root, so that is the one shape where the root is the
         // correct thing to put the scratch beside.
+        //
+        // The path is needed BEFORE the archive is written, because the archive is written
+        // straight to it. That is the point of the change: it used to be assembled in memory
+        // first and then written out, and that cost three copies of a 1.5 GB archive --
+        // measured 7,212 MB of working set saving Mob.nx, which is an out-of-memory crash on
+        // a 9 GB machine. The bytes now go to the file as they are produced.
         string scratch = Path.Combine(directory ?? Path.GetPathRoot(target)!, NewTempName(".nx"));
         string? backup = null;
+        NxWriteReport report;
+        long byteCount = 0;
         try
         {
-            File.WriteAllBytes(scratch, bytes);
+            using (FileStream scratchStream = new(scratch, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                NxWriter.Write(file.WzFile, scratchStream, out report);
+            }
+
+            byteCount = new FileInfo(scratch).Length;
 
             using (var check = NxArchive.Open(scratch))
             {
@@ -268,9 +279,9 @@ public sealed class WzSaveService
         }
 
         notes.Add(backup is null
-            ? $"Wrote an NX copy ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes); the file it was " +
+            ? $"Wrote an NX copy ({report.Nodes:N0} nodes, {byteCount:N0} bytes); the file it was " +
               "opened from was not modified."
-            : $"Saved in place ({report.Nodes:N0} nodes, {bytes.Length:N0} bytes). " +
+            : $"Saved in place ({report.Nodes:N0} nodes, {byteCount:N0} bytes). " +
               $"The previous file is at '{Path.GetFileName(backup)}'.");
 
         long reopenedAfterMs = 0;
@@ -317,7 +328,7 @@ public sealed class WzSaveService
             FileId = file.Id,
             SavedTo = target,
             BackupPath = backup,
-            Bytes = bytes.Length,
+            Bytes = byteCount,
             Seconds = (DateTime.UtcNow - started).TotalSeconds,
             ReopenMs = reopenedAfterMs,
             Warnings = notes,
