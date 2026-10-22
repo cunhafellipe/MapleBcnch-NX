@@ -16,7 +16,13 @@ async function archiveId(name) {
   if (!listed.get(name)) { console.log(`>>> RED: ${name} is listed by this instance but carries no id`); process.exit(1); }
   return listed.get(name);
 }
-export const MAP = `${await archiveId('Map.nx')}/Map/Map1/100000004.img`;
+// Resolved LAZILY. A module-level await would make EVERY importer depend on
+// Map.nx being open -- including the ones that need no archive at all
+// (probe-A5 only calls /api/skill-cast/castable). The lookup happens where the
+// map is actually needed.
+export async function mapPath() {
+  return `${await archiveId('Map.nx')}/Map/Map1/100000004.img`;
+}
 export const MOB = '9400101';
 export const START_HP = 1000;   // ADR-0006: every mob has 1000 hp
 export const PLAYER_DMG = 100;  // ADR-0006: every player hit deals 100
@@ -60,7 +66,7 @@ export async function plan(skillId) {
 }
 
 export async function openSession() {
-  const s = await post('/api/simulate/session', { path: MAP, invulnerable: true });
+  const s = await post('/api/simulate/session', { path: await mapPath(), invulnerable: true });
   const sid = s.sessionId;
   await post(`/api/simulate/session/${sid}/invulnerable`, { value: true });
   return sid;
