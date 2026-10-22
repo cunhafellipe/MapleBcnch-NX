@@ -323,9 +323,12 @@ suites:
       Randomizer.h:72-73（from >= to 就回傳 from）、Randomizer.h:75（上界 exclusive，
       所以是 to-1）、Mob.cpp:60（watk = info["PADamage"]）、node.cpp:155-157
       （節點不存在就是 0）、Mob.cpp:69（bodyAttack 是 get_bool）。
-      兩條是 port 已宣告的差異、不在此判：status_value(WATK) = 0、
+      三條是 port 已宣告的差異、不在此判：status_value(WATK) = 0、
       attack_multiplier(false) = 1.0，所以參照的範圍是
       [floor(0.8*PADamage), PADamage-1]，PADamage=0 時是單一值 0。
+      第三條：port 用確定性 seed（unchecked(seed*31+17)）抽接觸傷害，而參照
+      Randomizer.h:76-77 每次呼叫都以 std::random_device 重新播種，所以參照不可重現、
+      port 可重現。範圍相同、抽籤存在，但同一顆 seed 會重現同一串數字。
       封存的數值從 archive 端讀（/api/inspect 的 info/PADamage 與 info/bodyAttack，
       字串節點用 stoll 的規則），所以 port 讀錯節點就不能靠同意自己過關。
       斷言三條：A1 每一擊都落在參照的範圍內；A2 範圍有兩個以上數字時，擊數不是

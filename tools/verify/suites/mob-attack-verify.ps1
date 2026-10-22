@@ -45,9 +45,9 @@ $pd = Flag 'PADamage'
 $ba = Flag 'bodyAttack'
 $fa = Flag 'firstAttack'
 "calibration: $Mob  PADamage=$pd  bodyAttack=$ba  firstAttack=$fa"
-if ($ba -ne '1') { "ABORT: $Mob has no bodyAttack, so it cannot touch at all."; exit 1 }
-if ($fa -ne '<absent>') { "ABORT: $Mob carries firstAttack, so pursuit is not what this test measures."; exit 1 }
-if ([int]$pd -ge 40) { "ABORT: $Mob deals $pd, which does not leave the 50-HP character enough frames to land a swing."; exit 1 }
+if ($ba -ne '1') { ">>> RED: $Mob has no bodyAttack, so it cannot touch at all."; exit 1 }
+if ($fa -ne '<absent>') { ">>> RED: $Mob carries firstAttack, so pursuit is not what this test measures."; exit 1 }
+if ([int]$pd -ge 40) { ">>> RED: $Mob deals $pd, which does not leave the 50-HP character enough frames to land a swing."; exit 1 }
 
 # A WEAPON, or the band below is wrong. The bare-hands box is
   # Character/Afterimage/barehands.img/0/stabO1 and it is far shorter than a
@@ -122,7 +122,7 @@ for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
     Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
   }
 }
-if (-not $provoked) { "ABORT: no swing landed in 12 attempts, so aggro was never set."; exit 1 }
+if (-not $provoked) { ">>> RED: no swing landed in 12 attempts, so aggro was never set."; exit 1 }
 
 # Phase A2: RETREAT out of contact. Standing next to the mob cannot show
 # pursuit -- the touch rule (Stage.cpp:809) already hits there, aggro or not, and
@@ -195,7 +195,11 @@ if ($hits.Count -eq 0) {
   # The gate PRINTS the last line matching VERDICT|ALL LADDERS PASS|passed,|
   # BAD=|PASS: (gate.ps1:93-94) and without one it can only show "(read the
   # tail)", which pushes the verdict onto a human reading every suite's
-  # output. This line is the green shape; the red branches above stay
-  # marker-only, so a red never also prints a green shape.
+  # output. This line is the green shape. The red branches in THIS file print
+  # the marker only, so a red run of THIS suite never also prints this line --
+  # that is a fact about this file, not a rule about the other suites: a
+  # sibling file can print a green shape and then fail (see
+  # first-attack-verify.ps1, which had to defer its PASS: for exactly that
+  # reason).
   "VERDICT: mob-attack-verify closed the distance on its own and landed hits"
 }

@@ -63,7 +63,14 @@ for ($i = 0; $i -lt 400; $i++) {
 $m = @($a.mobs)[$($sum.indexes[0])]
 "  plain mob x $startX -> $([double]$m.x)  (closest approach to the player: $closest px)"
 $stage1Failed = $false
-if ([Math]::Abs([double]$m.x - $startX) -lt 1) { "  PASS: it did not walk toward the player -- no firstAttack, never struck" }
+# The green shape is HELD, not printed. Stage 2 runs after this point and can
+# still fail, and a "PASS:" that is already in the output is a green shape in a
+# run the gate will call red: the gate prints the last line matching
+# VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS: AND judges on the red markers, so
+# one run showed "GREEN? PASS: ..." next to ">>> RED (>>> RED)". MEASURED on
+# the gate, 2026-10-22, before this change.
+$stage1Pass = ''
+if ([Math]::Abs([double]$m.x - $startX) -lt 1) { $stage1Pass = "  PASS: it did not walk toward the player -- no firstAttack, never struck" }
 # Same trap as the ABORT above: a "FAIL" in prose is not a marker. The gate
 # would print "ok" and this failure would be counted as a pass.
 else { $stage1Failed = $true; ">>> RED: it moved $([Math]::Abs([double]$m.x - $startX)) px toward a player it was never told about" }
@@ -85,7 +92,13 @@ for ($i = 0; $i -lt 400; $i++) {
 # W-056, the same bug the sibling suite already fixed: the gate reads the
 # literal "NO damage number" and String.Contains does not match on case.
 $stage2Failed = $false
+$stage2Pass = ''
 if ($hits.Count -eq 0) { $stage2Failed = $true; ">>> RED: no damage over 400 frames -- firstAttack did not acquire" }
-else { $hits | ForEach-Object { $_ }; "  PASS: it attacked without being struck" }
+else { $hits | ForEach-Object { $_ }; $stage2Pass = "  PASS: it attacked without being struck" }
 Invoke-RestMethod "$base/api/simulate/session/$($s2.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
 if ($stage2Failed) { exit 1 }
+
+# Both stages passed and nothing below can fail any more, so only NOW is a green
+# shape safe to print. See the note at stage 1.
+$stage1Pass
+$stage2Pass
