@@ -280,7 +280,7 @@ TOTAL PROCESS DEATHS: 0
 | B | `SimClockService` 的 `try` 在 `while` 外 | 任一 session 拋例外 → **整個模擬時鐘永久死亡**，症狀只有一行 log | 故障注入：壞的 session 隔離在 `frame=5`，正常的推進到 `frame=663`；log 共 5 行後靜默 |
 
 > B 的註解 `:76-81` 宣稱「One bad pass is logged and the loop carries on」—— **與程式碼相反**。
-> 這是本專案同一缺陷類（「程式碼與自己的相鄰註解矛盾」）的第 4 次實例。
+> 這是本專案同一缺陷類（「程式碼與自己的相鄰註解矛盾」）的第 4 次實例（**該筆的完整清單與現況見下方第 3 節，該筆編號 #1**）。
 
 ### 一個必須記錄的版控事實
 
@@ -302,13 +302,13 @@ TOTAL PROCESS DEATHS: 0
 
 # 2026-10-22 合併稿
 
-STATE.md 合併稿 —— 2026-10-22。證據等級：`[MEASURED]` 我跑過並貼了輸出；`[QUOTED]` 我開了來源並引用原文；`[FROM-LEAD]` 來自 lead，未經我驗證。
-
+證據等級：`[MEASURED]` 我跑過並貼了輸出；`[QUOTED]` 我開了來源並引用原文；
+`[FROM-LEAD]` 來自 lead，未經驗證。
 STATUS: a DRAFT for `docs/ENGINEERING/STATE.md`. Nothing in the repo was
 touched. Read-only sources: docs/ENGINEERING/STATE.md, the product code, the
 work items, and my own measurements from 2026-10-21/22.
 
-Evidence levels used below: [MEASURED] = I ran it and pasted the output.
+Evidence levels: [MEASURED] = I ran it and pasted the output.
 [QUOTED] = I opened the source and quote it. [FROM-LEAD] = the lead's word,
 not verified by me.
 
@@ -343,8 +343,7 @@ they were live in two different measurements on two different days:
     A close+reopen of the same map then made Validate report 337 and
     brokenChains=4.
 
-So on 2026-10-21 Validate still read the snapshot while the doc read the
-live tree; the fix that made Validate read the live tree is the commit
+The fix that made Validate read the live tree is the commit
 `c0c3f22 fix(map): match the reference foothold-below rules and expose the
 result`.
 
@@ -400,39 +399,80 @@ what the code does, written next to the code, and it is FALSE. The reader
 who trusts the comment is wrong in a way that no test catches, because the
 test suite was written by the same reader.
 
-VERIFIED INSTANCES (I opened the source):
+THE TEN INSTANCES (the list is the lead's; the STATUS column is the
+receipt). For #1 to #8 the class is ALREADY FIXED - they are no longer "the
+comment contradicts the code", they are "the comment once did, and here is
+the commit that fixed it. At the time of writing only #9 and #10 were live;
+#9 is fixed now - see the settled block below.
 
- #4  SimClockService.cs:76-81
-     The comment says "One bad pass is logged and the loop carries on, so a
-     single session that cannot be stepped does not freeze every other body
-     on the server." The `catch` is OUTSIDE the `while` (lines 65-83), so
-     the loop does not carry on: the first exception ends ExecuteAsync and
-     the clock is dead for the life of the process. Recorded in
-     docs/ENGINEERING/STATE.md:278-279 as "the 4th instance of this class".
-     [QUOTED - I read the file; the STATE.md line quotes it]
+Numbering note: the 2026-08-20 entry above calls the SimClockService instance
+"the 4th instance of this class". That was a count of how many times the class
+had been seen by then. This list numbers the instances 1 to 10 and the
+SimClockService one is #1 in it. Both numbers are true; they count different
+things, and this list is the one to use from now on.
 
- #9  MapleBench/Services/MapEditor/FootholdPhysics.cs:526-533 vs :557
-     The comment says the grounded branch mirrors
-     FootholdTree::get_fhid_underneath, whose rule is
-     `ground >= y && ground < best_y` - keep the LOWEST. The code is
-     `bool better = falling ? sy < bestSurface : sy > bestSurface;` - the
-     grounded branch keeps the HIGHEST. The comment quotes the reference
-     rule and then implements its opposite.
-     [MEASURED - my own judge measured 67 of 82 probe points disagreeing,
-     and 53 of 76 cases where the character stands exactly on a foothold's
-     own surface and the port names a different one; the reference names
-     the right one 76 of 76. The commit that claims to match the
-     reference is `c0c3f22 fix(map): match the reference foothold-below
-     rules and expose the result`.]
+| # | where | the comment says | the code does | status | receipt |
+|---|---|---|---|---|---|
+| 1 | `SimClockService.cs:76-81` | "One bad pass is logged and the loop carries on" | the catch was outside the `while` | fixed, but **no fix commit exists** | [QUOTED - I read the file today: the `try` is now INSIDE the `while` (:65 while, :67 try) and the comment at :78-84 HONESTLY records the old contradiction. The file was UNTRACKED until `16c19e5`, and that commit is the one that ADDED it, already fixed - so the fix is NOT visible in the history. STATE.md:282-283 quotes it.] |
+| 2 | `FootholdPhysics.cs:462-466` | "No tolerance" | a 0.5px tolerance at the comparison | fixed | task-31 [QUOTED - today's comment at :509-512 now RECORDS the old contradiction: "An earlier version of this comment said 'no tolerance' ... and contradicted it"] |
+| 3 | `MapDocument.cs:288-293` | a past-tense description of a fixed bug | read as the present tense | fixed | `54bf351` [QUOTED - today's text at :290-296 is explicitly present tense] |
+| 4 | `Interact.cs:391-398` | "Foothold deletes unlink honestly" | only true of DeleteMany | fixed | `54bf351` |
+| 5 | `CharacterPhysics.cs:1029` | cites `_y += climb * ClimbSpeedPerStep` | 1029 is `}` | fixed | `fb5d173` [QUOTED - I read both lines: 1029 IS `}`, and :1145 IS `_y += climb * ClimbSpeedPerStep;` - the citation now points at the right line] |
+| 6 | `NxWriter.cs` `MaxOutputBytes` | "now a policy" | another comment says "is the same limit ... not a new policy" | fixed | `b5ac0bb` (split into two named constants) |
+| 7 | `WzSaveService.cs:124-129` | "NxWriter builds the whole archive into a single byte[]" | after `5ebcaf2` it streams | fixed | `b5ac0bb` |
+| 8 | `NxWriter.cs:696` audio guard | the comment itself says "downstream ... never reached" | the guard is unreachable | kept as a defensive change, and the comment is honest | - |
+| 9 | `FootholdPhysics.cs:526-533` vs `:557` | the grounded branch mirrors `get_fhid_underneath` (keep the LOWEST) | it keeps the HIGHEST | **being fixed** | task-60 [MEASURED - my own judge: 67 of 82 probe points disagree, and 53 of 76 cases where the character stands exactly on a foothold's own surface the port names a different one; the reference names the right one 76 of 76. The commit that CLAIMS to match the reference is `c0c3f22`.] |
+| 10 | `MobPatrol.cs` two publish paths, one of which never got the fix | the comment at `:1331-1335` records the fix ("this used a hardcoded 100 ms per index") | the LIST path (`:1253-1254`) still computes `ballIndex = (int)(e.ElapsedMs - e.DelayMs) / 100 % e.Spec.BallFrameCount` - a hardcoded 100 ms per frame; the SCALAR path (`:1336-1360`) uses `e.Spec.BallFrameDelays` and falls back to the same `/100` only when the frames declare none | **open, queued after task-60** | task-64 [MEASURED - the lead read both paths out of the file on 2026-10-22, and the observable consequence was measured by analyst-map: the published index is 0 at since=63.3/80/96.7 and 1 only at 113.3, i.e. the list path is running the 100 ms fallback. The comment names the fix that landed on the scalar path only.] |
 
- #10 MobPatrol.cs, two publish paths. [FROM-LEAD - not verified by me]
+THE MECHANISM OF #9, kept for the record (this is the one still live):
 
-INSTANCES 1, 2, 3, 5, 6, 7, 8: **NOT FOUND IN THE REPOSITORY.** A search
-over pm/work/, JOURNAL/ and docs/ for this class returns exactly two hits
-(docs/ENGINEERING/STATE.md:278-279 and JOURNAL/2026-10-16-1855-*.md:21).
-The list of ten lives in the agents' own reports and in the lead's notes, so
-it cannot be rebuilt from the tree. The lead has to supply it, or the entry
-has to say "seven instances are not yet written down anywhere".
+  The comment says the grounded branch mirrors
+  FootholdTree::get_fhid_underneath, whose rule is
+  `ground >= y && ground < best_y` - keep the LOWEST. The code is
+  `bool better = falling ? sy < bestSurface : sy > bestSurface;` - the
+  grounded branch keeps the HIGHEST. The comment quotes the reference
+  rule and then implements its opposite.
+
+THE THREE THINGS THAT HAD TO BE SETTLED BEFORE MERGING - SETTLED
+
+1. **A NUMBERING CONFLICT.** Resolved by re-wording, not by renumbering.
+   The 2026-08-20 entry's "the 4th instance of this class" is a count of how
+   many times the class had been seen by then; the list numbers the instances
+   1 to 10. Both are true and they count different things, so the list is
+   the one to use from now on, and the older entry says so.
+
+2. **#10's row did not match the lines it named.** The lead opened the file
+   on 2026-10-22 and read both paths. The row is now written against the
+   lines that actually carry the defect: the list path at `:1253-1254` and
+   the scalar path at `:1336-1360`, with the comment at `:1331-1335` that
+   records the fix - and that fix landed on the scalar path only. The lines
+   the old row named, `:1322-1329`, are a comment about the ball's own frame
+   and say "OWN-DESIGN, and declared here because it is a difference from the
+   reference". The row was wrong about the lines; the defect it described is
+   real.
+
+3. **#1 has no commit to point at, and that is a fact about the history, not
+   an omission.** The file was untracked from the baseline `4816856` until
+   `16c19e5`, and by then it was already fixed, so the fix is not visible in
+   the history. The receipt for #1 is "the fix predates version control" -
+   the same shape as the version-control fact recorded above for the whole
+   `Services/Simulate/` directory. A row that says "fixed" without a commit
+   id is not incomplete; it is a different kind of claim, and the text says
+   which kind it is.
+
+Since the merge, the two live instances have moved:
+
+  #9  is FIXED. Commit `e77a123`. The position-accuracy judge - which
+      applies the reference's own formulas to the archive's own geometry, so
+      a port that changes its physics cannot pass by agreeing with itself -
+      was 4 of 6 assertions before and is 6 of 6 after. The same judge
+      against the old binary still fails 2 of 6 on the same archive and the
+      same 82 probe points, which is what makes its green worth anything.
+      The fix also corrected the number being compared: the reference's
+      INTEGER ground, taken in 64-bit and divided with truncation TOWARD
+      ZERO, not a double surface.
+
+  #10 is still open (task-64).
 
 => THE RULE this family yields: a comment that states what the code DOES
    (rather than what it SHOULD do) is a test that has not been written.
@@ -441,6 +481,10 @@ has to say "seven instances are not yet written down anywhere".
        suite (that is what tools/verify/suites/position-accuracy.py now
        does for #9: it applies the reference's formula, not the port's);
      - or the comment is deleted.
+   And the SHAPE of the family today is mostly CLOSED: eight of the ten are
+   fixed, and the receipt for each is the commit that fixed it. A reader
+   auditing this class in six months should read the STATUS column, not
+   hunt for the contradiction.
 
 =====================================================================
 4. "git commit commits the whole index" - it has happened twice now
@@ -494,8 +538,8 @@ this is a NAME-level census, not an assertion-level one. A field name
 occurring in a file is not proof that the file asserts on it. Every count
 above is an UPPER BOUND on real coverage, never a lower bound.
 
-The producing script is docs/ENGINEERING/fieldcoverage.py
-(committed 2026-10-22 as docs/ENGINEERING/fieldcoverage.py).
+The producing script is docs/ENGINEERING/fieldcoverage.py (moved out of
+TEMP by the lead, 2,292 bytes).
 
 Also true and worth recording here: the position-accuracy judge reads NONE
 of these 34 - it never calls that endpoint. It covers the position CORE
@@ -509,7 +553,6 @@ reference's formulas by any of them.
 6. What this file does NOT contain
 =====================================================================
 
-- Instances 1, 2, 3, 5, 6, 7, 8 of the comment-vs-code family (see 3).
 - Any change to docs/ENGINEERING/STATE.md. The lead merges it.
 - The board's task-47 ownerName: **I could not change it.** The call
   returned "only the Team Lead can reassign tasks", so the lead has to do
