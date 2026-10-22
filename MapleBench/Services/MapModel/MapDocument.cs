@@ -93,8 +93,9 @@ public sealed class MapDocument
     /// <summary>
     /// Inserts a top-level node. <b>The typed views are built at load and do not
     /// observe later structural additions</b> — callers that need live structure
-    /// read <see cref="Nodes"/> / <see cref="Find"/>, which every consumer in
-    /// the editor does. Order is wire order; the caller chooses the position.
+    /// read <see cref="Nodes"/> / <see cref="Find"/>, or take a fresh view through
+    /// <see cref="Resnapshot"/>. Order is wire order; the caller chooses the
+    /// position.
     /// </summary>
     public void InsertNode(int index, WzNode node)
     {
@@ -283,16 +284,29 @@ public sealed class MapDocument
     /// <summary>
     /// A second view of the same nodes with every typed view rebuilt from them
     /// <em>now</em>, for a caller that must see structure added or removed since load.
-    ///
+    /// </summary>
+    /// <remarks>
     /// <para>
-    /// <see cref="Nodes"/> is the document; the typed views are projections of it, and
-    /// they are projections as of the moment this constructor last ran. That contract is
-    /// documented on <see cref="InsertNode"/> and callers honour it by reading
-    /// <see cref="Nodes"/>. The validator did not, so a foothold deleted after the image
-    /// was opened was still in <see cref="Footholds"/>, its id still resolved inside the
-    /// validator's own id set, and a severed chain reported clean.
+    /// <b>THE CONTRACT, IN THE PRESENT TENSE.</b> <see cref="Nodes"/> is the document.
+    /// The typed views are projections of it, and they are projections as of the moment
+    /// this constructor last ran: after a <see cref="Load"/>, <see cref="Footholds"/>
+    /// and its siblings describe the tree as it stood AT THAT MOMENT, and they do NOT
+    /// follow any later edit. A consumer that must see the structure as it stands now
+    /// has to come through here; a consumer that is content with the structure as
+    /// loaded may read the typed views directly.
     /// </para>
-    ///
+    /// <para>
+    /// <b>WHO GOT IT WRONG, AND WHAT IT COST — HISTORY, NOT CURRENT BEHAVIOUR.</b>
+    /// The map editor's chain validator (<c>MapEditorService.Validate</c>) used to
+    /// read the load-time <see cref="Footholds"/> directly. Because of that, a
+    /// foothold deleted after the image was opened was still in that list, its id
+    /// still resolved inside the validator's own id set, and a severed chain
+    /// reported clean. THAT WAS THE BUG, AND IT IS FIXED: the validator now calls
+    /// <see cref="Resnapshot"/>, so it sees the live structure. The defect lived in
+    /// the CONSUMER, never in the model — <see cref="Footholds"/> is still exactly
+    /// what the paragraph above says it is, and a consumer that forgets to
+    /// resnapshot will get it anyway.
+    /// </para>
     /// <para>
     /// <b>Why the constructor and not <see cref="Load"/>.</b> The constructor is thirteen
     /// assignments and a handful of shallow walks over nodes that are already parsed, so
@@ -300,13 +314,12 @@ public sealed class MapDocument
     /// <c>ParseImage</c> and <see cref="WzNode.ReadImage"/> first and hand back a second
     /// tree — a full walk to learn something the existing nodes already say.
     /// </para>
-    ///
     /// <para>
     /// Nothing is copied and nothing is written: the result shares the same node objects,
     /// so it inherits the do-not-write contract <see cref="LoadShared"/> states, and it is
     /// only valid under the same session lock.
     /// </para>
-    /// </summary>
+    /// </remarks>
     internal static MapDocument Resnapshot(MapDocument current)
     {
         ArgumentNullException.ThrowIfNull(current);

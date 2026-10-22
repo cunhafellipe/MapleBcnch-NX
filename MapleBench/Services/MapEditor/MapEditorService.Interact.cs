@@ -389,13 +389,31 @@ public sealed partial class MapEditorService
     #region deleteMany
 
     /// <summary>
-    /// Deletes a whole selection as ONE undo entry. Foothold deletes unlink
-    /// honestly: every surviving foothold in the same layer whose prev or next
+    /// Deletes a whole selection as ONE undo entry. <b>THIS path unlinks
+    /// honestly</b>: every surviving foothold in the same layer whose prev or next
     /// named a deleted id has that reference set to 0 — an explicit edit, not a
     /// silent repair; forks and asymmetry that do not involve the deleted
     /// segments are untouched. Deleted subtrees have their payloads pinned so
     /// undo after a save still restores real bytes.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Do not generalise that to "deleting a foothold unlinks".</b> The
+    /// single-node <c>delete</c> op (<c>MapEditorService.Delete</c>) removes the
+    /// node and does NOT touch its neighbours' prev/next, so a foothold deleted
+    /// that way leaves the links naming an id that no longer exists. The two
+    /// paths are not the same: this one is an explicit, undoable edit of the
+    /// links, that one is a plain removal.
+    /// </para>
+    /// <para>
+    /// MEASURED 2026-10-22 (task-37): with a deleted foothold's id still named
+    /// by a neighbour, <c>POST /api/mapedit/validate</c> reports the severed
+    /// chain — <c>brokenChains = 2</c> for the two dangling links, both as
+    /// "which does not exist". A single delete therefore does NOT pass
+    /// validation silently; it fails loudly, which is what makes the difference
+    /// between the two paths safe to leave in place.
+    /// </para>
+    /// </remarks>
     private MapEditResultDto DeleteMany(EditorDoc doc, MapEditOp op)
     {
         if (op.Items == null || op.Items.Count == 0)
