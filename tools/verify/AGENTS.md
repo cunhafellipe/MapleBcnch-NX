@@ -71,7 +71,9 @@ tool, and the tool was not used.
    Without a usable `DOTNET_ROOT` or without git, the affected cases report
    SKIP **and say why**. **Anything else means this tooling is now
    unreliable.**
-3. **Known-answer tests only.** A test that cannot fail proves nothing.   **A test that fails for the WRONG reason is not a test** — it is worse
+3. **Known-answer tests only.** A test that cannot fail proves nothing.
+
+   **A test that fails for the WRONG reason is not a test** — it is worse
    than no test, because it passes later for a reason nobody checked.
 
    Measured 2026-10-22: a case meant to isolate "the census was truncated"
