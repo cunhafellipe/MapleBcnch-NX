@@ -18,6 +18,18 @@ $fail = 0
 # completely. So the count is reported AND the names are reported.
 $script:redSuites = @()
 
+# How many suites the gate ACTUALLY entered, counted here rather than
+# inferred from the output.
+#
+# MEASURED 2026-10-23: counting the "=== name ===" headers in the gate's own
+# stdout is what made a previous version of this check wrong. That count is
+# taken AFTER the doctor's output has been echoed into the same stream on the
+# doctor-red path, so it read the doctor's 6 headers as if they were suites.
+# The counter is incremented inside Run itself, on every entry, including the
+# early return when the backend is unreachable -- a suite the gate did not run
+# must still be counted as one the gate did not run.
+$script:ranSuites = 0
+
 # The verdicts file, TRUNCATED HERE, before a single suite runs.
 #
 # The truncation is first on purpose. A gate killed half way through must not
@@ -122,6 +134,35 @@ if ($tokenLines.Count -eq 1) {
 } elseif ($tokenLines.Count -gt 1) {
   $doctorProblem = 'the doctor reported DOCTOR_SUITES_PROBLEMS ' + $tokenLines.Count + ' times -- the answer is ambiguous'
 }
+# The DENOMINATOR, read with the SAME discipline as the token above, and for
+# the same reason: the number must be the last thing on its own line, so it
+# cannot be forged by a suite's DECLARED verdict string printed earlier in the
+# doctor's output. The regex is anchored at column 0 and ends at \s*$, so an
+# appended number on a busy line does not match.
+$declaredLines = @([regex]::Matches($doctorOut, '(?m)^DOCTOR_SUITES_DECLARED=(\d+)\s*$'))
+$declaredSuites = $null
+if ($declaredLines.Count -eq 1) {
+  $declaredSuites = [int]$declaredLines[0].Groups[1].Value
+} elseif ($declaredLines.Count -gt 1) {
+  $doctorProblem = 'the doctor reported DOCTOR_SUITES_DECLARED ' + $declaredLines.Count + ' times -- the answer is ambiguous'
+}
+# How many of the declared suites the gate is supposed to run.
+#
+# The doctor prints one line per declared suite:
+#   ok    <id>    registry=True  gate=True
+# `registry` is the SPEC's own `in_gate` flag and `gate` is whether the id is
+# in gate.ps1's Run list. The count of registry=True rows is therefore the
+# number the DECLARATION says the gate owns, and it comes from the SPEC rather
+# than from the gate's own Run list -- a check whose expected value comes from
+# the thing it judges cannot fail (rule 15).
+#
+# The row is matched whole-line and the gate= value is captured, so a suite
+# whose declared verdict string contains this text cannot forge a row.
+$registryRows = @([regex]::Matches($doctorOut, '(?m)^\s+(?:ok|DRIFT)\s+(\S+)\s+registry=(True|False)\s+gate=(True|False)\s*$'))
+$gateOwnedSuites = 0
+foreach ($row in $registryRows) {
+  if ($row.Groups[2].Value -eq 'True') { $gateOwnedSuites++ }
+}
 # The doctor's OWN EXIT CODE is the primary threshold. It is the doctor's
 # verdict and it cannot be forged by anything printed in the output, which
 # is exactly why it is the threshold and the token is the second check.
@@ -148,6 +189,35 @@ if ($doctorProblem -ne '') {
 } elseif ($suiteProblems -gt 0) {
   $doctorRed = $true
   $doctorReason = 'the doctor found ' + $suiteProblems + ' suite declaration problem(s)'
+} elseif ($null -eq $declaredSuites) {
+  # A doctor that could not be MEASURED is not a doctor that found nothing.
+  # Same treatment as a missing DOCTOR_SUITES_PROBLEMS token.
+  $doctorRed = $true
+  $doctorReason = 'the doctor did not report DOCTOR_SUITES_DECLARED'
+} elseif ($declaredSuites -le 0) {
+  # The A-arm seal.
+  #
+  # MEASURED 2026-10-23, on this tree, with the doctor UNMODIFIED: with SPEC's
+  # suites: block emptied and gate.ps1's 33 Run calls deleted, and no suite
+  # files on disk, the doctor exits 0, prints DOCTOR_SUITES_PROBLEMS=0 and
+  # DOCTOR_SUITES_DECLARED=0, and prints no ERROR line at all. The gate then
+  # ran ZERO suites and reported "RED SUITES: 0", "GATE_STATE=complete" and
+  # exit code 0. Two empty lists agreed with each other, so "I measured
+  # nothing" was reported as "nothing is wrong" -- the gate's green had two
+  # meanings, and nothing said which one this run was.
+  #
+  # The doctor's own EMPTY REGISTRY check (tools/pm.py:1640) catches this only
+  # when there ARE suite files on disk; with none, the check's precondition is
+  # false and the doctor stays green. This is the gate-side seal, and it does
+  # not depend on that check existing.
+  $doctorRed = $true
+  $doctorReason = 'the doctor declared ' + $declaredSuites + ' suite(s) -- a registry of nothing is a measurement that was not taken, not a measurement of zero'
+} elseif ($gateOwnedSuites -le 0) {
+  # The doctor declared suites but printed no row saying the gate owns one.
+  # That is a doctor whose output shape changed, not a gate that owns nothing,
+  # and the two must not be allowed to look alike.
+  $doctorRed = $true
+  $doctorReason = 'the doctor declared ' + $declaredSuites + ' suite(s) but printed no registry row saying the gate runs one -- the count of suites to run could not be read'
 }
 if ($doctorRed) {
   ">>> RED (the doctor is not green -- no suite was run)"
@@ -305,6 +375,7 @@ function Alive($why) {
 
 function Run($name, $block) {
   "=== $name ==="
+  $script:ranSuites++
   if (-not (Alive $name)) {
     "   >>> RED (backend unreachable: $script:aliveError) -- $name"
     $script:fail++; $script:redSuites += $name
@@ -458,6 +529,34 @@ Run 'browser-verify' { Push-Location $Root; node 'MapleBench/tools/browser-verif
 #   build-gate.ps1 (stops the server) -> deploy.ps1 -> open-archives.py
 #   python tools\verify\suites\save-audit.py
 # W-066 tracks the underlying gap: no endpoint to close an archive.
+
+# --------------------------------------------------------------------------- #
+# Did the gate run what the declaration says it runs?
+# --------------------------------------------------------------------------- #
+#
+# All three numbers are printed, always, so a reader never has to infer one
+# from another.
+#
+# MEASURED 2026-10-23 on this tree: declared = 34 and the gate owns 33. The
+# difference is save-audit, which SPEC.yaml marks `in_gate: false` because it
+# copies an archive and cannot be run against a server that already has one
+# open (the comment above says why). So the gate compares the number it RAN
+# against the number it OWNS, not against the raw declared total: comparing
+# 33 against 34 would redden a healthy tree every run, and a gate that cries
+# wolf is worse than no gate.
+"GATE_SUITES_DECLARED=$declaredSuites"
+"GATE_SUITES_OWNED=$gateOwnedSuites"
+"GATE_SUITES_RAN=$script:ranSuites"
+if ($gateOwnedSuites -ne $script:ranSuites) {
+  # Counted and named, exactly as the doctor path above counts and names
+  # itself, so the number in "RED SUITES:" and the RED_SUITE= lines in the
+  # verdicts file stay consistent with each other and with the exit code. A
+  # reader who sees this name knows the failure is the gate's accounting, not
+  # a suite's verdict.
+  "   >>> RED (the gate ran $script:ranSuites suite(s) but the doctor says it owns $gateOwnedSuites -- the registry and the gate disagree about what the gate runs)"
+  $script:fail++
+  $script:redSuites += 'gate-suite-count'
+}
 
 # --------------------------------------------------------------------------- #
 # The verdict, in a form a caller can use.
