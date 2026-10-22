@@ -335,10 +335,47 @@ tool, and the tool was not used.
     explicitly** (`>>> RED`), never continue against a wrong or missing
     target.
 
-    **⇒ And 18 more suites still hardcode `f4` and one hardcodes `f3`.** On an
-    instance whose `Map.nx` is `f2` they exit 1 with `HTTP Error 404` — and
-    **a 404 suite and a suite that measured a difference look almost the same
-    in the gate's output.** Fixing one suite's id is not fixing the family.
+    **⇒ The family was fixed on 2026-10-22 by `0645f62`** ("resolve archives
+    by name instead of a hard-coded id", 23 files). Measured before and after
+    with `git grep -l -E 'f[0-9]+/' <tree> -- tools/verify/suites/`:
+
+    ```
+    0645f62^  ->  21 suites
+    HEAD      ->   0 suites
+    ```
+
+    **⇒ 21, not 19.** The earlier "18 hardcode `f4` and one hardcodes `f3`"
+    undercounted by one on the `f3` side (`npcchat-verify.py` carries `f3`
+    as well as `f6`) **and** missed two suites outside the `f4`/`f3` frame
+    entirely — `attackdrop-verify.py` (`f5`) and `equipstats-verify.py`
+    (`f1`). **⇒ A census that only looks for the ids it already knows about
+    is not a census** (rule 18: report what was scanned, not what you
+    expected to find).
+
+    **⇒ Instrument: `tools/verify/archive-id-census.py`.** It reads the
+    suite list with `pm.py`'s own parser (one list, not two conventions),
+    reports `scanned` and `truncated`, splits **CODE / PROSE / COMMENT**,
+    and prints the resolved path and a digest of the tree it actually read.
+
+    **⇒ And the two arms must not be able to tie** (rule 20). Measured
+    2026-10-22: the first version of that tool loaded `pm.py` with
+    `import pm`, and Python cached the module — so the second arm read the
+    FIRST arm's `pm/SPEC.yaml` and resolved suite paths against the first
+    arm's root. Both arms reported `CODE=26 / suites=2` exactly, and a
+    single-directory run disagreed with the two-arm run. The fix is
+    `importlib.util.spec_from_file_location` against the tree being
+    censused, one module name per root, plus an assertion that every
+    resolved suite path lies inside that root.
+
+    **⇒ What is left on 2026-10-22:** 2 declared suites
+    (`MapleBench/tools/browser-verify.mjs`,
+    `MapleBench/tools/sim-skills-check.mjs`), and 6 probe scripts that
+    really do talk to an instance (`tools/probe/probe-e2e.js`,
+    `probe-load.js`, `probe-paintwalk.js`, `probe-tiles.js`,
+    `tools/probe/task23-shapes.py`, `MapleBench/tools/probe-A-lib.mjs`).
+    Three other hits (`tools/probe/avatar-check.mjs`,
+    `tools/probe/close-stub.js`, `tools/probe/mcp-assets.mjs`) are
+    **deliberate fakes** and are not defects.
 
 17. **A judge pointed at an instance running a STALE binary is not a
     measurement of the tree.** Measured 2026-10-22: the gate instance
