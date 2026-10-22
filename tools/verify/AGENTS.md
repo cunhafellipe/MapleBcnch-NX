@@ -368,6 +368,37 @@ tool, and the tool was not used.
     denominator is the same shape as incident 12: a missing field and a zero
     look identical.
 
+19. **A comparison that read ZERO lines is not a comparison.** Measured
+    2026-10-22: a check proving "the three lines that decide red are
+    byte-identical across two commits" ran `git show :/tools/verify/gate.ps1`,
+    which failed with *ambiguous argument*. The script did not stop — it
+    compared an empty string against the real file and **reported
+    `differences = 3`**. The correct answer was **0**, and the wrong one had
+    already been reported as a measurement.
+
+    **⇒ The direction of the error is what makes it dangerous:** the empty
+    side *added* differences, so a broken comparison **manufactures a defect**
+    in a file someone is about to change. A comparison that read 0 lines of
+    what it expected to read is the same species as incident 12 (a missing
+    field and a zero look identical) and as rule 14's "an abort reads as a
+    pass" — the tool returned a well-formed number instead of nothing.
+
+    **⇒ Two habits, both cheap:**
+    - **Print the line count of BOTH sides next to the result.**
+      `before=343 after=376 differences=0` is a measurement; a bare
+      `differences=0` is a wish.
+    - **Assert the non-empty side before diffing.** If a side reads 0 lines
+      and the file is known to be non-empty, fail loudly — that is an input
+      failure, not a finding.
+
+    **⇒ And the same author hit the same shape twice more in the same
+    session, in a different place:** a counter for "how many suites did the
+    gate run" counted the *doctor's own* output (29 instead of 0, then 7
+    instead of 0), and a whole-line regex matched nothing because the line
+    was indented. **⇒ Both were caught only because the receipt was written
+    to DERIVE its conclusion from the run instead of printing a constant.**
+    **⇒ That design is worth more than the individual counters.**
+
 ---
 
 ## Before you trust a measurement
