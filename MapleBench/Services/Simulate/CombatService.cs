@@ -1454,6 +1454,16 @@ public sealed class CombatService
                         if (_session.TryResolve(Path(file.Id, prefix, candidate + ".img")) is not { } image)
                             continue;
 
+                        // Mob.cpp:59-61 -- `watk = info["PADamage"]; matk =
+                        // info["MADamage"];`, the MOB'S OWN numbers, and the
+                        // fallback for every attack that declares no damage of
+                        // its own. Read from the mob's own info, never from the
+                        // mob its `info/link` points at: the link borrows
+                        // GRAPHICS only (Mob.cpp:48-57). Read before the loop
+                        // because it does not vary with the attack.
+                        int mobWatk = TryReadIntChild(image, "info", "PADamage", out int ownWatk) ? ownWatk : 0;
+                        int mobMatk = TryReadIntChild(image, "info", "MADamage", out int ownMatk) ? ownMatk : 0;
+
                         // Mob.cpp:142-177, transcribed.
                         for (int i = 1; i <= 8; i++)
                         {
@@ -1472,11 +1482,28 @@ public sealed class CombatService
                             // Mob.cpp:160
                             //   attack.power = attack.magic ? (MADamage ? MADamage : matk)
                             //                                          : (PADamage ? PADamage : watk);
-                            // With no stat model the fallback is 0, and a mob whose
-                            // attack states no damage simply cannot hurt.
+                            // The condition in each ternary is an nl::node, so it is
+                            // the node's EXISTENCE (node.cpp:152-154), never its
+                            // value: a PADamage of 0 is this attack's own answer and
+                            // must NOT fall back to the mob's. The fallback is the
+                            // mob's own number, and a STRING is parsed
+                            // (node.cpp:168-169 is std::stoll), so 8820003/attack3's
+                            // "900" is 900 and not the mob's 1440.
+                            //
+                            // MEASURED 2026-10-22 with attack-damage.py over Mob.nx:
+                            // 1,162 of the archive's 1,677 attack nodes declare no
+                            // damage of their own, and 1,148 of those had a mob stat
+                            // that is not 0. The old `?? 0` therefore published a 0
+                            // damage for attacks the reference gives a number, and
+                            // MobPatrol.cs adds this value to what the player takes
+                            // -- they hit, and did nothing.
                             int power = magic
-                                ? (ReadInt(info, "MADamage") ?? 0)
-                                : (ReadInt(info, "PADamage") ?? 0);
+                                ? (TryFindChild(info, "MADamage", out _)
+                                    ? ReadInt(info, "MADamage") ?? 0
+                                    : mobMatk)
+                                : (TryFindChild(info, "PADamage", out _)
+                                    ? ReadInt(info, "PADamage") ?? 0
+                                    : mobWatk);
 
                             // Mob.cpp:169-175
                             int rangeLeft = 0, rangeTop = 0, rangeRight = 0, rangeBottom = 0;
