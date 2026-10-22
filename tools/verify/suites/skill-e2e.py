@@ -16,9 +16,31 @@ runs (`livewalk.js skillFor` / `onKeyDown`), read out of the source rather than
 re-implemented, so this answers "is the logic implemented" rather than "does my
 copy of the logic work".
 """
-import json, re, sys, urllib.request
+import json, os, pathlib, re, sys, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+
+def _repo_root():
+    """The repository this suite belongs to: the nearest ancestor of THIS file
+    that holds a `MapleBench` directory.
+
+    It used to be an absolute path, and a suite run from a CLONE therefore read
+    the WORKING TREE's client source -- which other agents were editing at the
+    time (measured 2026-10-22). A clone must read the clone, so the path is
+    derived from the file's own location and never from the current working
+    directory or an environment variable. If no ancestor holds a `MapleBench`,
+    the suite says so and stops rather than reading somebody else's tree."""
+    for parent in pathlib.Path(__file__).resolve().parents:
+        if (parent / "MapleBench").is_dir():
+            return parent
+    raise SystemExit("skill-e2e: no ancestor of this file holds a MapleBench "
+                     "directory, so the client source it checks cannot be found")
+
+
+REPO_ROOT = _repo_root()
+# The same override the gate itself uses (gate.ps1:50), so a gate pointed at
+# another instance reaches this suite too. The default is the port the suites
+# have always used.
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 SKILL = "1121008"          # MultiStrike = false -> the branch that can damage
 KEY = "K"
@@ -57,8 +79,10 @@ def step(sid, keys, count=1):
 
 
 # ---- read the CLIENT half out of the source, do not re-implement it -------------
-livewalk = open(r"C:\MUWORK\GAME\MAPLESOTRY\wz工具\MapleBcnch-NX-audit"
-                r"\MapleBench\wwwroot\js\livewalk.js", encoding="utf-8").read()
+# The CLIENT source of THIS repository -- the clone's, when the suite runs from a
+# clone. See _repo_root() above for why this is not an absolute path.
+livewalk = (REPO_ROOT / "MapleBench" / "wwwroot" / "js" / "livewalk.js").read_text(
+    encoding="utf-8")
 
 print("=== the client half, read out of livewalk.js ===")
 m = re.search(r"onKeyDown\(e\)\s*\{(.*?)\n  \}", livewalk, re.S)

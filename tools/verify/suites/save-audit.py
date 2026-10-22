@@ -13,8 +13,16 @@ only explicit markers (pm/GATE.md:64-83).
 """
 import hashlib, json, os, shutil, sys, tempfile, time, urllib.request, urllib.parse, uuid
 
-BASE = "http://127.0.0.1:5591"
-LIVE = r"C:\MUWORK\GAME\MPSHS"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+# The real data root, READ ONLY.
+#
+# It is read to PROVE the save pipeline did not touch it: the md5 of the
+# subject under it is taken before and after and the two are compared. An
+# environment variable can point that READ at another root; the default is this
+# machine's. The path used to be a bare absolute path, which made the suite
+# unrunnable anywhere else -- and the "never writes" promise below is enforced
+# by _assert_not_live(), not by this constant being correct.
+LIVE = os.environ.get("MAPLEBENCH_LIVE_ROOT") or r"C:\MUWORK\GAME\MPSHS"
 SUBJECT = "Etc.nx"
 # A fresh folder every run, and never rmtree an old one: an NX archive is held
 # open as a MEMORY-MAPPED section, so overwriting yesterday's copy fails with
@@ -45,6 +53,27 @@ def check(name, ok, detail=""):
         print(f">>> RED: save-audit -- {name} ({detail})")
 
 
+def _assert_not_live(path):
+    """Refuse a WRITE whose target is inside the live data root.
+
+    "THIS NEVER TOUCHES C:\\MUWORK\\GAME\\MPSHS" is the suite's promise, and a
+    promise in a docstring is not a guarantee. The md5 comparison at the end of
+    the run would catch a write that happened, but only AFTER it happened and
+    only for the one file it looks at. This makes the promise ENFORCED: every
+    write this file performs goes through a path that this refuses, so a
+    mistake fails loudly at the moment it is made instead of silently later.
+
+    READS under the live root are fine and are the point of the suite."""
+    try:
+        inside = os.path.commonpath(
+            [os.path.abspath(path), os.path.abspath(LIVE)]) == os.path.abspath(LIVE)
+    except ValueError:
+        inside = False          # a different drive cannot be inside it
+    if inside:
+        raise RuntimeError(
+            f"refusing to write inside the live data root ({LIVE}): {path}")
+
+
 def md5(p):
     h = hashlib.md5()
     with open(p, "rb") as fh:
@@ -71,6 +100,7 @@ def copy_archived(src, dst, attempts=4):
     last = None
     for attempt in range(attempts):
         try:
+            _assert_not_live(dst)
             with open(src, "rb") as r, open(dst, "wb") as w:
                 shutil.copyfileobj(r, w, length=1 << 20)
             shutil.copystat(src, dst)
@@ -114,10 +144,12 @@ def value(p):
 
 
 print("=== setup: a COPY, never the live archive ===")
+_assert_not_live(SCRATCH)
 os.makedirs(SCRATCH, exist_ok=True)
 # Stage the live archive ONCE, into a file nothing has open. Reading it on every
 # run is what produced the two different setup failures above.
 if not os.path.exists(STAGED):
+    _assert_not_live(STAGING)
     os.makedirs(STAGING, exist_ok=True)
     copy_archived(os.path.join(LIVE, SUBJECT), STAGED + ".part")
     os.replace(STAGED + ".part", STAGED)
