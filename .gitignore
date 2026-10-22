@@ -426,3 +426,12 @@ tools/probe/acc.json
 pm/STATE.md
 pm/COVERAGE.md
 pm/START-HERE.md
+# Chrome profile directories a browser run leaves in the working tree. They
+# are browser state, not product: 3,300+ files of profile junk that made
+# `git status` useless for finding real untracked work.
+#
+# The pattern is `.chrome*/` and not `.chrome-*/` because the two profile
+# directories here are named differently: `.chrome-charvis` (2,560 files) and
+# `.chrome9` (744 files). A hyphen would match only the first and leave the
+# second untracked.
+.chrome*/
