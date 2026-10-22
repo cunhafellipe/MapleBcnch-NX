@@ -394,12 +394,22 @@ suites:
 
 # --------------------------------------------------------------------------- #
 # invariants — 不可破壞的東西。doctor 會逐條檢查。
+#
+# The md5 of avatar.md5's file is the md5 of the file with its line endings
+# normalised to LF. Measured 2026-10-22: the raw bytes hash to a1eb2eb4... in
+# a working tree (CRLF) and to ba96b2d9... in a fresh clone of the same commit
+# (LF), so the raw hash made that invariant red on every clean checkout -- and
+# a doctor that is always red cannot be used as a gate.
+#
+# NOTE: this SPEC's YAML subset cannot carry a comment INSIDE a list item --
+# a comment line ends the mapping early, and the keys after it are silently
+# lost. So the explanation lives here, above the list, where it is read.
 # --------------------------------------------------------------------------- #
 invariants:
   - id: avatar-md5
     kind: md5
     file: "MapleBench/wwwroot/js/avatar.js"
-    md5: a1eb2eb47af42e07ee048762c2592456
+    md5: ba96b2d9727203279b8b784d256430b5
     why: 這個專案不應該碰它。變了代表有東西伸進了不該碰的檔案。
   - id: data-root-untouched
     kind: mtime-newer-than

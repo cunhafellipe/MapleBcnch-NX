@@ -104,23 +104,55 @@ if ($doctorProblem -eq '') {
   }
   $proc.Dispose()
 }
+# The token is read as a WHOLE LINE, and exactly one such line must be
+# present.
+#
+# MEASURED 2026-10-22: a plain -match takes the FIRST occurrence, and the
+# doctor prints each suite's DECLARED verdict -- a free-form string from
+# SPEC.yaml -- on its own line, before the token line. A suite row whose
+# verdict is "DOCTOR_SUITES_PROBLEMS=0" therefore put the token text
+# earlier in the doctor's output than the token itself: the gate read the
+# forged 0, and ran 32 suites on a tree the doctor had just reported as
+# 20 problems. A whole-line match cannot be forged that way -- every other
+# line of the doctor's output carries other text on it.
+$tokenLines = @([regex]::Matches($doctorOut, '(?m)^DOCTOR_SUITES_PROBLEMS=(\d+)\s*$'))
 $suiteProblems = $null
-if ($doctorOut -match 'DOCTOR_SUITES_PROBLEMS=(\d+)') { $suiteProblems = [int]$Matches[1] }
+if ($tokenLines.Count -eq 1) {
+  $suiteProblems = [int]$tokenLines[0].Groups[1].Value
+} elseif ($tokenLines.Count -gt 1) {
+  $doctorProblem = 'the doctor reported DOCTOR_SUITES_PROBLEMS ' + $tokenLines.Count + ' times -- the answer is ambiguous'
+}
+# The doctor's OWN EXIT CODE is the primary threshold. It is the doctor's
+# verdict and it cannot be forged by anything printed in the output, which
+# is exactly why it is the threshold and the token is the second check.
+#
+# MEASURED 2026-10-22: the doctor exited 1 on a fresh export of HEAD
+# while every suite was fine, because the avatar-md5 invariant hashed a
+# text file whose bytes differ between a working tree (CRLF) and a fresh
+# checkout (LF). That invariant now normalises the line endings before
+# hashing, so the doctor is green on a clean clone and its exit code means
+# what it says. Both checks are kept: the exit code says whether the
+# doctor found anything, the token says whether the SUITE declarations are
+# sound.
 $doctorRed = $false
-if ($doctorProblem -eq '') {
-  if ($null -eq $suiteProblems) {
-    $doctorProblem = 'the doctor did not report DOCTOR_SUITES_PROBLEMS'
-    $doctorRed = $true
-  } elseif ($suiteProblems -gt 0) {
-    $doctorRed = $true
-  }
-} else {
+$doctorReason = ''
+if ($doctorProblem -ne '') {
   $doctorRed = $true
+  $doctorReason = $doctorProblem
+} elseif ($doctorExit -ne 0) {
+  $doctorRed = $true
+  $doctorReason = 'the doctor exited ' + $doctorExit
+} elseif ($null -eq $suiteProblems) {
+  $doctorRed = $true
+  $doctorReason = 'the doctor did not report DOCTOR_SUITES_PROBLEMS'
+} elseif ($suiteProblems -gt 0) {
+  $doctorRed = $true
+  $doctorReason = 'the doctor found ' + $suiteProblems + ' suite declaration problem(s)'
 }
 if ($doctorRed) {
   ">>> RED (the doctor is not green -- no suite was run)"
   "GATE_DOCTOR_EXIT=$doctorExit"
-  if ($doctorProblem -ne '') { "GATE_DOCTOR_ERROR=$doctorProblem" }
+  "GATE_DOCTOR_REASON=$doctorReason"
   if ($doctorOut -ne '') { $doctorOut }
   if ($doctorErr -ne '') { $doctorErr }
   if ($verdictsOk) {
@@ -135,17 +167,18 @@ if ($doctorRed) {
   exit 1
 }
 "GATE_DOCTOR_EXIT=$doctorExit (suite declarations: $suiteProblems problem(s))"
-if ($doctorExit -ne 0) {
-  # The doctor is red for a reason that is NOT about the suites. That is
-  # reported here, not hidden, and it does not stop the gate: what the gate
-  # needs to know is whether a suite's verdict can be trusted, and the
-  # question it asked is the suite one. MEASURED 2026-10-22: on a fresh
-  # export of HEAD the doctor exits 1 on the avatar-md5 invariant, because
-  # that invariant hashes a text file whose bytes differ between a working
-  # tree (CRLF) and a fresh checkout (LF). Keying the gate on the doctor's
-  # exit code would therefore refuse to run in a clean clone.
-  "GATE_DOCTOR_NOTE: the doctor is red for a reason that is not about the suites; the gate proceeded"
-}
+# There is no "the doctor is red for a reason that is not about the suites,
+# the gate proceeded" note here any more, and there must not be: the
+# doctor's exit code is the threshold, so a doctor that is red for ANY
+# reason stops the gate. That note existed because the exit code could not
+# be used as the threshold -- the doctor was long-term red on a clean
+# clone, because the avatar-md5 invariant hashed a text file whose bytes
+# differ between a working tree (CRLF) and a fresh checkout (LF). That
+# invariant now normalises the line endings before hashing, so the exit
+# code is meaningful and "red for another reason" is a stop, not a
+# proceed. The information a reader needs is on the red path instead:
+# GATE_DOCTOR_REASON says why, and the doctor's own output says which
+# section was red.
 
 # RED is an EXPLICIT marker a suite prints, never an inference. Three attempts at
 # inferring red from prose each produced a false result: $LASTEXITCODE is not set

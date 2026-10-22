@@ -1305,16 +1305,49 @@ def cmd_doctor(_args) -> int:
     for inv in spec_rows(spec, "invariants"):
         kind = inv.get("kind")
         if kind == "md5":
+            # Rule 9: name every field you are about to read, and check it
+            # exists first. A missing field and a field whose value is 0 look
+            # identical, and an unguarded index here crashes the whole
+            # doctor with a traceback instead of naming the broken
+            # invariant. MEASURED 2026-10-22: this crashed on a SPEC.yaml
+            # whose invariant had lost its `md5:` key -- the SPEC's YAML
+            # subset ends a list-item mapping at a comment line, so the key
+            # after the comment is silently dropped.
+            missing = [k for k in ("file", "md5") if not inv.get(k)]
+            if missing:
+                print(f"  {inv.get('id', '?')}: MALFORMED -- no {', '.join(missing)}"
+                      " (this SPEC's YAML subset ends a list-item mapping at a"
+                      " comment line, so a key after a comment is silently lost)")
+                bad += 1
+                continue
             p = os.path.join(ROOT, inv["file"])
             if not os.path.exists(p):
                 print(f"  {inv['id']}: MISSING {inv['file']}")
                 bad += 1
                 continue
-            h = hashlib.md5(open(p, "rb").read()).hexdigest()
+            # The bytes of a TEXT file depend on the checkout. git hands out
+            # CRLF in a working tree and LF in a fresh clone, so the same
+            # commit hashes two ways and an invariant on a text file is red
+            # in one and green in the other.
+            #
+            # MEASURED 2026-10-22: this invariant was green in the working
+            # tree (CRLF, md5 a1eb2eb4...) and red on a fresh export of the
+            # same commit (LF, md5 ba96b2d9...), which made the doctor
+            # long-term red on any clean clone -- and a doctor that is always
+            # red cannot be used as a gate. So the line endings are
+            # normalised before the hash and the recorded md5 is the
+            # normalised one: ba96b2d9727203279b8b784d256430b5.
+            #
+            # This does not weaken the guard. Any change to the CONTENT
+            # still moves the hash; only a change of line endings stops
+            # counting as a change.
+            data = open(p, "rb").read().replace(b"\r\n", b"\n")
+            h = hashlib.md5(data).hexdigest()
             ok = h == inv["md5"]
             print(f"  {inv['id']}: {'ok' if ok else 'CHANGED'}  {h}")
             if not ok:
                 print(f"      expected {inv['md5']} -- {inv.get('why','')}")
+                print("      (the md5 is of the file with its line endings normalised to LF)")
                 bad += 1
         elif kind == "file-contains":
             # A bare name is a suite; a name with a directory is repo-relative.
@@ -1438,7 +1471,16 @@ def cmd_doctor(_args) -> int:
     # before it runs a single suite -- "do the declarations still match the
     # code?" -- and reads this token. A MISSING token means the doctor could
     # not be measured, which is not the same as finding nothing.
-    print(f"  DOCTOR_SUITES_PROBLEMS={decl_err + decl_gap}")
+    #
+    # It is printed at COLUMN 0, on a line of its own, because the gate has
+    # to be able to tell this line from any other line of the doctor's
+    # output. MEASURED 2026-10-22: the doctor prints each suite's declared
+    # verdict -- a free-form string from SPEC.yaml -- on its own line, so a
+    # suite row whose verdict is "DOCTOR_SUITES_PROBLEMS=0" put the token
+    # text earlier in the output than the token itself, and a loose match
+    # read the forged 0. At column 0, on its own line, nothing else in the
+    # doctor's output can be that shape.
+    print(f"DOCTOR_SUITES_PROBLEMS={decl_err + decl_gap}")
     bad += decl_err + decl_gap
 
     print()
