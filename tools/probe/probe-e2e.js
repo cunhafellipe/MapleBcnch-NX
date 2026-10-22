@@ -4,10 +4,27 @@
   if (!sim) return { error: 'no simulator' };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+  // NOTE ON THE RED MARKER, and it is a trap worth naming (F6).
+  //
+  // This file uses BOTH styles, and they land in DIFFERENT streams:
+  //   - the RETURNED errors below (`return { error: ... }`) come back as the
+  //     value cdp-eval prints, so they are on STDOUT;
+  //   - the THROWN `>>> RED:` messages (a `throw new Error(...)`) are caught
+  //     by tools/probe/cdp-eval.mjs:25-28, which prints them on STDERR
+  //     (`EXC: ...`) and exits 1, leaving stdout EMPTY.
+  //
+  // The `>>> RED` convention in this repository is a STDOUT one
+  // (tools/verify/AGENTS.md rule 14: the gate greps the suite's stdout). So
+  // a red from a THROWN marker here is invisible to a stdout-only reader and
+  // only the EXIT CODE carries it. This probe has no downstream today, so it
+  // costs nothing -- but if it is ever wired into a gate, the red has to be
+  // read from the exit code, or the gate will read it as green.
+
   // The archive id is handed out in the order the archives were opened, so 'f1'
   // is Map.nx on one instance and something else on another. Resolve it by
-  // NAME. A browser snippet has no exit code, so the red marker goes to the
-  // page console AND comes back as the value cdp-eval prints.
+  // NAME. This helper uses the RETURNED-error style, so its marker comes back
+  // as the value cdp-eval prints -- STDOUT. (The THROWN style lands on
+  // STDERR; see the note at the top of this file.)
   const archiveId = async (name) => {
     let files;
     try { files = await (await fetch('/api/files')).json(); }
@@ -95,54 +112,71 @@
   // The viewer resolves the facing the same way when it draws (walkview.js:4583),
   // so the probe must not resolve it differently.
   const dir = tick.dir ?? (tick.facing >= 0 ? 1 : -1);
-  const fr = part.frames[0];
+  // The frame the viewer actually drew. The product publishes it
+  // (walkview.js:4596-4607, `frame: index`), and that `index` is the ARRAY
+  // index into `part.frames` -- the same index `avatar.partsAt(index)` and
+  // `avatar.placement(..., index)` take (avatar.js:590, :616).
+  //
+  // The ELEMENTS below are read from THAT frame, not from frame 0. Before,
+  // the placement came from `drawnFrame` while the elements came from
+  // `part.frames[0]`, so the published `placement` box (w/h/originX/originY
+  // come from the drawn frame) and the published rectangles (from frame 0)
+  // could describe two different frames, while the comment above claimed
+  // they described the drawn one. MEASURED 2026-10-23: `drawnFrame` is 0 in
+  // this run, so the numbers are identical either way -- what changed is that
+  // the code now does what the comment says.
+  const drawnFrame = v.lastAvatarPose?.frame ?? part.index ?? 0;
+  const fr = part.frames[drawnFrame];
+  if (!fr) {
+    throw new Error('>>> RED: the viewer drew frame ' + drawnFrame + ' but the avatar publishes only '
+      + part.frames.length + ' frame(s)');
+  }
 
   // WHICH shape this frame carries.
   //
-  // Measured on a private instance (2026-10-23, avatar frame 0 of stand1): the
+  // MEASURED on a private instance (2026-10-23, avatar frame 0 of stand1): the
   // composed look publishes `parts` -- 16 of them, each with
   // path/width/height/originX/originY/screen -- and the FRAME itself carries
   // neither `layers` nor `originX`/`originY`/`width`/`height`. avatar.js:590
   // reads `frames[index].parts`, so that is the shape an avatar has.
   //
-  // The other two shapes are real too and stay in the resolver: an NX
-  // animation frame publishes `layers` (animation.js:119) and a WZ
-  // single-canvas frame IS the frame. The old code read `layers` only, so on
-  // an avatar it fell back to `[fr]` and every field it then read was
-  // undefined: `L.path.split` threw at :121, and `body.originY`/`body.height`
-  // would have made `bottom` a NaN at :102 even if the throw were removed.
-  const shape = fr.parts?.length ? 'parts' : fr.layers?.length ? 'layers' : 'frame';
-  if (shape === 'frame') {
-    throw new Error('>>> RED: avatar frame 0 carries neither parts nor layers, so there is nothing to place; frame keys: '
+  // The other two shapes belong to OTHER subjects and cannot occur here: a
+  // `layers` stack is an ANIMATION concept (animation.js:115-119) and a WZ
+  // single-canvas frame is a third thing again. This probe reads only
+  // `v.avatar.part` (above), and avatar.js:486-488 keeps only the frames that
+  // HAVE parts:
+  //   const frames = (look.frames?.length ? look.frames : [look])
+  //     .filter((f) => f.parts?.length)
+  // so every frame in `part.frames` has a non-empty `parts` (MEASURED:
+  // everyFrameHasNonEmptyParts = true, anyFrameHasLayers = false).
+  //
+  // The old `layers` branch was therefore DEAD code, and its comment cited
+  // walkview.js:4050 -- which is drawMob(), a MOB's single canvas -- for an
+  // animation's layer blit (animation.js:218), and credited that path with a
+  // mirror it does not perform. It is gone rather than defended: what stays
+  // is the guard below, which CAN fire.
+  const items = fr.parts;
+  if (!items || !items.length) {
+    throw new Error('>>> RED: avatar frame ' + drawnFrame + ' carries no parts, so there is nothing to place; frame keys: '
       + Object.keys(fr).join(','));
   }
-  const items = shape === 'parts' ? fr.parts : fr.layers;
 
-  // The frame the viewer actually drew. The product publishes it
-  // (walkview.js:4596), so the probe's numbers describe that frame and not a
-  // guess about which one the clock was on.
-  const drawnFrame = v.lastAvatarPose?.frame ?? part.index ?? 0;
   const at = v.avatar.placement(tick.x, tick.y, dir, drawnFrame);
 
-  // One element's rectangle in WORLD units, in the product's own arithmetic.
+  // One element's rectangle in WORLD units, in the product's own arithmetic:
+  // avatar.js rectOf() (avatar.js:680-697). The part's `screen` offset is
+  // already anchored to the character (the feet sit at screen.y = 0) and the
+  // mirror negates the horizontal offset and nothing else.
   //
-  //   parts  -> avatar.js rectOf(): the part's `screen` offset is already
-  //             anchored to the character (the feet sit at screen.y = 0) and
-  //             the mirror negates the horizontal offset and nothing else.
-  //   layers -> walkview.js:4050: the canvas is blitted top-left at
-  //             (x - originX, y - originY), and the mirror flips the PIXELS
-  //             about the origin node, so the rectangle itself does not move.
+  // It is a TRANSCRIPTION of the product's arithmetic, not a call into it:
+  // the probe is a second implementation on purpose, so that a change in the
+  // product shows up as a difference between the two.
   const rectOfItem = (it) => {
     const w = it.width ?? 0;
     const h = it.height ?? 0;
-    if (shape === 'parts') {
-      const dx = it.screen?.x ?? 0;
-      const dy = it.screen?.y ?? 0;
-      return { x: at.flip ? at.cx - dx - w : at.cx + dx, y: at.cy + dy, w, h };
-    }
-    const ox = it.originX ?? 0;
-    const oy = it.originY ?? 0;
-    return { x: at.cx - ox, y: at.cy - oy, w, h };
+    const dx = it.screen?.x ?? 0;
+    const dy = it.screen?.y ?? 0;
+    return { x: at.flip ? at.cx - dx - w : at.cx + dx, y: at.cy + dy, w, h };
   };
   const rects = items.map(rectOfItem);
 
@@ -158,7 +192,7 @@
       [at.cx, at.cy, at.w, at.h, at.originX, at.originY].some((n) => !finite(n)) ||
       rects.some((r) => ![r.x, r.y, r.w, r.h].every(finite))) {
     throw new Error('>>> RED: the avatar placement could not be measured (a non-finite number): '
-      + JSON.stringify({ shape, at, rects: rects.slice(0, 3), bottom }));
+      + JSON.stringify({ drawnFrame, at, rects: rects.slice(0, 3), bottom }));
   }
   const nameOf = (it) => (it.path ? String(it.path).split('/').pop() : '(no path)');
 
@@ -172,6 +206,17 @@
   // numbers the probe computes can be compared with the pixels the avatar
   // actually changed. The measured box is in DEVICE pixels and the computed
   // one in CSS pixels, so the device ratio is carried with them.
+  //
+  // WHAT THE RELATION BETWEEN THE TWO IS NOT: the measured box is NOT
+  // necessarily inside the computed union. It is the PIXEL GRID footprint of
+  // the analytic union, so it rounds outward by up to about half a device
+  // pixel per edge. MEASURED 2026-10-23 at dpr=1 on a private instance: the
+  // measured box sat 0.8 px ABOVE the union's top, 0.6 px BELOW its bottom and
+  // 0.2 px past its right edge (0 on the left). A second measurement, on
+  // another instance, put the bottom 0.4 px below and, at dpr=2, the left and
+  // the right 0.1 px outside. The code asserts nothing about the relation, and
+  // nothing should: a check of the form "measured inside computed" would go
+  // red on a correct probe.
   const dpr = window.devicePixelRatio || 1;
   const ux0 = Math.min(...rects.map((r) => px(r.x)));
   const uy0 = Math.min(...rects.map((r) => py(r.y)));
@@ -189,7 +234,10 @@
               bitmaps: v.avatar.bitmaps.size, missing: v.avatar.missingLayers ?? [] },
     placement: at,
     placementTypes: Object.fromEntries(Object.entries(at).map(([k, x]) => [k, typeof x])),
-    frameShape: shape,
+    // The shape this probe measured. It is 'parts' and cannot be anything else
+    // here (see the resolver above); the field stays because the value it
+    // published before is the value it publishes now.
+    frameShape: 'parts',
     elementCount: items.length,
     drawnFrame,
     avatarPose: v.lastAvatarPose ?? null,
