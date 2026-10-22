@@ -1,7 +1,7 @@
 """Exercise /api/simulate/mob-info against the measured archive truth."""
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 
 
 def info(mob):

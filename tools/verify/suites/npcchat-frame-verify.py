@@ -10,10 +10,10 @@ Reference (clean-client):
 
 Fixed step is 1000/60 ms, so 3000 ms = 180 frames and 6000 ms = 360.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 from collections import Counter
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map0/000000002.img"   # 2 of 6 NPCs have a String entry; others are silent
 FRAME_MS = 1000 / 60
 bad = 0

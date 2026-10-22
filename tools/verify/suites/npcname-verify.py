@@ -20,9 +20,9 @@ MEASURED before the fix: `CombatService.NpcText` built the pool path from the
 verbatim map id, so four of that map's six NPCs had no name at all and the wire
 read `id=0002000 name=''`.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map0/000000002.img"
 bad = 0
 

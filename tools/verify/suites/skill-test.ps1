@@ -18,7 +18,7 @@
 # is proven to work rather than assumed: acceptance for W-062 requires the gate
 # to go red when the suite says red.
 param(
-  [int]$Port = 5591,
+  [int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }),
   [string]$Map = "f4/Map/Map1/100000004.img",
   [switch]$ForceFail
 )

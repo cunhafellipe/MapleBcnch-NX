@@ -25,7 +25,7 @@ to accept it: `Mob.cpp:55` accepts `stand` OR `fly`.
 import json, os, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map0/000000000.img"
 bad = 0
 

@@ -12,9 +12,9 @@ removed; Z remains and is declared at the call site.
 MEASURED before the fix: the server accepted A, D, W, S and Z with `rejected: []`
 and the panel reported them bound. None of them could ever cast.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 # Only Z, after WASD was removed.
 MOVEMENT = ["Z"]

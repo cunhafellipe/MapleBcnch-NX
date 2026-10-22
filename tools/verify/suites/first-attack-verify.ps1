@@ -1,4 +1,4 @@
-param([int]$Port = 5591, [string]$FirstAttackMob = '2220000', [string]$PlainMob = '2220100')
+param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$FirstAttackMob = '2220000', [string]$PlainMob = '2220100')
 $ErrorActionPreference = 'Stop'
 $base = "http://127.0.0.1:$Port"
 $files = Invoke-RestMethod "$base/api/files" -TimeoutSec 120

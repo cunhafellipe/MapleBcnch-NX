@@ -56,7 +56,7 @@ const { chromium } = (() => {
   process.exit(1);
 })();
 
-const BASE = process.env.BASE ?? 'http://127.0.0.1:5591';
+const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
 const MAP = /100000004/;          // Henesys: a map with mobs on it
 const SKILL = '1121008';          // Slash Blast: has a damage node and effect art
 const KEY = 'k';

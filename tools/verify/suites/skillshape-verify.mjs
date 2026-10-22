@@ -53,7 +53,7 @@
 //       ONLY=1121008,2301002         (comma-separated subset, for a quick look)
 //       MULTIMOB=0                   (skip the nearest-N section)
 
-const BASE = process.env.BASE ?? 'http://127.0.0.1:5591';
+const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
 const MAP = process.env.MAP ?? 'f4/Map/Map1/100000004.img';
 const MOB = process.env.MOB ?? '9400101';
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map((s) => s.trim())) : null;

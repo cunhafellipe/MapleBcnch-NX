@@ -10,9 +10,9 @@ the side the mob is facing.
 Calibration first: a mob that is NOT hit must not move, or "it moved" proves
 nothing.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 MOB = "2220100"
 STEP_MS = 1000 / 60

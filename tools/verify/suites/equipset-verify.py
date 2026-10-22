@@ -7,9 +7,9 @@ incPAD 69, incMMP 62, incEVA 42, incMHP 39, incACC 31, incSpeed 27,
 incMAD 18, incJump 15. So armour is NOT cosmetic: it moves accuracy, max HP,
 max damage and both defences.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 bad = 0
 

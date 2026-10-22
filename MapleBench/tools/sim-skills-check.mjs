@@ -23,7 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const JS = resolve(HERE, '..', 'wwwroot', 'js');
 // A bare Windows path is not an ESM specifier; it has to be a file:// URL.
 const mod = (name) => import(pathToFileURL(`${JS}/${name}`).href);
-const BASE = process.env.BASE ?? 'http://127.0.0.1:5591';
+const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
 
 // api.js and i18n.js reach for browser globals at import time in a browser. Stub
 // the two they need before importing, so the modules under test load unmodified.

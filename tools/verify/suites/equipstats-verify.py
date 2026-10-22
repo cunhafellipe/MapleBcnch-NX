@@ -5,9 +5,9 @@ The three cases that a name-based reader would fail are the point of this file:
   Weapon/01372038.img  carries `incRMAI` / `incRMAL`, which no reference defines
   Weapon/01302000.img  the eight-digit form a slot actually hands over
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 
 
 def stats(item):

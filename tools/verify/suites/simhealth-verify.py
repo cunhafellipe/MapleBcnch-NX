@@ -11,9 +11,9 @@ same thing this file measured independently, which is the check that was missing
 CALIBRATION FIRST (R-9). The armed/unarmed pair is the discriminator this whole
 night turned on, so it runs first and both halves must agree.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 bad = 0
 

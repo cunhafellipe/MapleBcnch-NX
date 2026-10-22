@@ -4,9 +4,9 @@ Npc.nx names string KEYS (Npc.cpp:127-128); String.nx carries the lines (:60).
 A reader that read only one archive would find every NPC silent, and a reader
 that guessed the key names would find the wrong ones.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 bad = 0
 
 

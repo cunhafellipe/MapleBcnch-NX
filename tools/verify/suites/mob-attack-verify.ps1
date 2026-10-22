@@ -22,7 +22,7 @@
 # the character before it can land a swing; 0210100 (32) leaves it 50 - 32 = 18
 # HP, which is not enough frames to land one either. MEASURED, both aborted.
 param(
-  [int]$Port = 5591,
+  [int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }),
   [string]$MapLeaf = 'Map/Map1/100000004.img',
   [string]$Mob = '9500302'
 )

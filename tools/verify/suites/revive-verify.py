@@ -11,9 +11,9 @@ The revive is the reference's: `Stage::respawn(portalid)` /
 `Player::respawn(pos, underwater)` (Stage.cpp:497-508, Player.cpp:210-251),
 reached from the revive prompt at UIStateGame.cpp:548-556.
 """
-import json, urllib.request
+import json, os, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map0/000000000.img"
 KILLER = "4220000"
 bad = 0

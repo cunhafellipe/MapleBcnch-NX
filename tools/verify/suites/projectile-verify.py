@@ -24,7 +24,7 @@ ten distinct values (200, 140, 230, 170, 250, 150, -200, 350, 260, 120) and the
 """
 import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 STEP_MS = 1000 / 60
 bad = 0
 
@@ -318,39 +318,62 @@ for shot in shots[:3]:
           f"delay={row[4]:.0f}ms lifetime={row[5]:.0f}ms mobX={row[6]:.0f} "
           f"-> launch point {row[1] - row[6]:+.0f}px from the mob")
 
-# Judge the first shot that was captured WHOLE -- its first frame must be the frame
-# the entry was created on, which the frame reports as `elapsed = 17ms` (one fixed
-# step). A shot captured mid-flight has a larger elapsed and would be read as
-# having "moved after 11 frames" when it had simply been flying before the loop
-# began.
+# Judge EVERY shot that was captured WHOLE, and COUNT what disagrees.
+#
+# A shot captured whole has its first frame = the frame the entry was created
+# on, which the frame reports as `elapsed = 17ms` (one fixed step). A shot
+# captured mid-flight has a larger elapsed and would be read as having "moved
+# after 11 frames" when it had simply been flying before the loop began.
+#
+# The verdict used to be read off the FIRST such shot, and THIS FILE records
+# why that is a coin toss: a shot that HITS stops early, and how early depends
+# on which side of the character the mob landed on -- `summon` picks x
+# uniformly in (player-100, player+100). A shot born inside the character
+# never moves at all, so the FIRST one can be unjudgeable while the others are
+# fine -- and the same file's note below says the first-shot judgement "went
+# red on roughly one run in three".
 whole = [s for s in shots if s[0][3] <= 2 * STEP_MS]
 if not whole:
     print(f"  >>> no shot was captured from the frame it was created on "
           f"(first elapsed values {[s[0][3] for s in shots]}ms)")
     bad += 1
     raise SystemExit(1)
-head = whole[0]
-launch_x = head[0][1]
-moved = next((r for r in head if abs(r[1] - launch_x) > 0.5), None)
-if moved is None:
-    print(f"  >>> the entry was frozen for {len(head)} frames and then resolved; "
-          f"its own delay is {head[0][4]:.0f}ms = {head[0][4] / STEP_MS:.0f} frames, so "
-          f"it was born inside the character and never had room to travel. "
-          f"This run cannot judge the flight.")
-    bad += 1
-else:
-    held = moved[0] - head[0][0]
-    print(f"  it stayed at the launch point until frame {moved[0]}, i.e. for {held} "
-          f"frames ({held * STEP_MS:.0f}ms)")
-    print(f"  the archive's attackAfter for this attack is {spec['delayMs']}ms = "
-          f"{delay_frames:.0f} frames")
+print(f"  the archive's attackAfter for this attack is {spec['delayMs']}ms = "
+      f"{delay_frames:.0f} frames")
+judged = 0
+frozen = 0
+off_delay = []
+for shot in whole:
+    launch_x = shot[0][1]
+    moved = next((r for r in shot if abs(r[1] - launch_x) > 0.5), None)
+    if moved is None:
+        # Born inside the character: it never had room to travel, so there is
+        # nothing to compare its delay with. A fact about the fight, not a
+        # defect -- as long as some other shot CAN be judged.
+        frozen += 1
+        continue
+    judged += 1
+    held = moved[0] - shot[0][0]
     if abs(held - delay_frames) > 3:
-        print(f"  >>> it moved after {held} frames, which is not the {delay_frames:.0f} "
-              f"its own delay calls for")
-        bad += 1
-    else:
-        print(f"  it waited exactly its own attackAfter and then set off -- the delay "
-              f"is honoured, not smeared")
+        off_delay.append((shot[0][0], held))
+    if judged <= 3:
+        print(f"  the shot from frame {shot[0][0]} stayed at the launch point "
+              f"until frame {moved[0]}, i.e. for {held} frames "
+              f"({held * STEP_MS:.0f}ms)")
+print(f"  {judged} of {len(whole)} shot(s) could be judged; {frozen} was born "
+      f"inside the character and never had room to travel")
+if off_delay:
+    for frame, held in off_delay:
+        print(f"  >>> the shot from frame {frame} moved after {held} frames, "
+              f"which is not the {delay_frames:.0f} its own delay calls for")
+    bad += len(off_delay)
+elif judged:
+    print("  every one of them waited exactly its own attackAfter and then set "
+          "off -- the delay is honoured, not smeared")
+else:
+    print("  >>> every shot was born inside the character, so this run cannot "
+          "judge the delay at all")
+    bad += 1
 
 # The travel check reads the LONGEST shot, not the first. A shot that HITS stops
 # early, and how early depends on which side of the character the mob happened to

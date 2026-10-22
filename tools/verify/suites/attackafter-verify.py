@@ -12,9 +12,9 @@ The rule being checked is `MobAttack.cpp:199` —
 (`Mob.cpp:153`) and `entry->elapsed` advanced by one TIMESTEP per tick (:37).
 TIMESTEP is 16.667ms, so 1200ms is frame 72.0 and a hit cannot be tested before it.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map0/000000000.img"
 STEP_MS = 1000 / 60
 bad = 0
@@ -154,45 +154,35 @@ if not shots:
     bad += 1
 else:
     print(f"  {len(shots)} shot(s); the first is {len(shots[0])} frames long")
-    first = shots[0]
-    print(f"    created on frame {first[0][0]} at elapsed={first[0][1]:.0f}ms")
-    print(f"    still not testable at elapsed="
-          f"{first[-1][1]:.0f}ms on frame {first[-1][0]}")
-    travelled = [r for r in first if r[1] >= r[2]]
-    if travelled:
+    # EVERY shot is judged, and the verdict is a COUNT over them.
+    #
+    # W-067 recorded that the first version compared a stale expectation
+    # against the first frame the probe OBSERVED, and called a correct product
+    # wrong. The expectation is right; what it did was apply it to ONE shot.
+    # The shot it happened to be holding can be one that was already old when
+    # the probe saw it, or one that never reached its delay at all -- and then
+    # the whole run is decided by WHICH shot came first.
+    #
+    # The expectation, stated once:
+    #   the entry becomes testable when elapsed reaches the delay, so measured
+    #   from the first observation the answer is (delay - age) / frame.
+    judged = 0
+    never_testable = 0
+    wrong_offset = []
+    early_tested = []
+    for shot in shots:
+        age0 = shot[0][1]
+        delay_of = shot[0][2]
+        travelled = [r for r in shot if r[1] >= r[2]]
+        if not travelled:
+            never_testable += 1
+            continue
+        judged += 1
         testable_at = travelled[0]
-        print(f"    first testable frame: {testable_at[0]} "
-              f"(elapsed={testable_at[1]:.0f}ms of delay={testable_at[2]:.0f}ms)")
-        offset = testable_at[0] - first[0][0]
-        print(f"    that is {offset} frames after it was FIRST OBSERVED; "
-              f"the archive's delay is {delay_frames:.1f} frames")
-
-        # W-067. THE SUITE WAS ARITHMETICALLY WRONG, AND THE PRODUCT WAS RIGHT.
-        #
-        # The old check compared `offset` against `delayMs / STEP_MS` and printed
-        #   ">>> the entry became testable 7 frames in, not 96.0"
-        # treating the first frame the probe OBSERVED as the frame the entry was
-        # CREATED. It was not: this run's own output says
-        #   created on frame 0 at elapsed=1483ms
-        # so the entry was already 1483ms (89 frames) old before anything saw it.
-        # The entry becomes testable when elapsed reaches the delay, so measured
-        # from first observation the answer is (delay - age) / frame -- here
-        # (1600 - 1483) / 16.67 = 7.0 frames, which is EXACTLY what it measured.
-        # attackAfter was honoured to the frame all along.
-        age0 = first[0][1]
-        delay_of = testable_at[2]
+        offset = testable_at[0] - shot[0][0]
         expected_offset = max(0.0, (delay_of - age0) / STEP_MS)
-        print(f"    it was already {age0:.0f}ms old when first observed, so the "
-              f"correct answer is ({delay_of:.0f} - {age0:.0f}) / {STEP_MS:.2f} = "
-              f"{expected_offset:.1f} frames")
-        if abs(offset - expected_offset) <= 2:
-            print("    attackAfter is honoured exactly: the entry cannot be tested "
-                  "before its delay elapses, so a hit cannot land before it either")
-        else:
-            print(f"  >>> became testable {offset} frames in; with an entry already "
-                  f"{age0:.0f}ms old the correct answer is {expected_offset:.1f}")
-            bad += 1
-
+        if abs(offset - expected_offset) > 2:
+            wrong_offset.append((shot[0][0], offset, expected_offset, age0, delay_of))
         # The invariant that actually matters, stated once and checked directly
         # from the frame data rather than inferred from an index: EVERY frame
         # before the testable one was still under its own delay.
@@ -203,13 +193,45 @@ else:
         # is stale" into "the product is wrong". That is the worst failure mode a
         # judge has (pm/GATE.md:78-83): it cries wolf, and a gate that cries wolf
         # gets ignored, which means it protects nothing.
-        before = first[:offset] if 0 <= offset < len(first) else []
+        before = shot[:offset] if 0 <= offset < len(shot) else []
         offenders = [(r[0], f"{r[1]:.0f}ms", f"{r[2]:.0f}ms") for r in before
                      if r[1] >= r[2]]
-        Check("no frame before the delay was testable", not offenders,
-              f"testable early at {offenders}")
+        if offenders:
+            early_tested.append((shot[0][0], offenders))
+
+    first = shots[0]
+    print(f"    created on frame {first[0][0]} at elapsed={first[0][1]:.0f}ms")
+    print(f"    still not testable at elapsed="
+          f"{first[-1][1]:.0f}ms on frame {first[-1][0]}")
+    print(f"  {judged} of {len(shots)} shot(s) could be judged; {never_testable} "
+          f"never reached its delay")
+    if judged:
+        travelled = [r for r in first if r[1] >= r[2]]
+        if travelled:
+            testable_at = travelled[0]
+            offset = testable_at[0] - first[0][0]
+            print(f"    first testable frame: {testable_at[0]} "
+                  f"(elapsed={testable_at[1]:.0f}ms of delay={testable_at[2]:.0f}ms)")
+            print(f"    that is {offset} frames after it was FIRST OBSERVED; "
+                  f"the archive's delay is {delay_frames:.1f} frames")
+            print(f"    it was already {first[0][1]:.0f}ms old when first observed, "
+                  f"so the correct answer is "
+                  f"({first[0][2]:.0f} - {first[0][1]:.0f}) / {STEP_MS:.2f} = "
+                  f"{max(0.0, (first[0][2] - first[0][1]) / STEP_MS):.1f} frames")
+    for frame, offset, expected, age0, delay_of in wrong_offset:
+        print(f"  >>> the shot from frame {frame} became testable {offset} frames "
+              f"in; with an entry already {age0:.0f}ms old the correct answer is "
+              f"{expected:.1f}")
+    if wrong_offset:
+        bad += len(wrong_offset)
+    elif judged:
+        print("    attackAfter is honoured exactly: the entry cannot be tested "
+              "before its delay elapses, so a hit cannot land before it either")
     else:
-        print("  >>> the entry never became testable")
+        print("  >>> no shot ever reached its delay, so this run cannot judge "
+              "attackAfter at all")
         bad += 1
+    Check("no frame before the delay was testable", not early_tested,
+          f"testable early at {early_tested}")
 
 print(f"\nBAD={bad}")

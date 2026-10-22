@@ -25,7 +25,7 @@ and is reverted, which save-audit already proved is safe.
 """
 import hashlib, json, os, sys, urllib.request, urllib.parse
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 asserts = 0
 fails = 0
 

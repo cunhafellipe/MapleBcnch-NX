@@ -7,9 +7,9 @@ Chain under test, all cited:
   DamageRoll.Roll              Mob.cpp:177-186 / :1590-1601 / :1790
   CombatService.MobDefence     Mob.cpp:62  info/PDDamage
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 bad = 0
 

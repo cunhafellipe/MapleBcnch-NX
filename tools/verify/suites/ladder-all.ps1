@@ -7,7 +7,7 @@
 #     22px off -- outside the client's +-10 reach box.)
 #  2. Climbing DOWN has to start from a position the climb actually reached.
 #     Spawning at the ladder's top y makes the session fall to the floor first.
-param([int]$Port = 5591, [string]$Map = "f4/Map/Map1/100000004.img")
+param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = "f4/Map/Map1/100000004.img")
 
 $base = "http://127.0.0.1:$Port"
 $script:Last = $null

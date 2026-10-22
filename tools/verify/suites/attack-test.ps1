@@ -10,7 +10,7 @@
 # stance and lands a hit on a MOB; neither depends on the character surviving, and
 # invulnerability does not touch either (the player's damage number comes from
 # `mobPatrol.TakeHit`, not from `PlayerStatus.Hurt`).
-param([int]$Port = 5591, [string]$Map = "f4/Map/Map1/100000004.img")
+param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = "f4/Map/Map1/100000004.img")
 
 $base = "http://127.0.0.1:$Port"
 $script:Last = $null

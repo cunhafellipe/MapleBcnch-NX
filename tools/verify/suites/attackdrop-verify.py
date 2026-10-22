@@ -11,10 +11,10 @@ MEASURED: for every attack node in a sample, compare
   * what OUR endpoint reports
 and report every node we do not report, with the reason.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 from collections import Counter
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 
 
 def get(route, **q):
@@ -51,14 +51,23 @@ def inspect(nodePath):
 
 cat = get("/api/simulate/mob-catalog")["mobs"]
 ids = [m["id"] for m in cat]
-sample = ids[::max(1, len(ids) // 150)][:150]
-print(f"sampling {len(sample)} mobs")
+# EVERY mob, not a stride of 150 out of the catalog.
+#
+# The old line was
+#     sample = ids[::max(1, len(ids) // 150)][:150]
+# which took every 14th mob out of 2100 -- 7.1% of the archive. A stride that
+# skips 14 of every 15 mobs cannot see a defect in the mobs it skips, so the
+# count this file prints was a statement about the sample, not about the
+# archive, and the verdict moved with the stride rather than with the product.
+# The population is 2100 mobs; judging all of them costs about a minute.
+judged = ids
+print(f"judging {len(judged)} of {len(ids)} mobs (the whole catalog)")
 
 dropped = []
 no_info = 0
 no_anim = 0
 counts = Counter()
-for mid in sample:
+for mid in judged:
     img = inspect(f"f5/{mid}.img")
     if not img:
         continue
@@ -105,7 +114,7 @@ for row in dropped[:20]:
 # a gate suite, which is the failure this project keeps paying for.
 mismatch = 0
 kept_by_reference = Counter()
-for mid in sample:
+for mid in judged:
     img = inspect(f"f5/{mid}.img")
     if not img:
         continue

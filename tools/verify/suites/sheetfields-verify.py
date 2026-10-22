@@ -4,9 +4,9 @@ This is NOT proof the row looks right — that is the user's call (studio rule
 2.1). It proves the client will not be drawing blanks for a field the server
 never sends, which is checkable from here.
 """
-import json, urllib.parse, urllib.request
+import json, os, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:5591"
+BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 MAP = "f4/Map/Map1/100000004.img"
 
 # Exactly what walkview.js renderSheet() reads. A field added to the renderer
