@@ -1447,19 +1447,29 @@ def cmd_doctor(_args) -> int:
         elif kind == "mtime-newer-than":
             # "Nothing under `path` was written after the reference."
             #
-            # The reference is either a DECLARED `mtime:` value, or -- when the
-            # SPEC declares none -- the START OF THIS DOCTOR RUN. That default
-            # is not an invented constant and cannot go stale: it asks the only
-            # question this invariant's own `why:` states -- "any test writing
-            # into this directory is changing the user's original data" -- and
-            # a test run is exactly a window between one doctor run and the
-            # next. Every run prints which reference it used, so the choice is
-            # never silent. A DECLARED `mtime:` overrides it.
+            # THE REFERENCE MUST BE DECLARED in the SPEC (`mtime:`). No default
+            # can stand in for it, and the reason is arithmetic, not taste:
+            #
+            #   * the rule is "newest mtime > reference -> red", so a clean tree
+            #     is green only when the reference is AT OR AFTER the newest
+            #     file;
+            #   * MEASURED 2026-10-23: a file written BETWEEN two doctor runs
+            #     carries an mtime EARLIER than the next run's start. So "this
+            #     run's own start" as the reference is green for exactly the
+            #     writes this invariant exists to catch -- and the writes are
+            #     made by the SUITES, which run in the gate, long after the
+            #     doctor has finished. That reference protects nothing.
+            #
+            # The run's start is still compared, as an EXTRA layer that also
+            # catches a write made DURING this run, and every run prints which
+            # reference it used -- but it is never presented as a substitute.
+            # With no declared `mtime:` the row is NOT CHECKED and counts, under
+            # the same rule as an unimplemented kind: an incomplete declaration
+            # means the guard does not exist.
             #
             # This checker only ever stats the tree. It never writes to the
             # path it measures: the whole point of the invariant is that
             # nothing writes there, a checker included.
-            mref_src = "the doctor run's own start"
             mpath = inv.get("path")
             if not mpath:
                 print(f"  {inv.get('id', '?')}: MALFORMED -- no path"
@@ -1477,6 +1487,16 @@ def cmd_doctor(_args) -> int:
                 mref_src = f"the declared mtime: {inv['mtime']}"
             else:
                 mref = _DOCTOR_START
+                mref_src = ("NOT DECLARED -- EXTRA LAYER ONLY: this run's own"
+                            " start. It catches a write made during this run and"
+                            " NOT one made between two runs, which is when the"
+                            " suites write.")
+                print(f"  {inv.get('id', '?')}: NOT CHECKED -- no declared"
+                      " `mtime:` reference in the SPEC")
+                print("      This guard does not exist without a declared"
+                      " reference: the run's own start cannot see a write made"
+                      " between two runs, which is exactly when the suites run.")
+                bad += 1
             if not os.path.exists(mpath):
                 print(f"  {inv.get('id', '?')}: MISSING {mpath}")
                 bad += 1

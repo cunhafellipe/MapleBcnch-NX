@@ -490,9 +490,20 @@ invariants:
   - id: data-root-untouched
     kind: mtime-newer-than
     path: 'C:\MUWORK\GAME\MPSHS'
+    mtime: '2026-10-22 08:42:00'
     why: >
       測試一律用副本。任何測試寫進這個目錄都是在改使用者的原始資料。
       2026-10-16 的 save-audit 每次都assert MPSHS 的 md5 前後一致。
+      ★ `mtime:` 這個欄位是**必要的**，doctor 沒有它會報 NOT CHECKED 並計入 bad。
+      它必須是「最新檔案的 mtime 或更晚」才會綠：規則是
+      "newest > reference 就紅"，而 MPSHS 最新的檔案是 2026-10-22 08:41:26.786，
+      所以宣告 08:42:00 讓現在的樹是綠的，而任何之後的寫入都會紅 ——
+      包括發生在兩次 doctor 之間的那種，因為那些寫入的 mtime 比這個值新。
+      ★ 為什麼不能用「本次 doctor 執行的開始時間」當預設：兩次執行之間被寫的檔，
+      mtime 比**下一次**執行的開始時間還早，所以那個參照對它要抓的寫入永遠是綠。
+      而寫入 MPSHS 的是 suite，suite 跑在閘裡、doctor 跑完之後。
+      doctor 仍然會額外比對執行開始時間（能抓到「這一次執行期間」的寫入），
+      並在每一行印出用的是哪一個參照，但它**不是**宣告參照的替代品。
   - id: gate-has-verdict-markers
     kind: file-contains
     file: "tools/verify/gate.ps1"
