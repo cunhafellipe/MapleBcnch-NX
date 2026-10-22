@@ -261,6 +261,56 @@ tool, and the tool was not used.
     carries the corrected form — so **copy the shape that is already
     there; do not invent a new marker.**
 
+    **A suite's verdict is read from TWO places: the gate greps the output,
+    and every other caller reads the EXIT CODE.** Measured 2026-10-22
+    against `gate.ps1:92-100` itself:
+
+    ```
+    output with BAD=18, no >>> RED   -> gate: >>> RED (BAD=n)
+    output with BAD=8  and >>> RED   -> gate: >>> RED (>>> RED, BAD=n)
+    output with nothing red, BAD=0   -> gate: ok
+    ```
+
+    So `BAD=[1-9]` **does** catch `BAD=18` — the gate sees it. The gap is
+    elsewhere: a suite that prints `BAD=18` and **exits 0** is green to the
+    gate but green to every caller that only checks the exit code.
+    **⇒ A failing suite must print the red marker AND exit non-zero.**
+
+    **⇒ And a judge must have exactly ONE admissible rule.** `ballart-verify.py`
+    used to accept two: the ball's own delays, *and* "100 ms per frame".
+    The second is not the reference's rule — `Animation.cpp:64-67` says each
+    frame uses its own delay and only a frame with **no** delay node falls
+    back to 100. With two rules a frozen build passed: at `since=130` with
+    period 120 the reference rule says frame 0, the 100 ms rule says frame 1,
+    and the frozen port printed frame 1 — **green**. ⇒ A positive control
+    (does the judge fail on a deliberately broken build?) is what exposed it;
+    a judge with two rules cannot fail that control.
+
+15. **A judge must not take its expected values from the thing it judges.**
+    `ballart-verify.py` used to read the expected per-frame delays from the
+    port's own published `ballFrameDelays` — and the "the published frame
+    count is the archive's" check compared the port's number with the port's
+    number, which was empty. **⇒ The port could read the archive wrong and
+    still "agree with itself"; the judge was unable to disagree.**
+
+    The rule's input now comes from the **archive** (`/api/inspect` reads
+    `<mob>.img/<action>/info/ball`, applying the reference's own frame-set
+    rule: numeric name + bitmap type, per `Animation.cpp:177-193`, delays per
+    `:64-67`). ⇒ The judge now has an expectation that is **independent** of
+    the port, which is the only way it can fail.
+
+    **⇒ The same shape as the citation rule: a check whose expected value
+    comes from the subject under test is not a check.**
+
+16. **Do not hardcode an archive id.** `ballart-verify.py` had
+    `MAP = "f4/Map/Map0/000000000.img"`. Ids are handed out in the order
+    archives were opened, so `f4` is only `f4` in the session that happened
+    to open them in that order — with 20 archives open, `Map.nx` happened to
+    be `f4`; on another instance it is something else or nothing. **⇒ Resolve
+    archives by NAME, and when the archive is not open, say so and fail
+    explicitly** (`>>> RED`), never continue against a wrong or missing
+    target.
+
 ---
 
 ## Before you trust a measurement

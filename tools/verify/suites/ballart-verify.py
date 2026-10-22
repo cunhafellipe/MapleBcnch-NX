@@ -40,20 +40,40 @@ So the rules are now per observation:
 
   * the art is named only once the entry is PAST its delay (`Mob.cpp:1121`),
     and a FLYING entry past its delay is always published;
-  * the published frame count is the archive's, and the index is one of the
+  * the published frame count is the ARCHIVE's, and the index is one of the
     ball's own frames;
-  * the published phase matches one of the two admissible rules -- the ball's
-    OWN delays (`Animation.cpp:64-67`) or the 100 ms fallback for a frame with
-    no delay node -- and WHICH one the port used is reported, because the two
-    differ and that difference belongs in a bug report, not in a verdict;
-  * the ball cannot still be on frame 0 once it is past the later of its own
-    first frame delay and the 100 ms fallback, which is the only threshold at
-    which that statement is not a race.
+  * the published phase is the REFERENCE's phase -- the ball's own per-frame
+    delays (`Animation.cpp:64-67`), advanced CYCLICALLY, because the
+    reference's animation wraps (`Animation.cpp:316-320`: on the last frame
+    the reference sets `nextframe = 0`);
+  * the ball cannot still be on frame 0 at a moment when the reference's
+    PHASE has left frame 0 -- the phase, not the raw time, because the
+    reference's phase is a sawtooth and a shot one whole cycle old is
+    legitimately back on frame 0.
+
+TWO OF THOSE RULES USED TO ENCODE A FREEZE, and both were wrong:
+
+  * `phase_own_delays` walked the delays without reducing the time into one
+    cycle, so it stopped on the LAST frame -- which is a ball frozen in
+    mid-air, the very defect the suite exists to catch, written into the
+    judge as if it were correct;
+  * the "cannot still be on frame 0" check compared the RAW time against the
+    threshold, so a shot that had completed a whole cycle and come back to
+    frame 0 -- the reference's own behaviour -- was reported as a defect.
+
+The reference does not freeze (`Animation.cpp:316-320`, `MobAttack.cpp:36`
+advances the ball on every tick), so the judge that encoded the freeze was
+the thing that was out of date, and it reported a CORRECT port as broken.
+That is the failure this file's rules are now written against.
+
+The ball's frame set and each frame's duration are read from the ARCHIVE, not
+from the port's published numbers, so a port that mis-reads its own ball
+cannot pass by agreeing with itself.
 
 The fights repeat until the phase has been observed far enough to be judged at
 all, and the number of fights is printed.
 """
-import json, os, pathlib, re, urllib.parse, urllib.request
+import json, os, pathlib, re, urllib.error, urllib.parse, urllib.request
 
 
 def _repo_root():
@@ -82,7 +102,12 @@ WWW = str(REPO_ROOT / "MapleBench" / "wwwroot")
 # another instance reaches this suite too. The default is the port the suites
 # have always used.
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map0/000000000.img"
+# The map the fight happens on. The archive's session id is resolved BY NAME
+# below: it used to be the literal "f4", which is the id Map.nx happens to get
+# when the gate opens its twenty archives in its usual order. On an instance
+# with a different set of archives open -- which is every instance but the
+# gate's -- "f4" is a different archive, or nothing at all.
+MAP = None
 bad = 0
 
 
@@ -97,6 +122,128 @@ def post(route, body):
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+# ---------------------------------------------------------------- the archive
+def archive_id(name):
+    """The session id of an open archive, BY NAME.
+
+    The ids are handed out in the order the archives were opened, so `f1` is
+    Mob.nx on one instance and something else on another. A suite that
+    hard-codes an id measures a different archive than the one it means to.
+    """
+    for f in get("/api/files") or []:
+        if f.get("name") == name:
+            return f.get("id")
+    return None
+
+
+def read_fields(path):
+    """The direct children of one node, as {name: (type, value)}.
+
+    The TYPE is read as well as the value because the reference's rules are
+    stated in terms of it: an integer, a real and a string are three
+    different answers.
+    """
+    doc = None
+    try:
+        doc = get("/api/inspect", path=path)
+    except urllib.error.HTTPError as e:
+        # A node that is not there answers 404, and that IS an answer: the
+        # attack simply declares no ball there. Anything else is a failure and
+        # is not swallowed.
+        if e.code == 404:
+            return {}
+        raise
+    if not isinstance(doc, dict):
+        return {}
+    node = doc.get("node")
+    if not isinstance(node, dict):
+        return {}
+    # An image node carries no `type` of its own -- it reports kind:"Image"
+    # and hasChildren -- so "no type" is not the same as "not there".
+    if node.get("type") in (None, "Null") and not node.get("hasChildren"):
+        return {}
+    fields = {}
+    for c in doc.get("children") or []:
+        if isinstance(c, dict):
+            fields[c.get("name")] = (c.get("type"), c.get("value"))
+    return fields
+
+
+def node_int(kind, value):
+    """nl::node::get_integer -- vendor/NoLifeNx/nlnx/node.cpp:155-173.
+
+    An absent node is 0, an integer is itself, a real is truncated, and a
+    STRING is parsed with std::stoll -- so "60" is the number 60. A string
+    that does not start with a number makes the reference THROW; 0 is
+    returned for it here, which is the value such a node can carry anyway.
+    """
+    if kind in (None, "Null"):
+        return 0
+    if kind in ("Int", "Short", "Long", "Byte", "SByte", "UShort", "UInt",
+                "ULong", "UByte"):
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return 0
+    if kind in ("Double", "Float", "Single"):
+        try:
+            return int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            return 0
+    if kind == "String":
+        m = re.match(r"\s*([+-]?[0-9]+)", str(value or ""))
+        return int(m.group(1)) if m else 0
+    return 0
+
+
+MOB_ARCHIVE = archive_id("Mob.nx")
+if not MOB_ARCHIVE:
+    print(">>> RED: ballart-verify -- Mob.nx is not open on this instance, so "
+          "there is no ball to judge")
+    raise SystemExit(1)
+
+MAP_ARCHIVE = archive_id("Map.nx")
+if not MAP_ARCHIVE:
+    print(">>> RED: ballart-verify -- Map.nx is not open on this instance, so "
+          "there is no map to fight on")
+    raise SystemExit(1)
+MAP = f"{MAP_ARCHIVE}/Map/Map0/000000000.img"
+
+
+def read_ball_from_archive(mob_id, action):
+    """The ball's frames and their durations, read from the ARCHIVE.
+
+    `Animation.cpp:177-193` -- the frames are the children whose name is an
+    integer AND whose type is a bitmap, in numeric order (`std::set<int16_t>`
+    is sorted, and so is this list).
+
+    `Animation.cpp:64-67` -- `delay = src["delay"]; if (delay == 0) delay =
+    100;` so a frame with no delay node lasts 100 ms and a frame with one
+    lasts its own.
+
+    Returns (frame ids, per-frame durations), or None when the attack
+    declares no ball.
+    """
+    for host in ("info/ball", "ball"):
+        base = f"{MOB_ARCHIVE}/{mob_id}.img/{action}/{host}"
+        fields = read_fields(base)
+        ids = []
+        for name, (kind, _value) in fields.items():
+            if re.fullmatch(r"-?\d+", str(name or "")) and kind == "Canvas":
+                ids.append(int(name))
+        if not ids:
+            continue
+        ids.sort()
+        delays = []
+        for fid in ids:
+            frame = read_fields(f"{base}/{fid}")
+            node = frame.get("delay")
+            delay = node_int(*node) if node else 0
+            delays.append(delay if delay else 100)
+        return ids, delays
+    return None
 
 
 # ---------------------------------------------------------------- the archive
@@ -146,38 +293,66 @@ print(f"  fighting with {FIGHTER} (its ball carries "
       f"{next(f for m, _, _, f in have if m == FIGHTER)} frames)")
 
 # ---------------------------------------------------------------- this mob's attacks
-# What THIS mob declares, read from the archive the way the reference reads it
-# (`Mob.cpp:163-165`): how long each attack waits before it fires, how many
-# frames its ball has and how long each of those frames lasts. The phase rules
-# below are stated in terms of these numbers, so they are read, not guessed.
+# What the PORT publishes, and what the REFERENCE says the same numbers are.
+#
+# The port's own numbers are read for the report only. The rule the phase is
+# judged against is computed from the ARCHIVE, because the whole point of
+# this suite is that a port which mis-reads its own ball cannot pass by
+# agreeing with itself.
 FIGHTER_ATTACKS = get("/api/simulate/mob-attacks", mobId=FIGHTER)["attacks"]
-BALL_COUNT = {}
-BALL_DELAYS = {}
+PORT_BALL_COUNT = {}
+PORT_BALL_DELAYS = {}
 for _a in FIGHTER_ATTACKS:
     _key = (_a.get("type"), int(_a.get("delayMs") or 0))
-    BALL_COUNT[_key] = int(_a.get("ballFrameCount") or 0)
-    BALL_DELAYS[_key] = [int(d) for d in (_a.get("ballFrameDelays") or [])]
-TYPE2_HAS_BALL = any(k[0] == 2 and BALL_COUNT.get(k, 0) > 0 for k in BALL_COUNT)
+    PORT_BALL_COUNT[_key] = int(_a.get("ballFrameCount") or 0)
+    PORT_BALL_DELAYS[_key] = [int(d) for d in (_a.get("ballFrameDelays") or [])]
+TYPE2_HAS_BALL = any(k[0] == 2 and PORT_BALL_COUNT.get(k, 0) > 0 for k in PORT_BALL_COUNT)
 # A ball with one frame has nothing to advance through, so the phase rules have
 # nothing to say about it.
-MULTIFRAME_BALL = any(BALL_COUNT.get(k, 0) >= 2 for k in BALL_COUNT)
-ARCHIVE_FRAMES = {}
-for _a in get("/api/simulate/mob-sprite", mobId=FIGHTER).get("actions", []):
-    ARCHIVE_FRAMES[_a.get("name")] = len(_a.get("frames") or [])
+MULTIFRAME_BALL = any(PORT_BALL_COUNT.get(k, 0) >= 2 for k in PORT_BALL_COUNT)
+
+# The REFERENCE's ball, from the archive: the frame set and each frame's own
+# duration. `Animation.cpp:177-193` for the frame set, `:64-67` for the
+# duration, and `:316-320` for the wrap that makes the phase a sawtooth.
+BALL_REF = {}
+for _a in FIGHTER_ATTACKS:
+    _action = _a.get("action")
+    if not _action:
+        continue
+    _ref = read_ball_from_archive(FIGHTER, _action)
+    if _ref is not None:
+        BALL_REF[_action + "/ball"] = _ref
 print(f"  {FIGHTER} declares {len(FIGHTER_ATTACKS)} attacks: "
       + "; ".join(f"type {_a.get('type')} delay {_a.get('delayMs')}ms "
                   f"ball {_a.get('ballFrameCount')}f "
                   f"delays {_a.get('ballFrameDelays')}" for _a in FIGHTER_ATTACKS))
+for _name, (_ids, _delays) in sorted(BALL_REF.items()):
+    print(f"  the reference's {_name}: {len(_ids)} frame(s) "
+          f"{_ids}, delays {_delays}, one cycle {sum(_delays)} ms")
 
 
 def phase_own_delays(since, delays, count):
-    """The reference's rule (`Animation.cpp:64-67`): the ball shows the frame
-    whose own delay window contains `since`, and a frame with no delay node
-    lasts the 100 ms fallback."""
+    """The reference's rule (`Animation.cpp:64-67` with the wrap of :316-320).
+
+    The shape is the port's own (`MobPatrol.cs:1325-1343`), because that is
+    the shape the reference describes: reduce the time into ONE cycle, then
+    walk the frames' own delays.
+
+    THE WRAP IS THE POINT. `Animation.cpp:316-320`: when the animation is on
+    its last frame the reference sets `nextframe = 0`, so its phase is a
+    sawtooth with a period of sum(delays) and it never sits still. Walking
+    the delays without the reduction stops on the last frame the moment the
+    shot has been in the air longer than one cycle -- a ball frozen in
+    mid-air, which is the defect this suite exists to catch, written into
+    the judge as if it were correct.
+    """
     if count <= 0:
         return 0
     if not delays:
         delays = [100] * count
+    period = sum(delays)
+    if period > 0:
+        since = since % period
     acc = 0
     index = 0
     for i in range(len(delays)):
@@ -190,7 +365,14 @@ def phase_own_delays(since, delays, count):
 
 
 def phase_fallback(since, count):
-    """The 100 ms fallback alone: one frame per 100 ms."""
+    """The 100 ms per frame rule, as a REPORT of what the port published.
+
+    This is NOT one of the reference's rules for a ball whose frames declare
+    their own delays (`Animation.cpp:64-67` gives each frame its own
+    duration, and 100 is only the fallback for a frame with no delay node).
+    It is kept so that a port which published it can be named in the report
+    instead of being counted as a nameless mismatch.
+    """
     if count <= 0:
         return 0
     return int(since) // 100 % count
@@ -203,7 +385,13 @@ def still_threshold(delays, count):
     for a frame with no delay node is 100 ms (`Animation.cpp:64-67`). The LATER
     of the two is the first moment at which every admissible rule has left
     frame 0, so it is the only threshold a rule of the form "the ball advances"
-    can be stated at without becoming a race."""
+    can be stated at without becoming a race.
+
+    The threshold is compared against the PHASE (`since % sum(delays)`), not
+    against the raw time. The reference's phase is a sawtooth, so a shot that
+    has completed a whole cycle is legitimately back on frame 0; comparing the
+    raw time called the reference's own behaviour a defect.
+    """
     first = delays[0] if delays else 100
     return max(first, 100)
 
@@ -310,8 +498,13 @@ def fight():
             idx = int(e.get("ballFrameIndex") or 0)
             past = el >= dl
             since = el - dl
-            key = (etype, int(dl))
-            delays = BALL_DELAYS.get(key, [])
+            # The reference's ball for the art this entry publishes, read from
+            # the archive. `action` is empty until the entry is past its delay
+            # (`Mob.cpp:1121`), and the phase is only judged while the ball is
+            # in the air.
+            ref = BALL_REF.get(action)
+            ref_ids, ref_delays = ref if ref else ([], [])
+            ref_count = len(ref_ids)
             if action:
                 counters["named"] += 1
                 if first_named is None:
@@ -344,25 +537,35 @@ def fight():
                 counters["v_range"] += 1
             if count == 0 and idx != 0:
                 counters["v_range"] += 1
-            # The published frame count is the archive's.
-            if action and ARCHIVE_FRAMES.get(action, count) != count:
+            # The published frame count is the ARCHIVE's -- the reference's own
+            # frame set (Animation.cpp:177-193), counted from the archive and
+            # not from the port's own answer.
+            if action and ref and ref_count != count:
                 counters["v_count"] += 1
 
-            # The phase. Every admissible rule is accepted and WHICH one the port
-            # used is reported, because the two differ and that difference is a
-            # port bug to report, not a verdict for this suite to hand down.
-            if count >= 2 and past:
+            # The phase. The reference's rule is the ball's OWN delays, walked
+            # cyclically (Animation.cpp:64-67 with the wrap of :316-320). The
+            # 100 ms per frame rule is NOT the reference's rule for a ball
+            # whose frames declare their own delays, so a port that published
+            # it is a mismatch -- it is named in the report so the bug report
+            # can say which rule the port used.
+            if ref_count >= 2 and past:
                 counters["max_since"] = max(counters["max_since"], since)
-                own = phase_own_delays(since, delays, count)
-                fb = phase_fallback(since, count)
-                if idx == fb and idx != own:
-                    counters["fallback"] += 1
-                elif idx == own:
+                period = sum(ref_delays)
+                phase = (since % period) if period > 0 else 0.0
+                own = phase_own_delays(since, ref_delays, ref_count)
+                if idx == own:
                     counters["own"] += 1
                 else:
                     counters["v_phase"] += 1
-                # The ball cannot still be on frame 0 at this point.
-                if since >= still_threshold(delays, count):
+                    if idx == phase_fallback(since, ref_count):
+                        counters["fallback"] += 1
+                # The ball cannot still be on frame 0 once the PHASE has passed
+                # the later of its own first frame delay and the 100 ms
+                # fallback. The phase and not the raw time: the reference's
+                # phase is a sawtooth (Animation.cpp:316-320), so a shot one
+                # whole cycle old is legitimately back on frame 0.
+                if phase >= still_threshold(ref_delays, ref_count):
                     counters["beyond"] += 1
                     if idx == 0:
                         counters["v_still"] += 1
@@ -404,8 +607,8 @@ for _attempt in range(MAX_FIGHTS):
     print(f"  fight {fights}: {counters['obs']} entry observations, "
           f"{counters['flying']} of a flying shot in the air, "
           f"{counters['named']} naming the art, {counters['multi']} of a "
-          f"multi-frame ball, {counters['beyond']} far enough past the delay "
-          f"for the ball to have had to leave frame 0")
+          f"multi-frame ball, {counters['beyond']} at a phase where the ball "
+          f"cannot be on frame 0")
     if totals["beyond"] > 0:
         break
 print(f"  fought {fights} time(s)")
@@ -418,8 +621,8 @@ if first_named is not None:
           f"elapsed={first_named[4]:.0f}ms of delay={first_named[5]:.0f}ms")
 print(f"  {totals['obs']} entry observations; {totals['flying']} of a flying shot "
       f"in the air; {totals['named']} naming the art; {totals['multi']} of a "
-      f"multi-frame ball; {totals['beyond']} far enough past the delay for the "
-      f"ball to have had to leave frame 0 (the shot was observed up to "
+      f"multi-frame ball; {totals['beyond']} at a phase where the ball cannot "
+      f"be on frame 0 (the shot was observed up to "
       f"{totals['max_since']:.0f}ms past it)")
 
 VERDICTS = [
@@ -439,9 +642,12 @@ for label, key in VERDICTS:
         bad += n
 
 if totals["own"] or totals["fallback"]:
-    print(f"  the published phase matched the ball's OWN delays on "
-          f"{totals['own']} observations and the 100 ms FALLBACK on "
-          f"{totals['fallback']}")
+    print(f"  the published phase matched the REFERENCE's rule -- the ball's own "
+          f"delays, cyclically -- on {totals['own']} observations")
+    if totals["fallback"]:
+        print(f"  >>> {totals['fallback']} of the mismatches published the 100 ms "
+              f"per frame rule, which is not the reference's rule for a ball "
+              f"whose frames declare their own delays (Animation.cpp:64-67)")
 if totals["beyond"] == 0 and totals["flying"] > 0 and MULTIFRAME_BALL:
     print("  >>> the shot flew but was never observed far enough past its delay "
           "for the ball to have had to leave frame 0, so the phase was not "
@@ -505,3 +711,13 @@ for _sid in sessions:
     _drop(_sid)
 print(f"  dropped {len(sessions)} session(s)")
 print(f"\nBAD={bad}")
+if bad:
+    # The gate judges on the RED marker and on BAD=[1-9] (gate.ps1:97-99), and
+    # every other suite in this directory prints one of the two. This one used
+    # to print neither and to exit 0, so a run that found 18 defects was
+    # reported as a PASS by every caller that reads the exit code -- and a
+    # judge that cannot fail is not a judge.
+    print(">>> RED: ballart-verify -- the ball's phase or its art does not "
+          "match the reference")
+    raise SystemExit(1)
+raise SystemExit(0)
