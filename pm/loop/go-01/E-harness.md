@@ -112,12 +112,12 @@ Advance(value, input);                // 剛好一幀
 
 不是巧合，是形狀：這兩個是 gate 裡**每幀發一次 HTTP、每次都在客戶端做實質處理**的 suite。
 
-- `ballart-verify.py:155` — `for i in range(1800)`，每幀解析一個帶全部 mob 的 frame 並跑 Python 分支。
+- `ballart-verify.py` — `for i in range(1800)`（**行號已過期**：MEASURED 2026-10-22，該檔現在一場最多打 8 遍，所以一輪最多 14,400 個 POST），每幀解析一個帶全部 mob 的 frame 並跑 Python 分支。
 - `knockback-verify.py:84/109` — 40 幀閒置校準 + 每次嘗試 45 幀掃描，而且每次 `new()` 重跑最多 200 幀的走位迴圈。
 
 其他 suite 的迴圈短得多，撞上租約的機會就低。C 顯示 40 隻 session 會把延遲從 1.6 ms 推到 143.9 ms；gate 的 suite 一個接一個、彼此不刪 session，累積負載讓「空檔」變長，於是這兩條先紅。
 
-補充量測：`knockback-verify.py` 每跑一次洩漏最多 5 個 session，`ballart-verify.py` 洩漏 1 個，**都不呼叫 `DELETE`**。`MapSimSessionStore.cs:3933` 只在閒置 120 秒後才清（`IdleTimeoutMs`），所以 2 分鐘內的累積是真的。
+補充量測：`knockback-verify.py` 每跑一次洩漏最多 5 個 session，**不呼叫 `DELETE`**。**（`ballart-verify.py` 這一項 MEASURED 2026-10-22 為 FALSE：它確實呼叫 `DELETE`（W-089 那段），而且現在會把它開的每一個 session 都清掉並印出清掉幾個。）**`MapSimSessionStore.cs:3933` 只在閒置 120 秒後才清（`IdleTimeoutMs`），所以 2 分鐘內的累積是真的。
 
 ### 為什麼不能只把 timeout 調大
 
@@ -153,7 +153,7 @@ Advance(value, input);                // 剛好一幀
 
 ### 3.3 兩個既有 suite 需要的三處改動（各 3 行，總管或原持有者套用）
 
-- `ballart-verify.py:155` `for i in range(1800)` → 改成 30 次 `count:60` 的批次迴圈（`ticksRun` 已在回應裡，可用來確認沒被注入）。
+- `ballart-verify.py` `for i in range(1800)`（**行號已過期**）→ 改成 30 次 `count:60` 的批次迴圈（`ticksRun` 已在回應裡，可用來確認沒被注入）。
 - `knockback-verify.py:84/109` 同理，45 幀掃描改成一次 `count:45`。
 - 兩者結束時補 `DELETE /api/simulate/session/{sid}`。
 
