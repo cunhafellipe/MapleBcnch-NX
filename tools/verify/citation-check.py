@@ -523,10 +523,30 @@ def report_rows(rows, commit, repo, truncated):
         print("NOTE: %d citation(s) name a path that is not in this repository"
               " and was declared as living outside it. They were NOT checked,"
               " and they are NOT counted as bad." % counts["NOT_IN_REPO"])
-    if counts.get("LINE_EXISTS"):
+    if counts.get("LINE_EXISTS") and text_compared:
         print("NOTE: %d citation(s) were checked for the FILE AND THE LINE "
               "only. A swept citation carries no text, so the text was NOT "
               "compared." % counts["LINE_EXISTS"])
+    if text_compared == 0:
+        # A zero in a field that was just added reads as "there was nothing
+        # to compare", and a missing field and a zero look identical
+        # (incident 12).  So this zero is NEVER printed on its own: it is
+        # printed with what the rows were instead, and with what a zero
+        # here means.
+        print("NOTE: CITATIONS_TEXT_CHECKED=0 -- NO citation text was compared "
+              "in this run. This does not mean 'there was nothing to check'; "
+              "it means the run compared no text at all.")
+        if counts.get("LINE_EXISTS"):
+            print("      %d citation(s) were checked for the FILE AND THE LINE "
+                  "only: a swept citation carries no text, so there was "
+                  "nothing to compare." % counts["LINE_EXISTS"])
+        if counts.get("NO_TEXT"):
+            print("      %d citation(s) carried no text at all, so their text "
+                  "check did not run; they are counted as defects."
+                  % counts["NO_TEXT"])
+        if not counts.get("LINE_EXISTS") and not counts.get("NO_TEXT"):
+            print("      No row in this run carries a text-bearing verdict; "
+                  "the rows above say what each one was.")
 
     # The three ways a run can be green without having measured anything.
     broken = None
@@ -1062,6 +1082,41 @@ def selftest():
                       and "CITATION_BAD=0" in out
                       and "RESULT=FAIL" in out,
                       "exit=%d truncated=1 bad=0" % cli.returncode))
+
+        # 17. THE POSITIVE CONTROL for the change in case 15.
+        #
+        #     The sweep verdict was changed (defect 3): a SWEPT citation
+        #     carries no text, so it now gets LINE_EXISTS.  That change must
+        #     not have turned the SPEC path green as well.  In spec mode a
+        #     citation that quotes nothing was never measured, so it must
+        #     stay NO_TEXT and stay a defect.
+        #
+        #     The good citation in the same spec is what makes this a
+        #     control and not just another red run: it proves the run
+        #     MEASURED something, so the red verdict cannot be a BROKEN RUN
+        #     (rule 3 -- a case that fails for the wrong reason is not a
+        #     test).  `BROKEN_RUN not in out` is the assertion for that.
+        notext_path = os.path.join(d, "notext.json")
+        with open(notext_path, "w", encoding="utf-8") as fh:
+            json.dump({"repo": d, "commit": commit_b,
+                       "citations": [{"file": "sample.cs", "line": L_IF_B,
+                                      "text": T_IF},
+                                     {"file": "sample.cs", "line": L_CLIMB_B}]},
+                      fh)
+        cli = subprocess.run(
+            [sys.executable, os.path.abspath(__file__),
+             "--spec", notext_path, "--repo", d],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out = cli.stdout.decode("utf-8", "replace")
+        cases.append(("A_SPEC_CITATION_WITH_NO_TEXT_IS_STILL_RED",
+                      cli.returncode != 0
+                      and "CITATION_NO_TEXT=1" in out
+                      and "CITATION_OK=1" in out
+                      and "CITATION_BAD=1" in out
+                      and "RESULT=FAIL" in out
+                      and BROKEN_RUN not in out,
+                      "exit=%d ok=1 no_text=1 bad=1 (measured, not broken)"
+                      % cli.returncode))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
