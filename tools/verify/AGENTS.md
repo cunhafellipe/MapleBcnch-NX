@@ -556,6 +556,134 @@ The two `CHILD_EXIT_` counters are the harness proving it read its
     rule 19 (a comparison that read zero lines is not a comparison): the
     tool returned a well-formed number for a run that did not happen.**
 
+21. **A comparison whose operands are not the same kind of thing must
+    REFUSE, not return False.** Measured 2026-10-23, three separate
+    instances in one session, and the third one is the reason this rule
+    exists:
+
+    - **A sha256 was compared against a git blob id** (40 hex). The output
+      was `clean=False` on all four rows. It was a **constant**, not a
+      finding — "a difference between two different algorithms" is not a
+      difference. To compare a working tree against `HEAD`, both sides
+      must be git blob ids: `git hash-object <file>` and
+      `git rev-parse HEAD:<file>`.
+    - **A 16-character prefix was hand-typed into a script and compared
+      against a 64-character sha256.** The comparison was structurally
+      incapable of returning True. It reported a byte-identical commit as
+      "the earlier verdict cannot be carried here", with a confident
+      paragraph explaining why.
+    - **`-ceq` was applied to two `[byte[]]`.** PowerShell returned
+      `System.Object[]`, not a Boolean — a comparison that *prints*
+      something verdict-shaped and is not a verdict.
+
+    **⇒ Four habits:**
+    - **State the algorithm and the length on BOTH sides of every digest
+      comparison.** Print them, not assume them.
+    - **Refuse to compare operands of different kinds or lengths.** Raise,
+      do not answer `False` — a `False` is indistinguishable from a result.
+    - **Pins live in a FILE. A hand-transcribed constant is not a
+      measurement.**
+    - **Assert that a printed comparison result is a Boolean before you
+      read it.**
+
+    **⇒ The uncomfortable half.** Rules 12, 13, 18, 19 and 20 are all about
+    instruments that are *quiet* when broken. This one is not. **A broken
+    instrument can be loud, and when it is loud it is trusted precisely
+    because it is confident.**
+
+22. **Every acceptance reader carries its own positive control, and a
+    reader that matched ZERO records on a GREEN arm is broken, not clean.**
+    Measured 2026-10-23: a reader matched its id regex against the
+    **stripped** line but tested the leading-whitespace guard against the
+    **raw** line. Every invariant row is indented, so **all four arms —
+    including the arm that passes — returned zero verdict lines**. A
+    hardcoded self-check then reported VOID on a run that had worked,
+    because it demanded "exactly one reference line" and the
+    no-declaration arms produce none.
+
+    **⇒ Three habits:**
+    - **Anchor a judgement on ONE form of the line.** Never mix the raw
+      line and the stripped line inside a single predicate; split it and
+      verify each half separately.
+    - **A control arm that matched 0 records voids the round.** In this
+      toolchain `0` means "no problem", so a zero must never be read as a
+      clean result.
+    - **The reader's own self-check must contain a case that only passes
+      when the reader works.** A reader that cannot detect its own
+      blindness contributes no evidence.
+
+23. **A baseline expressed as a moving reference is not a baseline, and
+    an artifact must be FROZEN before anyone certifies against it.**
+    Measured 2026-10-23: `C:\mbtest2\t96-cases.py` changed sha four times
+    (`9D09793E → 5467a19f → 98bc0043 → b2e2c796`) **while a checker was
+    verifying it**, and reported MISMATCH in one run and PASS seconds
+    later.
+
+    **⇒ No statement of the form "before/after at `9D09793E`" is
+    reproducible by anyone** — that file state no longer exists on disk.
+
+    **⇒ Three habits:**
+    - **Name refs by SHA.** `HEAD`, `HEAD~1` and "current" are not
+      baselines; they move while you read them.
+    - **Freeze the artifact before certifying** — print its digest, its
+      size and its line count, and say `FROZEN`. If it moves again, every
+      table citing it is void.
+    - **Print the `HEAD` a number was measured at, beside the number.**
+      A count quoted without its commit is a claim, not a measurement —
+      during one session a status list went from four modified files to
+      three because a commit landed mid-conversation.
+
+24. **A review target is an immutable id, and no commit may change the
+    bytes under a live reviewer.** Measured 2026-10-23, twice in one
+    night: `gate.ps1` went `9D2AD8EB… → FBD73D72…` in history, and then
+    the working tree grew an uncommitted `+99/-0` while a checker was
+    reviewing blob `291bff58…`.
+
+    **⇒ A reviewer must therefore do two things:**
+    - **Print the reviewed blob's digest and the working tree's digest
+      separately**, and mark the reviewed one as "true when measured".
+    - **Byte-compare the region actually under review** before claiming
+      their verdicts survive. In that instance the `CrashShapes` block
+      hashed identically on both sides (385 chars, same block digest), so
+      the reviewer's two verdicts stood — proved, not assumed.
+
+    **⇒ And the committer's side:** if someone is reviewing a file you are
+    about to commit, tell them first. Also remember that a path-prefix
+    stage (`git add -- <dir>/`) sweeps in other people's uncommitted
+    hunks: **"I may only touch X" is not "commit only my hunk in X".**
+
+25. **A byte-level verification must look at the file's FIRST bytes and
+    grep for U+FFFD. Aggregate counts and a strict decode are not a
+    corruption check.** Measured 2026-10-23, on the lead's own append to a
+    ledger shared by seven agents. Its verification printed, in full:
+
+    ```
+    AFTER  bytes=203581 CR=0 NUL=0 U+FFFD=0 headings=111
+    STRICT_UTF8_ROUNDTRIP=True
+    ```
+
+    Every field green, and the file began `AILURES` — four bytes had been
+    lost from the front, so the `F` of `FAILURES` and the UTF-8 BOM were
+    gone. Six `U+FFFD` had also appeared elsewhere in the same file, as two
+    CJK characters each replaced by three replacement characters, which is
+    the signature of a **lossy decode that was re-encoded**.
+
+    **⇒ Three habits:**
+    - **Print the first 8 bytes and assert them.** A byte census counts the
+      body; only a header assertion can see that the header is gone.
+    - **Search for `U+FFFD` as its own check.** A *passing* strict decode
+      proves the bytes are valid UTF-8 — and a `U+FFFD` written as literal
+      `ef bf bd` sails straight through it.
+    - **On a shared append-only file, compare the whole prefix, not the
+      tail.** "My text is at the end" cannot see a damaged header; the
+      person who checks the prefix is not the person who appends.
+
+    **⇒ And the operation itself:** a read-modify-write of a shared file is
+    not atomic. Seven agents append to that ledger concurrently, so an
+    append must open for **append only** — never read the whole file and
+    write it back, which is what loses whatever another writer added in
+    between.
+
 ---
 
 ## Before you trust a measurement
