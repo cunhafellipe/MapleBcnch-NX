@@ -437,32 +437,11 @@ pm/START-HERE.md
 .chrome*/
 
 # ---------------------------------------------------------------
-# MapleBench assets: the source goes in, the output stays out
-# ---------------------------------------------------------------
-# Same rule as pm/STATE.md above, applied to the rest of the tree: version
-# control keeps the source and the record, not what a run produced.
+# Chrome profile directories a browser run leaves in the working tree. They
+# are browser state, not product: 3,300+ files of profile junk that made
+# `git status` useless for finding real untracked work.
 #
-# JOURNAL/ is this project's ONLY work log, so its .md files go in. The
-# screenshots inside it are one run's output.
-JOURNAL/**/*.png
-
-# Screenshot directories. Pure capture output: re-running the tool that
-# produced them produces them again.
-shots/
-tools/visual-check/shots/
-
-# One run's data files, not source. scratch/ holds a run's measurement
-# output (sweep_results.json is 8.8 MB, comments.json 5.3 MB) and the
-# throwaway scripts that produced it; only the .md conclusions are kept.
-scratch/**/*.json
-scratch/**/*.txt
-scratch/**/*.py
-tools/visual-check/*.json
-tools/visual-check/**/fallout-progress-*.json
-
-# Probe run output and the images a probe run left behind.
-tools/probe/out/
-tools/probe/**/*.png
+# The pattern is `.chrome*/` and not `.chrome-*/` because the two profile
 # directories here are named differently: `.chrome-charvis` (2,560 files) and
 # `.chrome9` (744 files). A hyphen would match only the first and leave the
 # second untracked.
@@ -474,22 +453,32 @@ tools/probe/**/*.png
 # Same rule as pm/STATE.md above, applied to the rest of the tree: version
 # control keeps the source and the record, not what a run produced.
 #
-# JOURNAL/ is this project's ONLY work log, so its .md files go in. The
-# screenshots inside it are one run's output.
-JOURNAL/**/*.png
+# The line between "record" and "run product" is NOT "is it a picture".
+# It is: can this be produced again by running the tool that made it?
+# A named screenshot that is the only record of a specific finding
+# (FINDWALL-BUG.png, PHYSICS-BEFORE-AFTER.png) is a record and goes in.
+# A directory a script writes on every run is a product and stays out.
+#
+# JOURNAL/ is this project's ONLY work log. Its .md files and the
+# screenshots that were the record of those sessions both go in.
 
-# Screenshot directories. Pure capture output: re-running the tool that
-# produced them produces them again.
-shots/
-tools/visual-check/shots/
+# Screenshot output a script re-creates on every run. These are the
+# directories the visual-check scripts default to.
+/shots/
+tools/visual-check/shots/equip/
+tools/visual-check/shots/fs2/
+tools/visual-check/shots/fullscreen/
+tools/visual-check/shots/live/
+tools/visual-check/shots/t19/
+tools/visual-check/shots/t20/
 
 # One run's data files, not source. scratch/ holds a run's measurement
-# output (sweep_results.json is 8.8 MB, comments.json 5.3 MB) and the
-# throwaway scripts that produced it; only the .md conclusions are kept.
+# output (sweep_results.json is 8.8 MB, comments.json 5.3 MB); the
+# hand-written .py scripts that produced it are source and go in.
 scratch/**/*.json
 scratch/**/*.txt
-scratch/**/*.py
 tools/visual-check/*.json
+tools/visual-check/shots/*.json
 tools/visual-check/**/fallout-progress-*.json
 
 # Probe run output and the images a probe run left behind.
