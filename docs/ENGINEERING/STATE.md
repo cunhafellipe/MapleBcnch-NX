@@ -686,44 +686,73 @@ lead 曾裁決「analyst-map 的 task-33 是錯的，成因是註解用過去式
 **⇒ 規則：裁決「這是快照還是活的」之前，先指名物件與日期。**
 
 ---------------------------------------------------------------------
-5.5 閘現在是**刻意紅的** —— 紅的原因已定位，不是閘壞了
----------------------------------------------------------------------
-[MEASURED - 2026-10-22，verifier-nx task-72]
+5.5 閘紅過半是**舊二進位**，不是缺陷：判官必須對著當前樹
 
-**ADR-0005 第二條判準（「機制準確」）的第一支判官已進閘：
-`tools/verify/suites/attack-frame-timing.py`（`pm/SPEC.yaml` 有條目、`gate.ps1` 有一行 `Run`）。**
+[實測 - tooling-auditor，2026-10-22]
 
-**⇒ 閘在 port 修好之前是紅的。這是刻意的。**
-**⇒ 裁決沿用先前那條：**「**修 port，不留紅閘**」——
-**⇒ 一支會抓出真缺陷的判官不該被拿掉來讓閘變綠；
-閘綠的唯一正當途徑是 port 修好。**
+**⇒ 這一段原本寫的是「閘現在是刻意紅的」，而那個前提是錯的。**
 
-**⇒ 紅的原因就是兩個真缺陷（不是判官壞掉）：**
+**⇒ 5591（pid 14384）啟動於 2026-10-21 20:24:37，跑的
+`bin\Release\net10.0-windows\MapleBenchX.dll` 建置於 **2026-10-20 19:35:06**
+⇒ 10-22 當天有 **28 個產品 commit** 落在那個建置之後。**
+**⇒ 而其中四個的 commit 訊息，就是那些紅 suite 的修法：**
+
+| commit | 修的是 |
+|---|---|
+| `36a823f` power 退回怪物自身 `PADamage` | attack-damage A1 |
+| `6b8c86b` 無 delay 節點的幀是 100 ms | attack-frame-timing A2 |
+| `e77a123` 腳下的 foothold 是最近的那個 | position-accuracy P3 |
+| `64daed7` info/link 借來的攻擊 | attack-frame-timing A1 |
+
+**⇒ 決定性實驗**（同樣的 suite、同樣的封存，只把 `GATE_BASE` 指向一個
+**晚於所有 commit 啟動**的實例）：
 ```
-工作樹 5702 : VERDICT: attack-frame-timing 5/9 assertions, 4 failed   exit 1
-工作樹 5591 : VERDICT: attack-frame-timing 5/9 assertions, 4 failed   exit 1
-修好的 5703 : VERDICT: attack-frame-timing 9/9 assertions, 0 failed   exit 0
-              (port 發佈 2,023 槽位 = 參照承認的 2,023)
+position-accuracy.py    exit=0  VERDICT: position-accuracy 6/6 assertions, 0 failed
+attack-frame-timing.py  exit=0  VERDICT: attack-frame-timing 9/9 assertions, 0 failed
+attack-damage.py        exit=0  VERDICT: attack-damage 11/11 assertions, 0 failed
 ```
-**⇒ 反證用的是工作樹**之外**的副本（`C:\mbtest2\t72-fixed`）與**同一支判官檔**，
-⇒ 所以判官不是恆紅，紅的原因就是那兩處，而且只有那兩處。**
+**⇒ 三支的紅全部消失，而樣本數一字不變（82 個探測點、2,100 隻怪、1,677 個 attack 節點）
+⇒ 是同一份資料、不同的二進位。**
 
-- **A1：356 個槽位參照有、port 沒有。** port 沒實作參照的 `info`/`link` 借圖規則
-  （`Mob.cpp:48-57`）。Mob.nx 裡 439 隻 mob 的 info 有 link，其中 237 隻**完全沒有自己的
-  attack 節點** ⇒ 參照給它們被借圖那隻的攻擊，port 給零個。
-  （例：3400000 的 info/link 指向 9410005 ⇒ 參照 attack1 = 1800 ms，port 什麼都沒有。）
-- **A2：85 個槽位 duration 不符。** `CombatService.cs:1552-1563` 的 `ActionDelaysMs`
-  只做 `ReadInt(frame,"delay") ?? 0`，**沒套 100 ms fallback**（`Animation.cpp:64-67`）。
-  2400049/attack3 的 20 個幀沒一個有 delay 節點 ⇒ 參照 2000 ms，port 說 **0 ms**。
-  **⇒ 同一個檔的球路徑 `:1631` 有套那個 fallback ⇒ 檔內兩條路徑自相矛盾。**
+**⇒ 而且不必推論就能看出來** —— 失敗文字直接印出跑的是修正前的行為：
+position-accuracy 的 P3 說 port 回 `standingY -> 84 at y=-25`（最深）
+而參照回 `get_fhid_underneath -> foothold 48 at y=-535`（腳下）
+⇒ **`e77a123` 的修法正是「最近的，不是最深的」。**
 
-**⇒ 覆蓋面是全體，不是抽樣：** 2,100 張 mob img、1,677 個 attack 節點、38,960 個幀、
-參照承認 2,023 個槽位、port 發佈 1,667 個。
+## 規則
 
-**⇒ 修的單是 task-73（implementer-nx）。⇒ 在它落地之前，閘紅是預期狀態。**
-**⇒ 下一個人看到閘紅，請先確認紅的是 `attack-frame-timing` 還是別的。**
+**⇒ 「判官對著一個跑著舊二進位的實例，不是對這棵樹的量測。」**
+**⇒ 派任何一件事之前，先確認那個實例的建置時間晚於所有相關 commit
+（`Get-Process | StartTime` + 比較 `bin\Release\...\MapleBenchX.dll` 的 mtime）。**
 
----------------------------------------------------------------------
+**⇒ 同族第二條：「閘跑到一半樹被換掉，那次執行也不是量測。」**
+實測：`4fc935f` 在 **15:50:04** 落地，而閘跑在 **15:41 → 15:52**
+⇒ `ball-art` 量到 `BAD=45`（舊判官）與 `BAD=40`（新判官），**兩者各自穩定**
+⇒ 那不是 flaky，是**兩棵不同的樹**。
+
+## 現況（四支機制判官在當前樹上全綠）
+
+```
+position-accuracy     6/6   （P3 由 e77a123 修；P4b 亦綠）
+attack-frame-timing   9/9   （A1 由 64daed7 修、A2 由 6b8c86b 修）
+attack-damage        11/11  （A1 由 36a823f 修）
+ball-art             BAD=0   （相位回捲 c4074b8 + 判官修正 4fc935f）
+```
+
+**⇒ 真的還紅的只有兩件，而且都不是 port 缺陷：**
+- **`browser-verify`** —— 間歇紅，機制已量到是**鏡像翻轉**：
+  `drawn (-36, -23) mirrored=true` vs `anchor-origin at scale 1 = (30, -23)`
+  ⇒ **y 完全相同、x 變號** ⇒ 不是數字算錯，是翻轉。task-76。
+- **19 支 suite 寫死封存 id `f4`/`f3`** ⇒ 換一個 Map.nx 序號不同的實例就 404。
+  task-83。**⇒ 這也是「閘紅」的另一種偽來源：
+  一支 404 的 suite 與一支「量到差異」的 suite，在輸出裡長得極像。**
+
+## 已從紀錄撤回
+
+**⇒ 「RED SUITES: 5」那份清單是對一棵會動的樹量的，不該再被引用。**
+**⇒ 「紅的身分會動」（browser-verify ↔ position-accuracy 之間移動）
+其中 position-accuracy 那一半是舊二進位造成的；browser-verify 那一半是間歇性，兩回事。**
+
 5.6 #10 球的相位：F1/F2/F3 全部關閉；而且**判官自己**把凍結寫成合法
 ---------------------------------------------------------------------
 ### #10（球的相位）—— F1 / F2 / F3 全部關閉，2026-10-22
