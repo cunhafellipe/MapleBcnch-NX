@@ -1,27 +1,62 @@
 param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$FirstAttackMob = '2220000', [string]$PlainMob = '2220100')
 $ErrorActionPreference = 'Stop'
 $base = "http://127.0.0.1:$Port"
-$files = Invoke-RestMethod "$base/api/files" -TimeoutSec 120
-$mapId = ($files | Where-Object { $_.name -eq 'Map.nx' }).id
-$mobId = ($files | Where-Object { $_.name -eq 'Mob.nx' }).id
+# tools/verify/AGENTS.md rule 14: an abort that prints no red marker reads as a
+# PASS to the gate, and an unwinding one is worse -- it escapes gate.ps1's Run(),
+# which has no try/catch around the suite call, and KILLS the gate. MEASURED
+# 2026-10-22 against gate.ps1's own Run() extracted byte-for-byte: this suite
+# ended the run at gate.ps1:248, "RED SUITES:" was never printed, and none of the
+# suites below it ran. There was NO existence check here at all: with no archive
+# open $mapId was $null, $map became "/Map/Map1/100000004.img", and the
+# calibration read asked for "/2220000.img/info/firstAttack" and unwound on the
+# 404. Resolve BY NAME instead.
+if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
+. "$PSScriptRoot\archivelib.ps1"
+$mapId = Get-ArchiveId -Base $base -Name 'Map.nx'
+$mobId = Get-ArchiveId -Base $base -Name 'Mob.nx'
 $map = "$mapId/Map/Map1/100000004.img"
+
+# Every HTTP call below goes through this, so a failing call prints the marker and
+# exits non-zero instead of unwinding the gate. Rule 14: the gate greps the TEXT
+# and every other caller reads the EXIT CODE, so a failing suite needs both.
+# Named per rule 10 (a verb-noun no alias can take) and it bumps a counter,
+# because a silently shadowed helper prints numbers that look like a measurement.
+$script:ApiCalls = 0
+function Invoke-Api {
+  param([string]$Uri, [string]$Method = 'Get', $Body, [int]$TimeoutSec = 300)
+  $script:ApiCalls++
+  $p = @{ Uri = $Uri; Method = $Method; TimeoutSec = $TimeoutSec; ErrorAction = 'Stop' }
+  if ($PSBoundParameters.ContainsKey('Body')) { $p.Body = $Body; $p.ContentType = 'application/json' }
+  try { Invoke-RestMethod @p }
+  catch { ">>> RED: $Method $Uri failed: $($_.Exception.Message)"; exit 1 }
+}
 
 function Sess($x, $y) {
   $b = @{ path = $map; startX = $x; startY = $y } | ConvertTo-Json -Compress
-  Invoke-RestMethod "$base/api/simulate/session" -Method Post -Body $b -ContentType 'application/json' -TimeoutSec 600
+  Invoke-Api -Uri "$base/api/simulate/session" -Method Post -Body $b -TimeoutSec 600
 }
 function Step($sid, $k) {
   $b = @{ count = 1; first = $k; then = @{} } | ConvertTo-Json -Compress
-  Invoke-RestMethod "$base/api/simulate/session/$sid/frames" -Method Post -Body $b -ContentType 'application/json' -TimeoutSec 300
+  Invoke-Api -Uri "$base/api/simulate/session/$sid/frames" -Method Post -Body $b
 }
 
 # CALIBRATION FIRST. The previous version of this script asserted 9409000 carried
 # firstAttack; it does not, so the test proved nothing while looking like a pass.
-$fa = Invoke-RestMethod "$base/api/inspect?path=$([uri]::EscapeDataString("$mobId/$FirstAttackMob.img/info/firstAttack"))" -TimeoutSec 300
-"calibration: $FirstAttackMob firstAttack = '$($fa.node.value)'  (must be '1')"
+# Guarded, and this is a real fix rather than tidiness: unguarded, a mob WITHOUT
+# firstAttack made this line 404 and unwind the gate, which meant the red branch
+# below -- the one that says exactly that -- could never run. The absence of the
+# node is the answer the next block is built to detect.
+$fa = try {
+  (Invoke-Api -Uri "$base/api/inspect?path=$([uri]::EscapeDataString("$mobId/$FirstAttackMob.img/info/firstAttack"))" -TimeoutSec 300).node.value
+} catch { '<absent>' }
+"calibration: $FirstAttackMob firstAttack = '$fa'  (must be '1')"
 # The gate decides the verdict from EXPLICIT markers (gate.ps1:47, :97-99) and
 # never reads an exit code, so an "ABORT:" in prose used to score "ok".
-if ($fa.node.value -ne '1') { ">>> RED: that mob has no firstAttack; the test would prove nothing."; exit 1 }
+# $fa is the VALUE, not the response object -- it was $fa.node.value before the
+# resolver was guarded, and leaving the old accessor on it made this compare
+# $null against '1', so a correct calibration reported red. MEASURED 2026-10-22
+# on 5591: it printed "firstAttack = '1'" and then said the mob had none.
+if ($fa -ne '1') { ">>> RED: that mob has no firstAttack; the test would prove nothing."; exit 1 }
 $pl = try {
   (Invoke-RestMethod "$base/api/inspect?path=$([uri]::EscapeDataString("$mobId/$PlainMob.img/info/firstAttack"))" -TimeoutSec 300).node.value
 } catch {
@@ -47,8 +82,8 @@ $nearest = ($a.mobs | Where-Object { $_.kind -eq 'm' } |
 "  map mobs: $(@($a.mobs | Where-Object { $_.kind -eq 'm' }).Count), nearest is $([Math]::Abs([double]$nearest.x - [double]$a.x)) px away"
 "  (that one IS within contact range, and it will hurt -- that is Stage.cpp:809 and it is correct."
 "   The assertion below is about the mob we SUMMON, and about its X, not about damage.)"
-$sum = Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)/summon" -Method Post `
-  -Body (@{ mobId = $PlainMob; count = 1 } | ConvertTo-Json -Compress) -ContentType 'application/json' -TimeoutSec 300
+$sum = Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)/summon" -Method Post `
+  -Body (@{ mobId = $PlainMob; count = 1 } | ConvertTo-Json -Compress)
 "  summoned the plain mob $($sum.spawned) -> index $($sum.indexes -join ',')"
 $a = Step $s.sessionId @{}
 $startX = [double](@($a.mobs)[$($sum.indexes[0])].x)
@@ -74,14 +109,14 @@ if ([Math]::Abs([double]$m.x - $startX) -lt 1) { $stage1Pass = "  PASS: it did n
 # Same trap as the ABORT above: a "FAIL" in prose is not a marker. The gate
 # would print "ok" and this failure would be counted as a pass.
 else { $stage1Failed = $true; ">>> RED: it moved $([Math]::Abs([double]$m.x - $startX)) px toward a player it was never told about" }
-Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
 # A failing suite must also exit non-zero -- callers read the exit code (rule 14).
 if ($stage1Failed) { exit 1 }
 
 "=== 2. a mob WITH firstAttack must PURSUE and hit, unprovoked ==="
 $s2 = Sess 1710 -25
-$sum2 = Invoke-RestMethod "$base/api/simulate/session/$($s2.sessionId)/summon" -Method Post `
-  -Body (@{ mobId = $FirstAttackMob; count = 1 } | ConvertTo-Json -Compress) -ContentType 'application/json' -TimeoutSec 300
+$sum2 = Invoke-Api -Uri "$base/api/simulate/session/$($s2.sessionId)/summon" -Method Post `
+  -Body (@{ mobId = $FirstAttackMob; count = 1 } | ConvertTo-Json -Compress)
 "  summoned $FirstAttackMob -> spawned=$($sum2.spawned) index=$($sum2.indexes -join ',')"
 $hits = @()
 for ($i = 0; $i -lt 400; $i++) {
@@ -95,10 +130,14 @@ $stage2Failed = $false
 $stage2Pass = ''
 if ($hits.Count -eq 0) { $stage2Failed = $true; ">>> RED: no damage over 400 frames -- firstAttack did not acquire" }
 else { $hits | ForEach-Object { $_ }; $stage2Pass = "  PASS: it attacked without being struck" }
-Invoke-RestMethod "$base/api/simulate/session/$($s2.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+Invoke-Api -Uri "$base/api/simulate/session/$($s2.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
 if ($stage2Failed) { exit 1 }
 
 # Both stages passed and nothing below can fail any more, so only NOW is a green
 # shape safe to print. See the note at stage 1.
+# Rule 10: prove the helper RAN. If something shadowed Invoke-Api the suite would
+# still print two PASS: lines here and they would look like a measurement.
+if ($script:ApiCalls -le 0) { ">>> RED: Invoke-Api was never called, so nothing in this run was measured"; exit 1 }
 $stage1Pass
 $stage2Pass
+"  ($script:ApiCalls HTTP calls through the guarded helper)"

@@ -64,7 +64,20 @@ async function archiveId(name) {
   let files;
   try { files = await api('/api/files'); }
   catch (exc) { console.log(`>>> RED: could not list the open archives on this instance: ${exc.message ?? exc}`); process.exit(1); }
-  const listed = new Map((files ?? []).filter((f) => f && typeof f === 'object').map((f) => [f.name, f.id]));
+  // The shape is checked before anything reads it. `(files ?? []).filter` threw
+  // `TypeError: (files ?? []).filter is not a function` whenever the instance
+  // answered 200 with a JSON scalar, a string or an object rather than a list --
+  // and an uncaught TypeError prints no marker at all. MEASURED 2026-10-22
+  // against gate.ps1's own Run() extracted byte-for-byte: the gate printed `ok`
+  // for that suite and did not count it red. A response that is not a list is
+  // still "we could not list the archives", so it reuses that one message
+  // instead of adding a fifth shape (AGENTS.md rule 1: fail loudly, never let a
+  // measurement collapse into a shape nobody looked at).
+  if (!Array.isArray(files)) {
+    console.log(`>>> RED: could not list the open archives on this instance: /api/files answered with ${files === null ? 'null' : typeof files}, not a list`);
+    process.exit(1);
+  }
+  const listed = new Map(files.filter((f) => f && typeof f === 'object').map((f) => [f.name, f.id]));
   if (!listed.has(name)) { console.log(`>>> RED: ${name} is not open on this instance, so there is nothing to judge`); process.exit(1); }
   if (!listed.get(name)) { console.log(`>>> RED: ${name} is listed by this instance but carries no id`); process.exit(1); }
   return listed.get(name);

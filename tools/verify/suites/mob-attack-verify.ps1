@@ -29,16 +29,44 @@ param(
 $ErrorActionPreference = 'Stop'
 $base = "http://127.0.0.1:$Port"
 
-$files = Invoke-RestMethod "$base/api/files" -TimeoutSec 120
-$mapFile = @($files) | Where-Object { $_.name -eq 'Map.nx' } | Select-Object -First 1
-$mobFile = @($files) | Where-Object { $_.name -eq 'Mob.nx' } | Select-Object -First 1
-if (-not $mapFile) { throw "Map.nx is not open" }
-$path = "$($mapFile.id)/$MapLeaf"
+# tools/verify/AGENTS.md rule 14: an abort that prints no red marker reads as a
+# PASS to the gate. A bare `throw` is worse than that -- it escapes gate.ps1's
+# Run(), which has no try/catch around the suite call, and KILLS the gate.
+# MEASURED 2026-10-22 against gate.ps1's own Run() extracted byte-for-byte
+# (lines 188, 211-242): with no archive open this throw ended the run at
+# gate.ps1:247, "RED SUITES:" was never printed, and none of the suites below it
+# ran at all. Resolve BY NAME instead, with the helper that already says which
+# of its four ways it failed.
+if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
+. "$PSScriptRoot\archivelib.ps1"
+# Mob.nx was never checked at all. With Map.nx open and Mob.nx not, $mobFile.id
+# was null, every calibration read came back '<absent>', and this suite then
+# failed on "9500302 has no bodyAttack" -- a false claim about the mob, produced
+# by a missing archive. Rule 3: a test that fails for the WRONG reason is not a
+# test, and here it failed for a reason that was not about the mob at all.
+$mobId = Get-ArchiveId -Base $base -Name 'Mob.nx'
+$mapId = Get-ArchiveId -Base $base -Name 'Map.nx'
+$path = "$mapId/$MapLeaf"
+
+# Every HTTP call below goes through this, so a failing call prints the marker and
+# exits non-zero instead of unwinding the gate. Rule 14: the gate greps the TEXT
+# and every other caller reads the EXIT CODE, so a failing suite needs both.
+# Named per rule 10 (a verb-noun that no alias can take) and it bumps a counter,
+# because a silently shadowed helper prints numbers that look like a measurement.
+$script:ApiCalls = 0
+function Invoke-Api {
+  param([string]$Uri, [string]$Method = 'Get', $Body, [int]$TimeoutSec = 300)
+  $script:ApiCalls++
+  $p = @{ Uri = $Uri; Method = $Method; TimeoutSec = $TimeoutSec; ErrorAction = 'Stop' }
+  if ($PSBoundParameters.ContainsKey('Body')) { $p.Body = $Body; $p.ContentType = 'application/json' }
+  try { Invoke-RestMethod @p }
+  catch { ">>> RED: $Method $Uri failed: $($_.Exception.Message)"; exit 1 }
+}
 
 # CALIBRATION FIRST. A test that silently measures the wrong mob proves nothing.
 function Flag($key) {
   try {
-    (Invoke-RestMethod "$base/api/inspect?path=$([uri]::EscapeDataString("$($mobFile.id)/$Mob.img/info/$key"))" -TimeoutSec 300).node.value
+    (Invoke-RestMethod "$base/api/inspect?path=$([uri]::EscapeDataString("$mobId/$Mob.img/info/$key"))" -TimeoutSec 300).node.value
   } catch { '<absent>' }
 }
 $pd = Flag 'PADamage'
@@ -55,12 +83,12 @@ if ([int]$pd -ge 40) { ">>> RED: $Mob deals $pd, which does not leave the 50-HP 
   # MEASURED: with no weapon this script held gap 42.7, swung 8 times and hit
   # nothing, which reads as "the swing is broken".
 $body = @{ path = $path; startX = 1710; startY = -25; weapon = '01302000.img'; equippedWeapon = '01302000' } | ConvertTo-Json -Compress
-$s = Invoke-RestMethod "$base/api/simulate/session" -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 600
+$s = Invoke-Api -Uri "$base/api/simulate/session" -Method Post -Body $body -TimeoutSec 600
 "session $($s.sessionId)"
 
 function Step([hashtable]$k) {
   $b = @{ count = 1; first = $k; then = @{} } | ConvertTo-Json -Compress
-  Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)/frames" -Method Post -Body $b -ContentType 'application/json' -TimeoutSec 300
+  Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)/frames" -Method Post -Body $b
 }
 
 # Phase A: close the distance and provoke. RETRIED in a fresh session.
@@ -74,7 +102,7 @@ function Step([hashtable]$k) {
 # repeating one unlucky one.
 $cur = $null; $idx = 0; $swings = 0; $provoked = $false; $gap = 0; $hp0 = 0
 for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
-  $s = Invoke-RestMethod "$base/api/simulate/session" -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 600
+  $s = Invoke-Api -Uri "$base/api/simulate/session" -Method Post -Body $body -TimeoutSec 600
   # W-062: THE FLAKE. MEASURED on the gate run of 2026-10-16 -- the suite printed
   #   (the 50-HP character died on that hit; ...)
   #   NO DAMAGE over 400 frames -- player hp still 0/50
@@ -92,10 +120,10 @@ for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
   # Invulnerable suppresses the HP spend only, so the mob still walks, still
   # chases and still connects -- which is the thing under test. Contact damage
   # has its own suites (`attack-drop`, `sim-health`); this one is about pursuit.
-  Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)/invulnerable" -Method Post `
-    -Body (@{ value = $true } | ConvertTo-Json -Compress) -ContentType 'application/json' -TimeoutSec 60 | Out-Null
-  $sum = Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)/summon" -Method Post `
-    -Body (@{ mobId = $Mob; count = 1 } | ConvertTo-Json -Compress) -ContentType 'application/json' -TimeoutSec 300
+  Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)/invulnerable" -Method Post `
+    -Body (@{ value = $true } | ConvertTo-Json -Compress) -TimeoutSec 60 | Out-Null
+  $sum = Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)/summon" -Method Post `
+    -Body (@{ mobId = $Mob; count = 1 } | ConvertTo-Json -Compress)
   if ($sum.spawned -lt 1) { continue }
   $idx = $sum.indexes[0]
   $cur = Step @{}
@@ -119,7 +147,7 @@ for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
   if ($provoked) {
     "  attempt ${attempt}: provoked with $swings swing(s) at gap $([Math]::Round($gap)); player $phHp/$phMax after the approach"
   } else {
-    Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+    Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
   }
 }
 if (-not $provoked) { ">>> RED: no swing landed in 12 attempts, so aggro was never set."; exit 1 }
@@ -192,6 +220,10 @@ if ($hits.Count -eq 0) {
 } else {
   $hits | ForEach-Object { $_ }
   "  gap $gap0 -> closest $closest : the mob closed the distance on its own after one landed hit"
+  # Rule 10: prove the helper RAN. If something shadowed Invoke-Api the suite
+  # would still print numbers here and they would look like a measurement.
+  if ($script:ApiCalls -le 0) { ">>> RED: Invoke-Api was never called, so nothing in this run was measured"; exit 1 }
+  "  ($script:ApiCalls HTTP calls through the guarded helper)"
   # The gate PRINTS the last line matching VERDICT|ALL LADDERS PASS|passed,|
   # BAD=|PASS: (gate.ps1:93-94) and without one it can only show "(read the
   # tail)", which pushes the verdict onto a human reading every suite's
