@@ -243,6 +243,12 @@ suites:
       它同時讀取**實際載入的** livewalk.js 原始碼，用正則斷言 onKeyDown 裝的是
       skill.skillId 而不是 skill.key（W-065 的那個字元），所以客戶端那一半不是複製品。
       實測 14 斷言 3/3 綠，傷害 103-104，封存的 level/1/damage 是 135。
+  - id: position-accuracy
+    file: tools/verify/suites/position-accuracy.py
+    runner: python
+    verdict: "VERDICT: position-accuracy"
+    asserts: true
+    areas: [simulate]
   - id: skillshape
     file: tools/verify/suites/skillshape-verify.mjs
     runner: node

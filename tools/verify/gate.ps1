@@ -9,6 +9,36 @@ $env:PYTHONIOENCODING = 'utf-8'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $fail = 0
 
+# The names of the suites that went red, in the order they ran.
+#
+# The COUNT alone is not a verdict. MEASURED 2026-10-22 on a clean clone:
+# three consecutive runs, each of them ending in "RED SUITES: 1" -- and each
+# of those 1s was a DIFFERENT suite. A caller that reads only the count sees
+# "1" three times and concludes nothing changed, while the content changed
+# completely. So the count is reported AND the names are reported.
+$script:redSuites = @()
+
+# The verdicts file, TRUNCATED HERE, before a single suite runs.
+#
+# The truncation is first on purpose. A gate killed half way through must not
+# leave the PREVIOUS run's suite names in the file for a reader to believe.
+# MEASURED 2026-10-22: a gate killed 20 s in left the previous run's
+# "RED_SUITE=knockback" and its "GATE_STATE=complete" untouched, because the
+# write was at the END of the script and the script never got there.
+# Truncating at the start means a killed run leaves the format marker and
+# nothing else, so the reader can tell it did not finish.
+$verdictsPath = Join-Path $env:TEMP 'maplebench-gate-verdicts.txt'
+$verdictsOk = $true
+try {
+  Set-Content -LiteralPath $verdictsPath -Value 'GATE_VERDICTS_FORMAT=1' -Encoding ASCII
+} catch {
+  # The file is a convenience for one kind of caller; the stdout lines and
+  # the exit code are the verdict. A failure here is reported by name and
+  # does not change the gate's own result.
+  "GATE_VERDICTS_WRITE_FAILED: $($_.Exception.Message)"
+  $verdictsOk = $false
+}
+
 # RED is an EXPLICIT marker a suite prints, never an inference. Three attempts at
 # inferring red from prose each produced a false result: $LASTEXITCODE is not set
 # by a PowerShell script (flagged six green suites), and `\d+ failed` matches the
@@ -29,18 +59,32 @@ $Port = ([uri]$Base).Port
 # which contains no '>>> RED' and no 'BAD=n' -- so the gate printed "ok" for six
 # suites that had measured NOTHING. A green that means "nothing ran" is the exact
 # failure this gate exists to prevent.
+# The reason the last check failed, kept OUT of the return value.
+#
+# A PowerShell function returns everything it writes, so a function that both
+# printed a message and returned $false returned a TWO-ELEMENT ARRAY, and
+# `-not` on a non-empty array is $false. MEASURED 2026-10-22: with the backend
+# down, every suite printed ">>> RED (backend unreachable)" and the gate still
+# finished with "RED SUITES: 0" and an exit code of 0. The message was on the
+# screen and the count did not know about it.
+$script:aliveError = ''
+
 function Alive($why) {
   try { $null = Invoke-RestMethod "$Base/api/about" -TimeoutSec 20; return $true }
-  catch { "   >>> RED (backend unreachable: $($_.Exception.Message)) -- $why"; return $false }
+  catch { $script:aliveError = $_.Exception.Message; return $false }
 }
 
 function Run($name, $block) {
   "=== $name ==="
-  if (-not (Alive $name)) { $script:fail++; return }
+  if (-not (Alive $name)) {
+    "   >>> RED (backend unreachable: $script:aliveError) -- $name"
+    $script:fail++; $script:redSuites += $name
+    return
+  }
   $text = (& $block 2>&1 | Out-String -Width 200)
   # a traceback in the middle of a suite is a failed suite, whatever it printed
   if ($text -match 'URLError|Connection refused|WinError 10061|Traceback \(most recent call last\)') {
-    "   >>> RED (the suite could not reach the backend)"; $script:fail++
+    "   >>> RED (the suite could not reach the backend)"; $script:fail++; $script:redSuites += $name
     ($text -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) |
       ForEach-Object { "      $_" }
     return
@@ -52,7 +96,7 @@ function Run($name, $block) {
   else { "   (read the tail):"; ($lines | Select-Object -Last 4) | ForEach-Object { "      $_" } }
   $bad = @($RED | Where-Object { $text.Contains($_) })
   if ($text -match 'BAD=[1-9]') { $bad += 'BAD=n' }
-  if ($bad) { "   >>> RED ($($bad -join ', '))"; $script:fail++ }
+  if ($bad) { "   >>> RED ($($bad -join ', '))"; $script:fail++; $script:redSuites += $name }
   else { "   ok" }
 }
 
@@ -83,6 +127,12 @@ Run 'sheetfields-verify' { python "$S\sheetfields-verify.py" }
 Run 'sheet-verify'    { python "$S\sheet-verify.py" }
 Run 'node-verify'    { python "$S\node-verify.py" }
 Run 'skill-e2e'    { python "$S\skill-e2e.py" }
+
+# ADR-0005 criterion 1, "position accuracy": the foothold the feet rest on,
+# against the reference's get_fhid_underneath. It reads the foothold geometry
+# from the ARCHIVE and applies the reference's own formulas, so a port that
+# changes its physics does not pass by agreeing with itself.
+Run 'position-accuracy' { python "$S\position-accuracy.py" }
 
 # W-089. The 66-skill SHAPE sweep, resident.
 #
@@ -118,4 +168,52 @@ Run 'browser-verify' { Push-Location $Root; node 'MapleBench/tools/browser-verif
 #   python tools\verify\suites\save-audit.py
 # W-066 tracks the underlying gap: no endpoint to close an archive.
 
+# --------------------------------------------------------------------------- #
+# The verdict, in a form a caller can use.
+# --------------------------------------------------------------------------- #
+#
+# The exit code carries the verdict, because a verdict that lives only in the
+# text is carried by nothing: every caller in this project checks the exit
+# code, and until now the gate answered 0 whether it was green or red.
+#
+# The COUNT alone is not enough either, so the names go with it: one
+# `RED_SUITE=<name>` line per red suite, in a form that can be grepped
+# exactly. The count line keeps its exact bytes, because 35 places in this
+# repository quote that string.
+#
+# The same content also goes to a file, for the caller that only has the exit
+# code. It is TRUNCATED at the start of the run, so a gate that dies part way
+# through leaves a file with no RED_SUITE lines in it rather than the
+# previous run's names for a reader to believe.
+$verdictsPath = Join-Path $env:TEMP 'maplebench-gate-verdicts.txt'
+$verdictsOk = $true
+try {
+  Set-Content -LiteralPath $verdictsPath -Value 'GATE_VERDICTS_FORMAT=1' -Encoding ASCII
+} catch {
+  # The file is a convenience for one kind of caller; the stdout lines and
+  # the exit code are the verdict. A failure here is reported by name and
+  # does not change the gate's own result.
+  "GATE_VERDICTS_WRITE_FAILED: $($_.Exception.Message)"
+  $verdictsOk = $false
+}
+
 "`n=========== RED SUITES: $fail ==========="
+if ($fail -gt 0) {
+  foreach ($suite in $script:redSuites) {
+    "RED_SUITE=$suite"
+  }
+}
+if ($verdictsOk) {
+  $lines = @('GATE_VERDICTS_FORMAT=1', "RED_SUITES=$fail")
+  foreach ($suite in $script:redSuites) { $lines += "RED_SUITE=$suite" }
+  $lines += 'GATE_STATE=complete'
+  try {
+    Set-Content -LiteralPath $verdictsPath -Value $lines -Encoding ASCII
+  } catch {
+    "GATE_VERDICTS_WRITE_FAILED: $($_.Exception.Message)"
+  }
+  "GATE_VERDICTS=$verdictsPath"
+}
+
+if ($fail -gt 0) { exit 1 }
+exit 0
