@@ -1290,31 +1290,38 @@ public sealed class MobPatrol
         }
 
         double since = e.ElapsedMs - e.DelayMs;
-        IReadOnlyList<int> delays = e.Spec.BallFrameDelays;
-        if (delays is { Count: > 0 })
-        {
-            double acc = 0;
-            int index = 0;
-            for (int i = 0; i < delays.Count; i++)
-            {
-                if (since < acc + delays[i])
-                {
-                    index = i;
-                    break;
-                }
-                acc += delays[i];
-                index = i;
-            }
-            return index % count;
-        }
 
-        // A ball whose frames declare no delay at all runs on the fallback.
-        return (int)since / 100 % count;
+        // The ball's own per-frame delays, one entry per frame. `BallFrameCount`
+        // and `BallFrameDelays` walk the same frames through the same filter
+        // (`CombatService.cs`), so this list is never empty while `count > 0`.
+        // MEASURED 2026-10-22 over every attack entry the mob catalog declares
+        // (1,667 entries): 0 with `ballFrameCount != len(ballFrameDelays)` and
+        // 0 with a ball but no delays at all.
+        //
+        // There is deliberately NO 100 ms fallback branch here, because the 100
+        // is already inside this list: a frame with no delay node contributes
+        // 100 (`Animation.cpp:64-67`), so a ball whose frames declare no delay
+        // runs through here as well. The branch that used to sit below could
+        // never be reached, and its comment claimed the opposite.
+        IReadOnlyList<int> delays = e.Spec.BallFrameDelays;
+        double acc = 0;
+        int index = 0;
+        for (int i = 0; i < delays.Count; i++)
+        {
+            if (since < acc + delays[i])
+            {
+                index = i;
+                break;
+            }
+            acc += delays[i];
+            index = i;
+        }
+        return index % count;
     }
 
     /// <summary>
-    /// One entry's public shape. The scalar path above and this must agree, so both
-    /// read the same helper.
+    /// One entry's public shape. The scalar path (<see cref="AttackEntries"/>) and
+    /// this must agree, so both read the same helper.
     /// </summary>
     private AttackEntryView Describe(AttackEntry e)
     {
