@@ -4,6 +4,40 @@ Scripts that decide whether a change is correct. **These tools have been wrong
 nine times, and every time they returned a plausible-looking wrong answer rather
 than an obvious failure.** That is the failure mode to design against.
 
+20. **A script told to measure two different things and reporting the same
+    thing for both has measured one.** Measured 2026-10-22: a census that
+    counts hard-coded archive ids was run twice to compare "before" and
+    "after" a change that removed every one of them. Both runs printed the
+    same file count, the same hit count, **and the same line numbers**. The
+    reason was that its input directory was a **hard-coded literal** and it
+    ignored its own command-line argument entirely, so the second run
+    re-read the first run's tree. The reported result was `CODE 31 in 21
+    files` for both, printed side by side, where `0` was the answer.
+
+    **⇒ It was not the census that caught this. A different experiment did:**
+    an instance with **no archives open** printed the expected failure for
+    all 21 suites, which contradicted the census's "31 hits remain". Only
+    that contradiction sent anyone back to the script. **⇒ When two arms of
+    a comparison measure different trees and report an identical count, the
+    instrument is the suspect — not the conclusion.**
+
+    **⇒ Three habits:**
+    - **Print the input you actually measured** — the resolved path, and
+      something that differs between the two arms (a file count, a hash, a
+      commit id). A census that cannot show its own inputs cannot be
+      compared with anything.
+    - **Make the two arms structurally different.** Pass the path as a
+      parameter and **assert the two resolved paths are not equal** before
+      comparing. An assertion is cheaper than a wrong census.
+    - **Treat a perfect tie as a failure of the experiment, not a result.**
+      Real worlds rarely tie exactly; a tie almost always means one side
+      was not measured. `files scanned: 34 -> CODE 31` and
+      `files scanned: 37 -> CODE 0` is a result; `34 -> 31` and `34 -> 31`
+      is a warning.
+
+    **⇒ Same family as rule 18 (a truncated census is not a census) and
+    rule 19 (a comparison that read zero lines is not a comparison): the
+    tool returned a well-formed number for a run that did not happen.**
 ---
 
 ## Every failure here returned valid-looking data
@@ -345,6 +379,32 @@ tool, and the tool was not used.
     and `BAD=40` under the new one — **each perfectly stable**, and neither
     a flake. "The number changed between runs" is a hypothesis; "the tree
     changed between runs" is a measurement you must exclude first.
+    **=> And identify the server's process by the PORT it serves, not by its
+    NAME.** Rule 17 was written from a measurement, and re-checking it the same
+    day found the check itself was aimed at the wrong process:
+    `Get-Process MapleBenchX` returned a pid that was serving nothing (an
+    apphost under a temp build directory, not any listening port), while the
+    process actually answering on 5591 was a `dotnet` host started the previous
+    evening running a DLL built ~25 hours earlier with 26 product commits
+    missing. The reported "how stale is the gate instance" was wrong in both
+    directions: wrong process, and understated by ~24 hours.
+
+    `Get-Process <name>` matches a **name**, and several copies of the same
+    server run at once on this machine - `dotnet MapleBenchX.dll`, an apphost
+    `MapleBenchX.exe`, and private per-reviewer builds. Name lookup returns one
+    of them, and not necessarily the one serving the port you are about to
+    measure against. Resolve the port first:
+
+    ```powershell
+    Get-NetTCPConnection -State Listen -LocalPort <port> |
+      Select-Object LocalPort, OwningProcess
+    Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" |
+      Select-Object ProcessId, CreationDate, CommandLine
+    ```
+
+    **=> Print the pid, the port it owns, its start time, the binary's build
+    time, and the commit count between them. A staleness claim without those
+    five numbers is a guess about some process.**
 
 18. **A census must report `scanned` AND `truncated`. A truncated census is
     not a census.** Measured 2026-10-22, in a single turn, the same analyst
@@ -420,37 +480,3 @@ tool, and the tool was not used.
 A measurement that did not happen and a measurement that happened are
 indistinguishable from the output alone. That is the whole reason `self-test.ps1`
 exists — do not skip it.
-20. **A script told to measure two different things and reporting the same
-    thing for both has measured one.** Measured 2026-10-22: a census that
-    counts hard-coded archive ids was run twice to compare "before" and
-    "after" a change that removed every one of them. Both runs printed the
-    same file count, the same hit count, **and the same line numbers**. The
-    reason was that its input directory was a **hard-coded literal** and it
-    ignored its own command-line argument entirely, so the second run
-    re-read the first run's tree. The reported result was `CODE 31 in 21
-    files` for both, printed side by side, where `0` was the answer.
-
-    **⇒ It was not the census that caught this. A different experiment did:**
-    an instance with **no archives open** printed the expected failure for
-    all 21 suites, which contradicted the census's "31 hits remain". Only
-    that contradiction sent anyone back to the script. **⇒ When two arms of
-    a comparison measure different trees and report an identical count, the
-    instrument is the suspect — not the conclusion.**
-
-    **⇒ Three habits:**
-    - **Print the input you actually measured** — the resolved path, and
-      something that differs between the two arms (a file count, a hash, a
-      commit id). A census that cannot show its own inputs cannot be
-      compared with anything.
-    - **Make the two arms structurally different.** Pass the path as a
-      parameter and **assert the two resolved paths are not equal** before
-      comparing. An assertion is cheaper than a wrong census.
-    - **Treat a perfect tie as a failure of the experiment, not a result.**
-      Real worlds rarely tie exactly; a tie almost always means one side
-      was not measured. `files scanned: 34 -> CODE 31` and
-      `files scanned: 37 -> CODE 0` is a result; `34 -> 31` and `34 -> 31`
-      is a warning.
-
-    **⇒ Same family as rule 18 (a truncated census is not a census) and
-    rule 19 (a comparison that read zero lines is not a comparison): the
-    tool returned a well-formed number for a run that did not happen.**
