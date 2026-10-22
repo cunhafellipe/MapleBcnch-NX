@@ -1278,6 +1278,78 @@ def cmd_critical(_args) -> int:
     return 0
 
 
+_DOCTOR_START = _dt.datetime.now().timestamp()
+
+
+def _newest_mtime(root: str):
+    """Newest file mtime under `root`.
+
+    os.stat / os.scandir ONLY. This function never opens a file for writing and
+    never writes to the tree it measures -- the invariant it feeds guards a
+    directory that must not be touched, so the checker must not touch it
+    either.
+
+    Returns (newest_epoch_or_None, files_scanned, dirs_unreadable). The counts
+    ship with the answer on purpose (rule 18): "0 files newer" over an
+    unstated denominator is the same shape as a missing field.
+    """
+    newest = None
+    scanned = 0
+    unreadable = 0
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            stack.append(e.path)
+                            continue
+                        if not e.is_file(follow_symlinks=False):
+                            continue
+                        m = e.stat(follow_symlinks=False).st_mtime
+                    except OSError:
+                        unreadable += 1
+                        continue
+                    scanned += 1
+                    if newest is None or m > newest:
+                        newest = m
+        except OSError:
+            unreadable += 1
+    return newest, scanned, unreadable
+
+
+def _parse_mtime(value):
+    """An invariant's reference timestamp: epoch seconds or ISO-8601.
+
+    Returns None when the value is neither, which the caller reports as a
+    MALFORMED invariant rather than quietly skipping.
+
+    A timestamp with no offset is read as LOCAL time, because that is how the
+    value is written and because the result is printed back with
+    `fromtimestamp`, which is local too. MEASURED 2026-10-23: the two
+    disagreed for eight hours -- the reference was parsed as UTC and printed
+    as local -- so a file that was ten minutes in the FUTURE compared as eight
+    hours older and the invariant read `ok`. Parse and print must use the same
+    clock. An explicit offset (`Z`, `+08:00`) is honoured as written.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    s = str(value).strip().strip("'\"")
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    try:
+        d = _dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.astimezone()
+    return d.timestamp()
+
+
 def cmd_doctor(_args) -> int:
     """D5: is the environment and the state trustworthy right now?"""
     import hashlib
@@ -1302,6 +1374,20 @@ def cmd_doctor(_args) -> int:
     print()
     print("=== invariants (pm/SPEC.yaml) ===")
     spec = load_spec()
+    # D2 -- a missing DECLARATION FILE is a defect, not an empty result.
+    #
+    # MEASURED 2026-10-23: with pm/SPEC.yaml and tools/verify/gate.ps1 both
+    # deleted, the doctor printed `doctor: 0 problem(s)` and exited 0, because
+    # load_spec() returns {} for a missing file and every later section then
+    # reads an empty registry. The gate reads the exit code and the token, saw
+    # a clean bill of health, and ran the suites. "I measured nothing" was
+    # reported as "I found nothing".
+    if not os.path.exists(SPEC_FILE):
+        print(f"  MISSING the declaration file: {SPEC_FILE}")
+        print("      The doctor cannot check what it cannot read. An absent")
+        print("      SPEC leaves every section below empty, so 'no problems")
+        print("      found' would be indistinguishable from 'nothing checked'.")
+        bad += 1
     for inv in spec_rows(spec, "invariants"):
         kind = inv.get("kind")
         if kind == "md5":
@@ -1358,8 +1444,77 @@ def cmd_doctor(_args) -> int:
             print(f"  {inv['id']}: {'ok' if ok else 'MISSING'}")
             if not ok:
                 bad += 1
+        elif kind == "mtime-newer-than":
+            # "Nothing under `path` was written after the reference."
+            #
+            # The reference is either a DECLARED `mtime:` value, or -- when the
+            # SPEC declares none -- the START OF THIS DOCTOR RUN. That default
+            # is not an invented constant and cannot go stale: it asks the only
+            # question this invariant's own `why:` states -- "any test writing
+            # into this directory is changing the user's original data" -- and
+            # a test run is exactly a window between one doctor run and the
+            # next. Every run prints which reference it used, so the choice is
+            # never silent. A DECLARED `mtime:` overrides it.
+            #
+            # This checker only ever stats the tree. It never writes to the
+            # path it measures: the whole point of the invariant is that
+            # nothing writes there, a checker included.
+            mref_src = "the doctor run's own start"
+            mpath = inv.get("path")
+            if not mpath:
+                print(f"  {inv.get('id', '?')}: MALFORMED -- no path"
+                      " (this kind needs the directory it guards)")
+                bad += 1
+                continue
+            if inv.get("mtime"):
+                mref = _parse_mtime(inv["mtime"])
+                if mref is None:
+                    print(f"  {inv.get('id', '?')}: MALFORMED -- mtime"
+                          f" {inv['mtime']!r} is neither epoch seconds nor an"
+                          " ISO-8601 timestamp")
+                    bad += 1
+                    continue
+                mref_src = f"the declared mtime: {inv['mtime']}"
+            else:
+                mref = _DOCTOR_START
+            if not os.path.exists(mpath):
+                print(f"  {inv.get('id', '?')}: MISSING {mpath}")
+                bad += 1
+                continue
+            newest, n_files, n_unreadable = _newest_mtime(mpath)
+            if newest is None:
+                print(f"  {inv.get('id', '?')}: UNREADABLE {mpath}"
+                      f"  files scanned={n_files} dirs unreadable={n_unreadable}")
+                bad += 1
+                continue
+            touched = newest > mref
+            print(f"  {inv.get('id', '?')}: {'TOUCHED' if touched else 'ok'}"
+                  f"  newest={_dt.datetime.fromtimestamp(newest).isoformat(sep=' ')}"
+                  f"  reference={_dt.datetime.fromtimestamp(mref).isoformat(sep=' ')}"
+                  f"  files scanned={n_files} unreadable={n_unreadable}")
+            print(f"      reference = {mref_src}")
+            if touched:
+                print("      a file under this path is NEWER than the reference"
+                      " -- something wrote there after it")
+                bad += 1
         else:
-            print(f"  {inv['id']}: (kind {kind} not checked here)")
+            # D1a -- an unimplemented kind is a DEFECT, not a note.
+            #
+            # MEASURED 2026-10-23: the doctor printed
+            # `avatar-md5-raw: (kind md5-raw not checked here)` and still
+            # reported `doctor: 0 problem(s)`, exit 0. A row that cannot go red
+            # is a declaration, not a guard, and the one thing it existed to
+            # catch was never measured behind it.
+            #
+            # `kind: None` lands here too, and that is D4: this SPEC's YAML
+            # subset ends a list-item mapping at a comment line, so a comment
+            # between `id:` and `kind:` silently eats the guard's own kind.
+            print(f"  {inv.get('id', '?')}: NOT CHECKED -- kind {kind!r} is not"
+                  " implemented in this doctor")
+            print("      An invariant the doctor does not evaluate can never go"
+                  " red, so it protects nothing. A `kind:` of None here means a"
+                  " comment line inside the list item ended the mapping early.")
+            bad += 1
 
     print()
     print("=== gate vs the suite registry (SPEC.yaml) ===")
@@ -1386,7 +1541,18 @@ def cmd_doctor(_args) -> int:
             print(f"  gate runs suites the registry does not list: {', '.join(orphans)}")
             bad += len(orphans)
     else:
-        print("  gate.ps1 not found; skipping")
+        # D2 -- the OTHER declaration file.
+        #
+        # Without gate.ps1 the registry's `in_gate` flags have nothing to be
+        # checked against, and _gate_red_markers() reads an empty string, so
+        # EDGE 2 -- "a suite prints a red marker nobody declared" -- is skipped
+        # outright. A skipped check reported as a passed check is the same
+        # defect as a missing SPEC: both print a clean bill of health for work
+        # that was never done.
+        print(f"  MISSING the declaration file: {gate}")
+        print("      Without it the registry's in_gate flags cannot be checked"
+              " and the undeclared-red-marker edge is skipped silently.")
+        bad += 1
 
     print()
     print("=== suite declarations vs the code (SPEC.yaml) ===")
@@ -1481,6 +1647,25 @@ def cmd_doctor(_args) -> int:
     # read the forged 0. At column 0, on its own line, nothing else in the
     # doctor's output can be that shape.
     print(f"DOCTOR_SUITES_PROBLEMS={decl_err + decl_gap}")
+    # D3 -- the token needs a DENOMINATOR, and it cannot go on that line.
+    #
+    # `DOCTOR_SUITES_PROBLEMS=0` alone cannot be read: 0 problems out of 34
+    # declared suites and 0 problems out of 1 declared suite print the same
+    # string. MEASURED 2026-10-23: a comment line inside `suites:` collapsed
+    # the registry from 34 rows to 1, the token still printed 0, and the other
+    # 33 were not "checked and fine" -- they were not in the registry at all.
+    #
+    # The denominator is therefore printed on its OWN line at column 0, and it
+    # must stay a different token name: gate.ps1 reads the count with
+    # `(?m)^DOCTOR_SUITES_PROBLEMS=(\d+)\s*$`, and that `\s*$` means the number
+    # has to be the last thing on its line. Appending " / 34 declared" to the
+    # token would make the gate report "the doctor did not report
+    # DOCTOR_SUITES_PROBLEMS" and turn every gate run red.
+    #
+    # A new token name also cannot be forged the way the old one could: the
+    # forge that worked was a SPEC verdict string printed on its own line, and
+    # every line the doctor prints besides these two carries leading spaces.
+    print(f"DOCTOR_SUITES_DECLARED={len(suite_rows)}")
     bad += decl_err + decl_gap
 
     print()
