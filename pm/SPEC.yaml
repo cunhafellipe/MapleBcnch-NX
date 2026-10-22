@@ -425,11 +425,40 @@ suites:
 # --------------------------------------------------------------------------- #
 # invariants — 不可破壞的東西。doctor 會逐條檢查。
 #
-# The md5 of avatar.md5's file is the md5 of the file with its line endings
-# normalised to LF. Measured 2026-10-22: the raw bytes hash to a1eb2eb4... in
-# a working tree (CRLF) and to ba96b2d9... in a fresh clone of the same commit
-# (LF), so the raw hash made that invariant red on every clean checkout -- and
-# a doctor that is always red cannot be used as a gate.
+# There are TWO md5 invariants on the same file, because they refuse
+# different things:
+#
+#   avatar-md5      (kind: md5)     the CONTENT: the md5 of the file with
+#                                   its line endings normalised to LF. A
+#                                   content change is red; a line-ending-only
+#                                   change is not.
+#   avatar-md5-raw  (kind: md5-raw) the BYTES: the md5 of the raw file, with
+#                                   nothing normalised. ANY byte change is
+#                                   red, line endings included.
+#
+# MEASURED 2026-10-22, all three forms of the same commit:
+#   working tree        32,989 bytes  CR=0  md5=ba96b2d9727203279b8b784d256430b5
+#   committed blob      32,989 bytes  CR=0  md5=ba96b2d9727203279b8b784d256430b5
+#   fresh clone         32,989 bytes  CR=0  md5=ba96b2d9727203279b8b784d256430b5
+#   the same content, CRLF form
+#                       33,687 bytes      md5=a1eb2eb47af42e07ee048762c2592456
+#
+# WHY the byte-level one is safe to declare now: .gitattributes pins
+# `* text=auto eol=lf`, so a checkout is LF whatever core.autocrlf says, and
+# the raw bytes are the same in a working tree and in a clone. The older note
+# in this file said the raw hash was a1eb2eb4... in a working tree (CRLF) and
+# ba96b2d9... in a clone; that was measured before the checkout was pinned and
+# it no longer reproduces. A stale rule is worse than no rule: it sends
+# someone to fix what is already fixed.
+#
+# The two invariants report the SAME number today, because this file's line
+# endings ARE LF. They refuse different things: the normalised one tolerates
+# a line-ending change, the byte-level one does not.
+#
+# *** avatar-md5-raw is DECLARED BUT NOT YET ENFORCED. *** pm.py's doctor
+# implements only `kind: md5`, so it prints "kind md5-raw not checked here"
+# and does not fail. The branch that checks the raw bytes is still to come;
+# until it lands, that row is a declaration, not a guard. Read it that way.
 #
 # NOTE: this SPEC's YAML subset cannot carry a comment INSIDE a list item --
 # a comment line ends the mapping early, and the keys after it are silently
@@ -441,6 +470,17 @@ invariants:
     file: "MapleBench/wwwroot/js/avatar.js"
     md5: ba96b2d9727203279b8b784d256430b5
     why: 這個專案不應該碰它。變了代表有東西伸進了不該碰的檔案。
+  - id: avatar-md5-raw
+    kind: md5-raw
+    file: "MapleBench/wwwroot/js/avatar.js"
+    md5: ba96b2d9727203279b8b784d256430b5
+    why: >
+      位元組層級的不變量：原始位元組的 md5，不正規化換行。任何一個位元組改了就紅，
+      只改換行也紅；正規化那一條則容忍換行。2026-10-22 實測：工作樹、已進版控的
+      blob、全新 clone 三者位元組相同（32,989 bytes、CR=0），所以這條不會在某一種
+      checkout 形狀下恆紅。★ 目前尚未被檢查：pm.py 的 doctor 只實作 kind: md5，
+      這一列會印 "kind md5-raw not checked here"；等那一個分支補上之前，它是宣告，
+      不是保護。
   - id: data-root-untouched
     kind: mtime-newer-than
     path: 'C:\MUWORK\GAME\MPSHS'
