@@ -1244,6 +1244,75 @@ public sealed class MobPatrol
     }
 
     /// <summary>
+    /// The ball's frame index, on the ONE rule both publishing paths use.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// W-091. The ball's frame advances on the BALL'S OWN delays.
+    /// <c>Animation.cpp:64-67</c>: <c>delay = src["delay"]; if (delay == 0)
+    /// delay = 100;</c> — the 100 is the FALLBACK for a frame with no delay node,
+    /// not the rate every ball runs at. MEASURED 2026-10-18: <c>ballart-verify</c>
+    /// reported "the ball frame index never advances" on 1 run in 4, and a ball
+    /// whose frames declare 30 ms or 60 ms animated at the wrong rate.
+    /// </para>
+    /// <para>
+    /// ONE rule, because the two paths are two views of the same entry and the
+    /// frame publishes BOTH: the scalars (<see cref="AttackEntries"/>) and the
+    /// list (<see cref="EveryEntry"/>). They used to disagree — the list path
+    /// hard-coded 100 ms per index and the scalar path used the ball's own
+    /// delays — so one frame carried TWO different phases for the same ball,
+    /// and the viewer (which reads the scalar) and the suites (which read the
+    /// list) were looking at different animations. MEASURED 2026-10-22 on 4220000
+    /// (a 2-frame ball declaring 60 ms per frame): of 1,369 frames that
+    /// published an entry, the two paths disagreed on 24 — exactly the frames
+    /// between 60 ms and 100 ms past the delay, which is where the two rules
+    /// part company.
+    /// </para>
+    /// <para>
+    /// OWN-DESIGN, and declared because it is a difference from the reference:
+    /// <c>MobAttack.cpp:36</c> advances <c>data.second.ball</c> EVERY tick
+    /// whether or not the attack is playing, so the reference's ball phase is
+    /// effectively free-running. This port starts the ball at frame 0 when the
+    /// entry begins and runs it on the ball's own per-frame delays, which is
+    /// deterministic and reads the same every replay. The consequence is
+    /// bounded: which frame of a 2-3 frame ball is showing, never whether the
+    /// shot is there at all.
+    /// </para>
+    /// </remarks>
+    private static int BallFrameIndex(AttackEntry e, bool flying)
+    {
+        int count = e.Spec.BallFrameCount;
+        if (!flying || count <= 0)
+        {
+            // Before the delay there is nothing in the air yet, so there is no
+            // frame to be showing (`Mob.cpp:1121`).
+            return 0;
+        }
+
+        double since = e.ElapsedMs - e.DelayMs;
+        IReadOnlyList<int> delays = e.Spec.BallFrameDelays;
+        if (delays is { Count: > 0 })
+        {
+            double acc = 0;
+            int index = 0;
+            for (int i = 0; i < delays.Count; i++)
+            {
+                if (since < acc + delays[i])
+                {
+                    index = i;
+                    break;
+                }
+                acc += delays[i];
+                index = i;
+            }
+            return index % count;
+        }
+
+        // A ball whose frames declare no delay at all runs on the fallback.
+        return (int)since / 100 % count;
+    }
+
+    /// <summary>
     /// One entry's public shape. The scalar path above and this must agree, so both
     /// read the same helper.
     /// </summary>
@@ -1253,9 +1322,7 @@ public sealed class MobPatrol
             ? Math.Clamp((e.ElapsedMs - e.DelayMs) / e.LifetimeMs, 0.0, 1.0)
             : 0.0;
         bool flying = e.ElapsedMs >= e.DelayMs;
-        int ballIndex = 0;
-        if (flying && e.Spec.BallFrameCount > 0)
-            ballIndex = (int)(e.ElapsedMs - e.DelayMs) / 100 % e.Spec.BallFrameCount;
+        int ballIndex = BallFrameIndex(e, flying);
         return new AttackEntryView(
             e.StartX + (e.FinishX - e.StartX) * t,
             e.StartY + (e.FinishY - e.StartY) * t,
@@ -1319,49 +1386,11 @@ public sealed class MobPatrol
             // point. Before the delay there is nothing in the air yet.
             bool flying = e.ElapsedMs >= e.DelayMs;
 
-            // The ball's own frame. OWN-DESIGN, and declared here because it is a
-            // difference from the reference: `MobAttack.cpp:36` advances
-            // `data.second.ball` EVERY tick whether or not the attack is playing,
-            // so the reference's ball phase is effectively free-running. This port
-            // starts the ball at frame 0 when the entry begins and runs it on the
-            // ball's own per-frame delays, which is deterministic and reads the
-            // same every replay. The consequence is bounded: which frame of a
-            // 2-3 frame ball is showing, never whether the shot is there at all.
-            //
-            // W-091. The ball's frame advances on the BALL'S OWN delays.
-            //
-            //   Animation.cpp:64-67   delay = src["delay"]; if (delay == 0) delay = 100;
-            //
-            // The 100 is the FALLBACK for a frame with no delay node, not the
-            // rate every ball runs at, and this used a hardcoded 100 ms per
-            // index. MEASURED 2026-10-18: `ballart-verify` reported "the ball
-            // frame index never advances" on 1 run in 4, and a ball whose frames
-            // declare 30 ms or 60 ms animated at the wrong rate.
-            int ballIndex = 0;
-            if (flying && e.Spec.BallFrameCount > 0)
-            {
-                IReadOnlyList<int> delays = e.Spec.BallFrameDelays;
-                if (delays is { Count: > 0 })
-                {
-                    double since = e.ElapsedMs - e.DelayMs;
-                    double acc = 0;
-                    for (int i = 0; i < delays.Count; i++)
-                    {
-                        if (since < acc + delays[i])
-                        {
-                            ballIndex = i;
-                            break;
-                        }
-                        acc += delays[i];
-                        ballIndex = i;
-                    }
-                    ballIndex %= e.Spec.BallFrameCount;
-                }
-                else
-                {
-                    ballIndex = (int)(e.ElapsedMs - e.DelayMs) / 100 % e.Spec.BallFrameCount;
-                }
-            }
+            // The ball's own frame, on the rule the list path uses too -- one
+            // rule, because the frame publishes both views of this entry.
+            // See BallFrameIndex for the rule and for the difference from the
+            // reference.
+            int ballIndex = BallFrameIndex(e, flying);
 
             return (_entries.Count,
                     e.StartX + (e.FinishX - e.StartX) * t,
