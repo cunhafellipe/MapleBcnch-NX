@@ -49,11 +49,37 @@
 // E2 failure mode reproducing itself.
 //
 // Run:  node %LOCALAPPDATA%\hermes\cache\scratch\skillshape-verify.mjs
-//       BASE=http://127.0.0.1:5591   (defaults to that)
+//       GATE_BASE=http://127.0.0.1:<port>  (REQUIRED - there is no default)
 //       ONLY=1121008,2301002         (comma-separated subset, for a quick look)
 //       MULTIMOB=0                   (skip the nearest-N section)
 
-const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
+// The backend comes from GATE_BASE and from nowhere else (task-126).  `BASE`
+// used to be read first, so a caller who set only BASE made the .mjs suites and
+// the python suites hit two different instances in the same run.  GATE_BASE is
+// the one variable, and there is no default port: an instance older than this
+// tree answers every one of these requests happily.
+const GATE_BASE = (process.env.GATE_BASE || '').trim();
+const OTHER_BASE = (process.env.BASE || '').trim();
+if (GATE_BASE && OTHER_BASE && GATE_BASE !== OTHER_BASE) {
+  console.log(`>>> RED: GATE_BASE and BASE name different instances: `
+    + `GATE_BASE=${JSON.stringify(GATE_BASE)} BASE=${JSON.stringify(OTHER_BASE)}. `
+    + `Set GATE_BASE only.`);
+  process.exit(1);
+}
+if (OTHER_BASE && !GATE_BASE) {
+  console.log(`>>> RED: BASE is set (${JSON.stringify(OTHER_BASE)}) but GATE_BASE is not. `
+    + `GATE_BASE is the variable the suites read; set it and unset BASE.`);
+  process.exit(1);
+}
+if (!GATE_BASE) {
+  console.log('>>> RED: GATE_BASE is not set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         GATE_BASE=http://127.0.0.1:<port> node " + (process.argv[1] || 'this suite'));
+  console.log('       There is no default port on purpose: an older instance on the');
+  console.log('       usual port answers every one of these requests.');
+  process.exit(1);
+}
+const BASE = GATE_BASE.replace(/\/+$/, '');
 // The archive's session id is resolved BY NAME, never hard-coded: the ids are
 // handed out in the order the archives were opened, so 'f4' is Map.nx on one
 // instance and something else on another. An archive that is not open is a

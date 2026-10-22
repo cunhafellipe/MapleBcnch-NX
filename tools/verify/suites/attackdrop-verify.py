@@ -13,7 +13,7 @@ and report every node we do not report, with the reason.
 """
 import json, os, sys, urllib.parse, urllib.request
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -22,7 +22,7 @@ except SyntaxError as exc:    # a helper that does not PARSE is not missing
     raise SystemExit(1)
 from collections import Counter
 
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 _MOB_ID = archive_id("Mob.nx", BASE)
 

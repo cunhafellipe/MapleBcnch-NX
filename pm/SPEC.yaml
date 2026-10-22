@@ -375,7 +375,7 @@ suites:
     file: tools/verify/suites/mobinfo-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [mob]
   - id: equipstats-verify

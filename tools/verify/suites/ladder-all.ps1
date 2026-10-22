@@ -7,9 +7,8 @@
 #     22px off -- outside the client's +-10 reach box.)
 #  2. Climbing DOWN has to start from a position the climb actually reached.
 #     Spawning at the ladder's top y makes the session fall to the floor first.
-param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = "")
+param([int]$Port = 0, [string]$Map = "")
 
-$base = "http://127.0.0.1:$Port"
 
 # The archive's session id is resolved BY NAME, never hard-coded: the ids are
 # handed out in the order the archives were opened, so "f4" is Map.nx on one
@@ -24,6 +23,7 @@ catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception
 # loaded -- ladderFrames=0/400, outOfBounds=400, "FAIL" -- and that red is
 # about the empty map, not about the resolver. Prove the function exists first.
 if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
+$base = Resolve-GateBase -Port $Port
 if (-not $Map) { $Map = "$(Get-ArchiveId -Base $base -Name 'Map.nx')/Map/Map1/100000004.img" }
 
 $script:Last = $null

@@ -344,10 +344,35 @@ $script:CrashShapes = [ordered]@{
 # The connection words are kept exactly as they were, in their own list, because
 # they answer a different question: the backend, not the suite, is what failed.
 $script:BackendShapes = @('URLError', 'Connection refused', 'WinError 10061')
-# Overridable so the gate can be pointed at another instance, but the default is
-# the port the suites have always used.
-$Base = if ($env:GATE_BASE) { $env:GATE_BASE } else { 'http://127.0.0.1:5591' }
+# The gate points at ONE instance and the CALLER chooses it. There is no
+# default: the port 5591 instance is forbidden, and a gate that silently falls
+# back to a forbidden instance measures a process nobody authorised
+# (tools/verify/AGENTS.md rule 17).
+#
+# The refusal is a RED, and it is a refusal to CHOOSE -- not a failure to
+# connect. The gate is not allowed to pick an instance on the caller's behalf.
+if (-not $env:GATE_BASE) {
+  ">>> RED (GATE_BASE is not set: the gate refuses to choose an instance -- there is no default)"
+  "RED_SUITES=1"
+  "RED_SUITE=gate-base-unset"
+  "GATE_STATE=refused"
+  # The verdicts file is TRUNCATED here too: a gate that stops early must not
+  # leave the PREVIOUS run's RED_SUITE names for a reader to believe.
+  try {
+    $vp = Join-Path $env:TEMP 'maplebench-gate-verdicts.txt'
+    Set-Content -LiteralPath $vp -Value @('GATE_VERDICTS_FORMAT=1', 'RED_SUITES=1', 'RED_SUITE=gate-base-unset', 'GATE_STATE=refused') -Encoding ASCII
+  } catch { }
+  exit 1
+}
+$Base = $env:GATE_BASE
+# A base URL without a scheme does not parse as a URI, so the port would come
+# out empty and the suites would receive something they cannot use.
+if ($Base -notmatch '^https?://') { $Base = 'http://' + $Base }
 $Port = ([uri]$Base).Port
+# The suites run IN THIS PROCESS -- the gate calls each suite as a file, not as
+# a child process -- so the base URL has to be exported for them: the suites
+# read $env:GATE_BASE themselves and refuse to run when it is unset.
+$env:GATE_BASE = $Base
 
 # ...and "the suite printed no red marker" is NOT the same as "the suite passed".
 #
@@ -427,14 +452,14 @@ function Run($name, $block) {
     return
   }
   $lines = $text -split "`r?`n" | Where-Object { $_.Trim() }
-  $verdict = $lines | Where-Object {
-    $_ -match 'VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS:' } | Select-Object -Last 3
-  if ($verdict) { $verdict | ForEach-Object { "   GREEN? $($_.Trim())" } }
-  else { "   (read the tail):"; ($lines | Select-Object -Last 4) | ForEach-Object { "      $_" } }
   $bad = @($RED | Where-Object { $text.Contains($_) })
   if ($text -match 'BAD=[1-9]') { $bad += 'BAD=n' }
   if ($bad) { "   >>> RED ($($bad -join ', '))"; $script:fail++; $script:redSuites += $name }
   else { "   ok" }
+  $verdict = $lines | Where-Object {
+    $_ -match 'VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS:' } | Select-Object -Last 3
+  if ($verdict) { if (-not $bad) { $verdict | ForEach-Object { "   GREEN? $($_.Trim())" } } }
+  else { "   (read the tail):"; ($lines | Select-Object -Last 4) | ForEach-Object { "      $_" } }
 }
 
 Run 'ladder-all'      { & "$S\ladder-all.ps1" }

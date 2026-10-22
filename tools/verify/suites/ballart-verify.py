@@ -101,7 +101,15 @@ WWW = str(REPO_ROOT / "MapleBench" / "wwwroot")
 # The same override the gate itself uses (gate.ps1:50), so a gate pointed at
 # another instance reaches this suite too. The default is the port the suites
 # have always used.
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+try:
+    from archivelib import require_gate_base
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
+except SyntaxError as exc:    # a helper that does not PARSE is not missing
+    print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
+    raise SystemExit(1)
+BASE = require_gate_base()
 # The map the fight happens on. The archive's session id is resolved BY NAME
 # below: it used to be the literal "f4", which is the id Map.nx happens to get
 # when the gate opens its twenty archives in its usual order. On an instance

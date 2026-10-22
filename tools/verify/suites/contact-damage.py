@@ -71,7 +71,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: contact-damage -- archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -81,7 +81,7 @@ except SyntaxError as exc:    # a helper that does not PARSE is not missing
 
 # The gate's own override, so a gate pointed at another instance reaches this
 # judge too (the same two lines the other suites use).
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 # The backend serialises node reads behind one lock, so the census is a few
 # thousand small reads and the thread count is small on purpose.

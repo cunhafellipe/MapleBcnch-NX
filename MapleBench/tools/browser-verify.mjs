@@ -20,7 +20,9 @@
 //   node MapleBench/tools/browser-verify.mjs                 core only
 //   node MapleBench/tools/browser-verify.mjs --shapes        + B1 shape sweep
 //   node MapleBench/tools/browser-verify.mjs --all           every section
-//   BASE=http://127.0.0.1:5591  node .../browser-verify.mjs
+//   GATE_BASE=http://127.0.0.1:<port>  node .../browser-verify.mjs
+//     (GATE_BASE is required -- there is no default port on purpose, and BASE
+//      set to the empty string or to whitespace counts as unset)
 //
 // SECTIONS
 //   core    the original single-scenario gate (1121008). Unchanged.
@@ -40,6 +42,48 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// The backend comes from GATE_BASE and from nowhere else (task-126). `BASE` used
+// to be read FIRST, so a caller who set only BASE made the .mjs suites and the
+// python suites hit two different instances in the same run -- and the old
+// hard-coded default port meant this suite could silently measure an instance
+// nobody chose.
+//
+// This block sits ABOVE the playwright require on purpose: it is a pure
+// environment read with no dependencies, so a caller who has not set GATE_BASE
+// should be told that FIRST rather than after fixing playwright and re-running.
+// (Fail at the earliest point; here the earliest point is free.)
+const GATE_BASE = (process.env.GATE_BASE || '').trim();
+const OTHER_BASE = (process.env.BASE || '').trim();
+if (GATE_BASE && OTHER_BASE && GATE_BASE !== OTHER_BASE) {
+  console.log(`>>> RED: GATE_BASE and BASE name different instances: `
+    + `GATE_BASE=${JSON.stringify(GATE_BASE)} BASE=${JSON.stringify(OTHER_BASE)}. `
+    + `Set GATE_BASE only.`);
+  process.exit(1);
+}
+if (OTHER_BASE && !GATE_BASE) {
+  console.log(`>>> RED: BASE is set (${JSON.stringify(OTHER_BASE)}) but GATE_BASE is not. `
+    + `GATE_BASE is the variable the suites read; set it and unset BASE.`);
+  process.exit(1);
+}
+if (!GATE_BASE) {
+  console.log('>>> RED: GATE_BASE is not set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         GATE_BASE=http://127.0.0.1:<port> node " + (process.argv[1] || 'this suite'));
+  console.log('       There is no default port on purpose: an older instance on the');
+  console.log('       usual port answers every one of these requests.');
+  process.exit(1);
+}
+// `BASE` set to the empty string or to whitespace counts as UNSET, the same as
+// the 32 suites read it: HEAD's `??` fell through only on null/undefined, so an
+// empty BASE used to mask GATE_BASE and send every request to a relative URL.
+// The trailing-slash strip is the 32 suites' own line, and it is load-bearing:
+// measured against the backend, `/api/files` is HTTP 200 and `//api/files` is
+// HTTP 404, so a base written with a trailing slash would 404 on every call.
+// KNOWN, INHERITED from that same shape: the comparison above is a raw string
+// compare, so GATE_BASE=http://h:p together with BASE=http://h:p/ names ONE
+// instance and is reported as two. Do not file that as a new bug.
+const BASE = GATE_BASE.replace(/\/+$/, '');
+
 const require_ = createRequire(import.meta.url);
 const { chromium } = (() => {
   const candidates = [
@@ -56,7 +100,6 @@ const { chromium } = (() => {
   process.exit(1);
 })();
 
-const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
 const MAP = /100000004/;          // Henesys: a map with mobs on it
 const SKILL = '1121008';          // Slash Blast: has a damage node and effect art
 const KEY = 'k';
@@ -374,6 +417,12 @@ async function setUp(page) {
                   origins: e.sprite?.origins ?? [],
                   z: e.z ?? 0, flipped: e.flipped === true,
                   shiftX: e.shiftX ?? 0, shiftY: e.shiftY ?? 0,
+                  // `pos` was already on the wire -- `MapSimMobHitEffect.Pos`
+                  // carries it and its own doc says "0 is the mob's HEAD, not
+                  // 'no shift'" -- but this mapping DROPPED it, so B5 could count
+                  // anchors without ever being able to ask whether an anchor has
+                  // the value its `pos` fixes. See the anchor assertion in B5.
+                  pos: e.pos ?? null,
                 })),
               });
             }
@@ -638,11 +687,6 @@ async function read(page, castPath, skill = SKILL) {
       // from the character and compared with the archive's own origin.
       charX: (live.view?.ticks?.at(-1) ?? {}).x ?? 0,
       charY: (live.view?.ticks?.at(-1) ?? {}).y ?? 0,
-      // The camera's origin, from the viewBox that carries it (`view.minX` is
-      // set on the computed box, `walkview.js:2312-2313`) -- the view object
-      // itself has no `minX`, so this used to publish 0 whatever the camera did.
-      minX: live.view?.viewBox?.minX ?? null,
-      minY: live.view?.viewBox?.minY ?? null,
       dir: (live.view?.ticks?.at(-1) ?? {}).dir ?? 1,
       art: artInfo,
       struck: (await mobs()).find(m => m.mobId === mobId),
@@ -1770,8 +1814,48 @@ try {
           `${shapes.length} distinct animation(s); ` +
           `${anchors.length} distinct anchor(s) [${anchors.join(' | ')}]; ` +
           `${distinctRects.size} distinct offset(s) the archive's origins allow`);
+      // F5. The OLD assertion counted anchors. `anchors.length === 1` says the
+      // effects AGREE, not that they agree on the RIGHT value, so every effect
+      // hanging off one WRONG anchor passed it.
+      //
+      // The reference fixes the value, keyed on `pos` (Mob.cpp:1543-1556):
+      //   pos == 0   -> `shift = get_head_position(...)`, the mob's OWN head
+      //   pos 1..4   -> `break`, so `shift` is still default-constructed: (0,0)
+      // and that ONE `shift` goes to every hit effect on the mob (:1558).
+      //
+      // So the per-effect expectation needs no archive read and cannot be
+      // satisfied by agreement alone: a `pos` the reference leaves at (0,0) and
+      // that arrives carrying a shift is wrong by the reference's own rule, no
+      // matter how many effects agree on it. That is the case the count missed.
+      // `pos` is the KEY the expectation is built on. When it is missing the
+      // expectation cannot be evaluated at all, and a null `pos` would fall
+      // through `pos !== 0` and make EVERY effect an offender -- a report that
+      // says nothing at all. A missing `pos` is therefore its own finding, and
+      // the effects that carry no `pos` are NOT counted as offenders.
+      const missingPos = shapes.filter(e => e.pos === null || e.pos === undefined);
+      const offenders = shapes.filter(e =>
+        e.pos !== null && e.pos !== undefined && e.pos !== 0 &&
+        (e.shiftX !== 0 || e.shiftY !== 0));
+      const headAnchors = [...new Set(shapes
+        .filter(e => e.pos === 0).map(e => `${e.shiftX},${e.shiftY}`))];
+      say(missingPos.length === 0,
+          `${id} every hit effect carries the pos the reference keys the anchor on (Mob.cpp:1543-1556)`,
+          `${missingPos.length} of ${shapes.length} effect(s) carry no pos -- the wire's field name or the mapping is wrong, and the anchor cannot be judged`);
+      say(offenders.length === 0 && missingPos.length === 0,
+          `${id} every hit effect's anchor equals the value Mob.cpp:1543-1556 fixes for its pos`,
+          `${shapes.length} animation(s), ${anchors.length} anchor(s) [${anchors.join(' | ')}]; ` +
+          `pos=0 mob-head anchors [${headAnchors.join(' | ') || 'none'}]; ` +
+          `pos!=0 effects carrying a shift: ${offenders.length}` +
+          (offenders.length
+            ? ` (${offenders.map(e => `pos=${e.pos} -> ${e.shiftX},${e.shiftY}`).join(' | ')})`
+            : '') +
+          (missingPos.length
+            ? `; pos missing on ${missingPos.length} effect(s) -- unjudged`
+            : ''));
+      // The count is kept, demoted: it is a statement about agreement, not about
+      // correctness, and it must not be the thing that decides this section.
       say(anchors.length === 1 || shapes.length <= 1,
-          `${id} every hit effect on the mob shares ONE anchor (Mob.cpp:1536-1559)`,
+          `${id} every hit effect on the mob shares ONE anchor (Mob.cpp:1536-1559) [secondary: agreement, not value]`,
           `${anchors.length} distinct anchor(s) over ${shapes.length} animation(s): [${anchors.join(' | ')}]`);
 
       // Now: did the renderer actually put them at N distinct rectangles, or did

@@ -24,7 +24,7 @@ ten distinct values (200, 140, 230, 170, 250, 150, -200, 350, 260, 120) and the
 """
 import json, os, urllib.parse, urllib.request
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -32,7 +32,7 @@ except SyntaxError as exc:    # a helper that does not PARSE is not missing
     print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
     raise SystemExit(1)
 
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 _MAP_ID = archive_id("Map.nx", BASE)
 _MOB_ID = archive_id("Mob.nx", BASE)

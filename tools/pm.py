@@ -1780,19 +1780,43 @@ def cmd_doctor(_args) -> int:
     print("    declared. A dynamic receipt would catch that; this does not.")
 
     print()
+    print()
     print("=== test instance ===")
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:5591/api/files", timeout=20) as r:
-            n = len(json.loads(r.read().decode()))
-        print(f"  server up on 5591 with {n} archive(s) open")
-        if n == 0:
-            print("  WARNING: no archives open -- every suite will fail. "
-                  "Run open-archives.py after any restart (archive ids f1..fN "
-                  "depend on open order).")
-    except Exception as e:
-        print(f"  server NOT reachable: {type(e).__name__}")
-        print("  Start it: build-gate.ps1 (stops the old one) -> deploy.ps1 -> "
-              "open-archives.py")
+    # The doctor points at ONE instance and the CALLER chooses it, exactly as
+    # tools/verify/gate.ps1 does.  There is no default: the port 5591 instance
+    # is forbidden there, and a doctor that silently reaches for it measures a
+    # process nobody authorised (tools/verify/AGENTS.md rule 17).  It used to
+    # probe 5591 even when the gate had already refused to choose one, so the
+    # refusal path still touched an instance it had just said it would not.
+    gate = (os.environ.get("GATE_BASE") or "").strip()
+    other = (os.environ.get("BASE") or "").strip()
+    if gate and other and gate != other:
+        print(f"  GATE_BASE={gate!r} and BASE={other!r} name different instances; "
+              f"only GATE_BASE is probed.")
+    if gate:
+        base = gate if gate.startswith(("http://", "https://")) else "http://" + gate
+        try:
+            with urllib.request.urlopen(base + "/api/files", timeout=20) as r:
+                n = len(json.loads(r.read().decode()))
+            print(f"  server up on {base} with {n} archive(s) open")
+            if n == 0:
+                print("  WARNING: no archives open -- every suite will fail. "
+                      "Run open-archives.py after any restart (archive ids f1..fN "
+                      "depend on open order).")
+        except Exception as e:
+            print(f"  server NOT reachable at {base}: {type(e).__name__}")
+            print("  Start it: build-gate.ps1 (stops the old one) -> deploy.ps1 -> "
+                  "open-archives.py")
+    else:
+        # Not a problem, and not a reason to refuse to run: the doctor still
+        # reports the declarations it can check without an instance.
+        print("  no instance probed: GATE_BASE is not set.")
+        print("  There is deliberately no default port.  The gate refuses to choose")
+        print("  an instance for the same reason (tools/verify/gate.ps1), and the")
+        print("  suites refuse to run without it (tools/verify/suites/archivelib.py),")
+        print("  so the doctor no longer reaches for one either.")
+        print("  Set it to the instance under test, for example:")
+        print("    $env:GATE_BASE = 'http://127.0.0.1:<port>'")
 
     one_shot = [s for s in spec_rows(spec, "suites") if s.get("one_shot")]
     if one_shot:

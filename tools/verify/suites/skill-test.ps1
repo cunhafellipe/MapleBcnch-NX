@@ -18,12 +18,11 @@
 # is proven to work rather than assumed: acceptance for W-062 requires the gate
 # to go red when the suite says red.
 param(
-  [int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }),
+  [int]$Port = 0,
   [string]$Map = "",
   [switch]$ForceFail
 )
 
-$base = "http://127.0.0.1:$Port"
 
 # The archive's session id is resolved BY NAME, never hard-coded: the ids are
 # handed out in the order the archives were opened, so "f4" is Map.nx on one
@@ -37,6 +36,7 @@ catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception
 # leaves Get-ArchiveId undefined, and the suite then measures a map it never
 # loaded and reports a result about it. Prove the function exists first.
 if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
+$base = Resolve-GateBase -Port $Port
 if (-not $Map) { $Map = "$(Get-ArchiveId -Base $base -Name 'Map.nx')/Map/Map1/100000004.img" }
 
 $script:Last = $null

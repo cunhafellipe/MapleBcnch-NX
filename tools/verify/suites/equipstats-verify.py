@@ -7,7 +7,7 @@ The three cases that a name-based reader would fail are the point of this file:
 """
 import json, os, urllib.parse, urllib.request
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -15,7 +15,7 @@ except SyntaxError as exc:    # a helper that does not PARSE is not missing
     print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
     raise SystemExit(1)
 
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 _CHAR_ID = archive_id("Character.nx", BASE)
 

@@ -10,9 +10,8 @@
 # stance and lands a hit on a MOB; neither depends on the character surviving, and
 # invulnerability does not touch either (the player's damage number comes from
 # `mobPatrol.TakeHit`, not from `PlayerStatus.Hurt`).
-param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = "")
+param([int]$Port = 0, [string]$Map = "")
 
-$base = "http://127.0.0.1:$Port"
 
 # The archive's session id is resolved BY NAME, never hard-coded: the ids are
 # handed out in the order the archives were opened, so "f4" is Map.nx on one
@@ -27,6 +26,7 @@ catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception
 # loaded and reports a result about it -- a result about the ladder, not the
 # resolver. Prove the function exists before anything is measured.
 if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
+$base = Resolve-GateBase -Port $Port
 if (-not $Map) { $Map = "$(Get-ArchiveId -Base $base -Name 'Map.nx')/Map/Map1/100000004.img" }
 
 $script:Last = $null

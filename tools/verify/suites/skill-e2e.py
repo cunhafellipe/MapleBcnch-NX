@@ -18,7 +18,7 @@ copy of the logic work".
 """
 import json, os, pathlib, re, sys, urllib.request
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -48,7 +48,7 @@ REPO_ROOT = _repo_root()
 # The same override the gate itself uses (gate.ps1:50), so a gate pointed at
 # another instance reaches this suite too. The default is the port the suites
 # have always used.
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 _MAP_ID = archive_id("Map.nx", BASE)
 MAP = f"{_MAP_ID}/Map/Map1/100000004.img"

@@ -10,8 +10,9 @@
 // do what it claims", not "does the user see the panel" -- 工作室守則 2.1 is
 // explicit that only a desktop screenshot answers the second.
 //
-// Run:  node MapleBench/tools/sim-skills-check.mjs
-//       (optionally with BASE=http://127.0.0.1:5591 if the server is elsewhere)
+// Run:  GATE_BASE=http://127.0.0.1:<port> node MapleBench/tools/sim-skills-check.mjs
+//       (GATE_BASE is required -- there is no default port on purpose, and BASE
+//        set to the empty string or to whitespace counts as unset)
 
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,42 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const JS = resolve(HERE, '..', 'wwwroot', 'js');
 // A bare Windows path is not an ESM specifier; it has to be a file:// URL.
 const mod = (name) => import(pathToFileURL(`${JS}/${name}`).href);
-const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
+// The backend comes from GATE_BASE and from nowhere else (task-126). `BASE` used
+// to be read FIRST, so a caller who set only BASE made the .mjs suites and the
+// python suites hit two different instances in the same run -- and the old
+// hard-coded default port meant this suite could silently measure an instance
+// nobody chose.
+const GATE_BASE = (process.env.GATE_BASE || '').trim();
+const OTHER_BASE = (process.env.BASE || '').trim();
+if (GATE_BASE && OTHER_BASE && GATE_BASE !== OTHER_BASE) {
+  console.log(`>>> RED: GATE_BASE and BASE name different instances: `
+    + `GATE_BASE=${JSON.stringify(GATE_BASE)} BASE=${JSON.stringify(OTHER_BASE)}. `
+    + `Set GATE_BASE only.`);
+  process.exit(1);
+}
+if (OTHER_BASE && !GATE_BASE) {
+  console.log(`>>> RED: BASE is set (${JSON.stringify(OTHER_BASE)}) but GATE_BASE is not. `
+    + `GATE_BASE is the variable the suites read; set it and unset BASE.`);
+  process.exit(1);
+}
+if (!GATE_BASE) {
+  console.log('>>> RED: GATE_BASE is not set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         GATE_BASE=http://127.0.0.1:<port> node " + (process.argv[1] || 'this suite'));
+  console.log('       There is no default port on purpose: an older instance on the');
+  console.log('       usual port answers every one of these requests.');
+  process.exit(1);
+}
+// `BASE` set to the empty string or to whitespace counts as UNSET, the same as
+// the 32 suites read it: HEAD's `??` fell through only on null/undefined, so an
+// empty BASE used to mask GATE_BASE and send every request to a relative URL.
+// The trailing-slash strip is the 32 suites' own line, and it is load-bearing:
+// measured against the backend, `/api/files` is HTTP 200 and `//api/files` is
+// HTTP 404, so a base written with a trailing slash would 404 on every call.
+// KNOWN, INHERITED from that same shape: the comparison above is a raw string
+// compare, so GATE_BASE=http://h:p together with BASE=http://h:p/ names ONE
+// instance and is reported as two. Do not file that as a new bug.
+const BASE = GATE_BASE.replace(/\/+$/, '');
 
 // api.js and i18n.js reach for browser globals at import time in a browser. Stub
 // the two they need before importing, so the modules under test load unmodified.

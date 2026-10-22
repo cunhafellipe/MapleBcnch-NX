@@ -22,12 +22,11 @@
 # the character before it can land a swing; 0210100 (32) leaves it 50 - 32 = 18
 # HP, which is not enough frames to land one either. MEASURED, both aborted.
 param(
-  [int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }),
+  [int]$Port = 0,
   [string]$MapLeaf = 'Map/Map1/100000004.img',
   [string]$Mob = '9500302'
 )
 $ErrorActionPreference = 'Stop'
-$base = "http://127.0.0.1:$Port"
 
 # tools/verify/AGENTS.md rule 14: an abort that prints no red marker reads as a
 # PASS to the gate. A bare `throw` is worse than that -- it escapes gate.ps1's
@@ -45,6 +44,7 @@ catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception
 # every calibration read returns '<absent>' -- and this suite then fails on the
 # MOB, which is exactly the false claim the block below exists to prevent.
 if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
+$base = Resolve-GateBase -Port $Port
 # Mob.nx was never checked at all. With Map.nx open and Mob.nx not, $mobFile.id
 # was null, every calibration read came back '<absent>', and this suite then
 # failed on "9500302 has no bodyAttack" -- a false claim about the mob, produced
@@ -52,6 +52,18 @@ if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: 
 # test, and here it failed for a reason that was not about the mob at all.
 $mobId = Get-ArchiveId -Base $base -Name 'Mob.nx'
 $mapId = Get-ArchiveId -Base $base -Name 'Map.nx'
+# Character.nx is the THIRD archive this suite needs, and it was never checked
+# either -- the same defect as the block above, one archive over, and the same
+# false claim it produced. The swing box is read out of the CHARACTER archive
+# (CombatService.cs:373 and :130 both go through SelectRoleSources("Character",
+# null)), so with Character.nx closed MapSimSessionStore.cs:2924 returns
+# before any swing is queued, all 12 attempts below fail, and the red at the
+# end of that loop then claimed "aggro was never set" -- a claim about the MOB
+# that nothing measured, because the PLAYER never swung at all. MEASURED
+# 2026-10-23: closed -> action=stand, EMPTY attackStance; open -> action=
+# attack, NON-EMPTY one (the NAME is a random draw, CombatService.cs:301, so
+# only empty/non-empty is a fact). Resolve it BY NAME, like the two above.
+$charId = Get-ArchiveId -Base $base -Name 'Character.nx'
 $path = "$mapId/$MapLeaf"
 
 # Every HTTP call below goes through this, so a failing call prints the marker and
@@ -106,7 +118,7 @@ function Step([hashtable]$k) {
 # swing) and failed on the next (gap 36, eight swings, 0 hits). Each attempt gets
 # a fresh summon offset, so retrying samples different geometry rather than
 # repeating one unlucky one.
-$cur = $null; $idx = 0; $swings = 0; $provoked = $false; $gap = 0; $hp0 = 0
+$cur = $null; $idx = 0; $swings = 0; $provoked = $false; $gap = 0; $hp0 = 0; $stanceSeen = $false
 for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
   $s = Invoke-Api -Uri "$base/api/simulate/session" -Method Post -Body $body -TimeoutSec 600
   # W-062: THE FLAKE. MEASURED on the gate run of 2026-10-16 -- the suite printed
@@ -141,7 +153,21 @@ for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
     $m = @($cur.mobs)[$idx]
     if ([int]$m.hp -lt $hp0) { $provoked = $true; break }
     $gap = [Math]::Abs([double]$cur.x - [double]$m.x)
-    if ($i % 50 -eq 49) { $cur = Step @{ attack = $true }; $swings++ }
+    if ($i % 50 -eq 49) {
+      $cur = Step @{ attack = $true }
+      $swings++
+      # Did a swing actually go out? The frame says so: MapSimSessionStore.cs:2942
+      # sets the pose only past two gates, the attack box (:2924) and the stance
+      # group (:2930), and both are read out of the Character archive. So an
+      # EMPTY attackStance is the product saying there is no swing to play --
+      # a different answer from "the mob was never hit". The field is CHECKED
+      # for existence first (rule 9): a property that is not there is $null.
+      if (-not ($cur.PSObject.Properties.Name -contains 'attackStance')) {
+        ">>> RED: the attack frame does not carry an attackStance field, so this run measured nothing about the swing"
+        exit 1
+      }
+      if ($cur.attackStance) { $stanceSeen = $true }
+    }
     elseif ($gap -lt 25) { $cur = Step @{ left = $true } }
     elseif ($gap -lt 90) { $cur = Step @{} }
     elseif ([double]$m.x -lt [double]$cur.x) { $cur = Step @{ left = $true } }
@@ -156,7 +182,19 @@ for ($attempt = 1; $attempt -le 12 -and -not $provoked; $attempt++) {
     Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
   }
 }
-if (-not $provoked) { ">>> RED: no swing landed in 12 attempts, so aggro was never set."; exit 1 }
+# The red below asserts a fact about the MOB that this suite never measured:
+# its one provocation test is the mob's hp going down (:159), so "aggro was
+# never set" was an INFERENCE, and "aggro" appeared nowhere else in the file.
+# Two things must hold before that inference may be printed: a swing has to
+# have existed, and the mob has to have taken no damage. The swing check is
+# here because the Character archive can be open and still carry no box for
+# this weapon (CombatService.cs:390-394 returns an empty stance group) -- the
+# same hole the Mob.nx case was, one archive over.
+if (-not $stanceSeen) {
+  ">>> RED: no attack frame ever carried an attackStance, so the Character archive ($charId) has no swing box for this weapon -- the player never swung, so this run measured nothing about the mob's response"
+  exit 1
+}
+if (-not $provoked) { ">>> RED: an attack frame carried an attackStance, so a swing went out, and no swing landed in 12 attempts -- the mob took no damage, so Mob.cpp:1802 (aggro is set on damage > 0) never set its aggro."; exit 1 }
 
 # Phase A2: RETREAT out of contact. Standing next to the mob cannot show
 # pursuit -- the touch rule (Stage.cpp:809) already hits there, aggro or not, and

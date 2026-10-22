@@ -13,7 +13,7 @@ reached from the revive prompt at UIStateGame.cpp:548-556.
 """
 import json, os, urllib.request
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -21,7 +21,7 @@ except SyntaxError as exc:    # a helper that does not PARSE is not missing
     print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
     raise SystemExit(1)
 
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 _MAP_ID = archive_id("Map.nx", BASE)
 MAP = f"{_MAP_ID}/Map/Map0/000000000.img"

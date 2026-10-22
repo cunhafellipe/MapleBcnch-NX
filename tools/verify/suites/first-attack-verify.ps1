@@ -1,6 +1,5 @@
-param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$FirstAttackMob = '2220000', [string]$PlainMob = '2220100')
+param([int]$Port = 0, [string]$FirstAttackMob = '2220000', [string]$PlainMob = '2220100')
 $ErrorActionPreference = 'Stop'
-$base = "http://127.0.0.1:$Port"
 # tools/verify/AGENTS.md rule 14: an abort that prints no red marker reads as a
 # PASS to the gate, and an unwinding one is worse -- it escapes gate.ps1's Run(),
 # which has no try/catch around the suite call, and KILLS the gate. MEASURED
@@ -18,6 +17,7 @@ catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception
 # firstAttack off a $null mapId -- the 404 unwind the block above was written
 # to stop -- and reports a calibration result about a map it never loaded.
 if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
+$base = Resolve-GateBase -Port $Port
 $mapId = Get-ArchiveId -Base $base -Name 'Map.nx'
 $mobId = Get-ArchiveId -Base $base -Name 'Mob.nx'
 $map = "$mapId/Map/Map1/100000004.img"

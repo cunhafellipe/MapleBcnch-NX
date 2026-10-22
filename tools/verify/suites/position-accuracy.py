@@ -52,7 +52,15 @@ import urllib.request
 
 # The gate's own override, so a gate pointed at another instance reaches this
 # judge too (the same two lines the other suites use).
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+try:
+    from archivelib import require_gate_base
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
+except SyntaxError as exc:    # a helper that does not PARSE is not missing
+    print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
+    raise SystemExit(1)
+BASE = require_gate_base()
 
 # The map to judge, INSIDE the Map.nx archive. The session id (f1..fN) depends
 # on which archives are open and in what order, so it is looked up by NAME

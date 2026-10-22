@@ -12,7 +12,7 @@ Fixed step is 1000/60 ms, so 3000 ms = 180 frames and 6000 ms = 360.
 """
 import json, os, urllib.parse, urllib.request
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
@@ -21,7 +21,7 @@ except SyntaxError as exc:    # a helper that does not PARSE is not missing
     raise SystemExit(1)
 from collections import Counter
 
-BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+BASE = require_gate_base()
 
 _MAP_ID = archive_id("Map.nx", BASE)
 MAP = f"{_MAP_ID}/Map/Map0/000000002.img"   # 2 of 6 NPCs have a String entry; others are silent

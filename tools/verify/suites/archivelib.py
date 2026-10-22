@@ -12,8 +12,45 @@ archives could not be listed, or the archive is listed but carries no id -- so
 "this instance is not set up" never looks like "this suite is broken".
 """
 import json
+import os
 import sys
 import urllib.request
+
+
+def require_gate_base():
+    """The backend URL every suite talks to, from GATE_BASE -- or a loud refusal.
+
+    There is deliberately no default port.  A suite that guesses one measures
+    whatever is listening there, and an instance that is older than the tree
+    answers every question happily -- so a fallback turns "this instance is 27
+    product commits behind" into a per-suite result that looks like a finding
+    about this tree (tools/verify/AGENTS.md rule 17).
+
+    Two variables used to be able to name two instances at once: the suites
+    read GATE_BASE, `browser-verify.mjs` reads `BASE ?? GATE_BASE`, and a
+    caller who set only one of them got two suites hitting two backends in the
+    same run.  GATE_BASE is the one variable; `BASE` is accepted only when it
+    agrees with it, and saying so is cheaper than discovering it later.
+    """
+    gate = (os.environ.get("GATE_BASE") or "").strip()
+    other = (os.environ.get("BASE") or "").strip()
+    if gate and other and gate != other:
+        print(f">>> RED: GATE_BASE and BASE name different instances: "
+              f"GATE_BASE={gate!r} BASE={other!r}. Set GATE_BASE only.")
+        sys.exit(1)
+    if other and not gate:
+        print(f">>> RED: BASE is set ({other!r}) but GATE_BASE is not. "
+              f"GATE_BASE is the variable the suites read; set it and unset BASE "
+              f"rather than relying on BASE.")
+        sys.exit(1)
+    if not gate:
+        print(">>> RED: GATE_BASE is not set, so there is no backend to measure.")
+        print("       Set it to the instance under test, for example:")
+        print("         $env:GATE_BASE = 'http://127.0.0.1:<port>'")
+        print("       There is no default port on purpose: an older instance on")
+        print("       the usual port answers every one of these requests.")
+        sys.exit(1)
+    return gate.rstrip("/")
 
 
 def archive_id(name, base):

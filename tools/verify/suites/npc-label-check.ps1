@@ -17,10 +17,14 @@
 #      empty name is a missing read, not an empty archive)
 #   3  No mob carries an NPC name.                    (a mob wearing a nameplate is a
 #      wrong label, and it is the failure mode a count-only check cannot see)
-param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = '000000002.img')
+param([int]$Port = 0, [string]$Map = '000000002.img')
 
 $ErrorActionPreference = 'Stop'
-$base = "http://127.0.0.1:$Port"
+if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
+try { . "$PSScriptRoot\archivelib.ps1" }
+catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception.Message)"; exit 1 }
+if (-not (Get-Command Resolve-GateBase -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Resolve-GateBase, so there is no target resolver and nothing to measure against"; exit 1 }
+$base = Resolve-GateBase -Port $Port
 $script:Asserts = 0
 $script:Fails = 0
 
