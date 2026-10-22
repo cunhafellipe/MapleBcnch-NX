@@ -1040,48 +1040,88 @@ def selftest():
                       and "CITATIONS_TRUNCATED=0" in out,
                       "exit=%d" % cli.returncode))
 
-        # 15. a sweep that CHECKED something is not red.
+        # 15 and 16 are ONE PAIR over ONE fixture.
         #
-        #     A swept citation carries no text, so the text check is not
+        #     Both runs read the SAME file and differ by exactly ONE
+        #     argument: `--max 1`.  That is the whole point of the pair.
+        #     "A truncated census is not a pass" can only be measured
+        #     against "the SAME census, untruncated, IS a pass" -- with two
+        #     different documents the two runs can differ for any number of
+        #     unrelated reasons, and the property is then guarded by nothing
+        #     in this suite.  (It used to be guarded by nothing at all: the
+        #     two cases read `ok-sweep.md` and `trunc.md`, and the
+        #     only --max A/B in existence was one a reviewer ran by hand,
+        #     outside the tree.)
+        #
+        #     The fixture carries TWO citations and BOTH resolve to
+        #     LINE_EXISTS, so CITATION_BAD=0 in both runs.  That zero is
+        #     what proves the red arm is red ONLY because of the truncation
+        #     (rule 3, second paragraph: a case that fails for the wrong
+        #     reason is not a test).
+        #
+        #     The green arm also carries the original claim of case 15: a
+        #     swept citation carries no text, so the text check is NOT
         #     APPLICABLE to it.  Before the LINE_EXISTS verdict existed,
         #     every swept row came back NO_TEXT, every NO_TEXT was counted
         #     as a defect, and the sweep verdict was inverted: a sweep that
         #     measured nothing was green, and a sweep that measured
         #     something was red.
-        ok_sweep = os.path.join(d, "ok-sweep.md")
-        with open(ok_sweep, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write("the rule lives in sample.cs:%d\n" % L_IF_B)
-        cli = subprocess.run(
-            [sys.executable, os.path.abspath(__file__),
-             "--sweep", ok_sweep, "--repo", d],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out = cli.stdout.decode("utf-8", "replace")
-        cases.append(("A_SWEEP_THAT_CHECKED_SOMETHING_IS_NOT_RED",
-                      cli.returncode == 0
-                      and "CITATION_LINE_EXISTS=1" in out
-                      and "CITATION_BAD=0" in out,
-                      "exit=%d verdict=LINE_EXISTS" % cli.returncode))
-
-        # 16. a REAL truncated census is not a pass.
-        #
-        #     The checked row must be CLEAN, so the only thing that can turn
-        #     this case red is the truncation itself.  A case that goes red
-        #     for an incidental reason is not a test (rule 3).
-        trunc_sweep = os.path.join(d, "trunc.md")
-        with open(trunc_sweep, "w", encoding="utf-8", newline="\n") as fh:
+        sweep_pair = os.path.join(d, "sweep-pair.md")
+        with open(sweep_pair, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("first sample.cs:%d then sample.cs:%d\n"
                      % (L_IF_B, L_PHSPEED_B))
+
+        # 15. GREEN ARM -- same file, no --max.
         cli = subprocess.run(
             [sys.executable, os.path.abspath(__file__),
-             "--sweep", trunc_sweep, "--max", "1", "--repo", d],
+             "--sweep", sweep_pair, "--repo", d],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out = cli.stdout.decode("utf-8", "replace")
+        out_green = cli.stdout.decode("utf-8", "replace")
+        rc_green = cli.returncode
+        cases.append(("A_SWEEP_THAT_CHECKED_SOMETHING_IS_NOT_RED",
+                      rc_green == 0
+                      and "CITATION_LINE_EXISTS=2" in out_green
+                      and "CITATION_BAD=0" in out_green
+                      and "CITATIONS_TRUNCATED=0" in out_green
+                      and "RESULT=PASS" in out_green
+                      and "TRUST=HIGH" in out_green,
+                      "same file, no --max: bad=0"))
+
+        # 16. RED ARM -- same file, --max 1.  Only the truncation changed.
+        cli = subprocess.run(
+            [sys.executable, os.path.abspath(__file__),
+             "--sweep", sweep_pair, "--max", "1", "--repo", d],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out_red = cli.stdout.decode("utf-8", "replace")
+        rc_red = cli.returncode
         cases.append(("A_TRUNCATED_CENSUS_IS_NOT_A_PASS",
-                      cli.returncode != 0
-                      and "CITATIONS_TRUNCATED=1" in out
-                      and "CITATION_BAD=0" in out
-                      and "RESULT=FAIL" in out,
-                      "exit=%d truncated=1 bad=0" % cli.returncode))
+                      rc_red != 0
+                      and "CITATIONS_TRUNCATED=1" in out_red
+                      and "CITATION_BAD=0" in out_red
+                      and "RESULT=FAIL" in out_red and "TRUST=LOW" in out_red,
+                      "same file, --max 1: bad=0"))
+
+        # The A/B, printed from the two runs above.  Every number is read
+        # back OUT of that run's own output rather than written next to it,
+        # so this block cannot claim something the tool did not print, and
+        # the property the pair exists to guard is legible to anyone who
+        # runs --self-test, not only to whoever reviewed the diff.
+        def output_field(text, name):
+            for line in text.splitlines():
+                if line.startswith(name + "="):
+                    return line.split("=", 1)[1].strip()
+            return "(absent)"
+
+        print("PAIR_SAME_FILE_MAX_AB (one fixture, two runs, --max 1 the "
+              "only difference):")
+        for label, body, rc in (("no --max", out_green, rc_green),
+                                ("--max 1", out_red, rc_red)):
+            print("  %-8s exit=%d line_exists=%s bad=%s truncated=%s %s %s"
+                  % (label, rc, output_field(body, "CITATION_LINE_EXISTS"),
+                     output_field(body, "CITATION_BAD"),
+                     output_field(body, "CITATIONS_TRUNCATED"),
+                     output_field(body, "RESULT"),
+                     output_field(body, "TRUST")))
 
         # 17. THE POSITIVE CONTROL for the change in case 15.
         #
