@@ -901,6 +901,105 @@ def _suite(name: str) -> str:
     return os.path.join(SUITES, name)
 
 
+def _suite_path(file: str) -> str:
+    """Where a suite's file lives.
+
+    A bare name is a suite; a name with a directory is repo-relative. Same
+    rule the invariant check uses, so a suite is looked for in one place
+    only.
+    """
+    if not file:
+        return ""
+    if os.path.dirname(file):
+        return os.path.join(ROOT, file)
+    return _suite(file)
+
+
+def _strip_comments(text: str, ext: str) -> list[str]:
+    """The source with its comments removed, one line per source line.
+
+    A declaration must not be satisfiable by prose. TRAPS T-2: a check that a
+    comment can satisfy is not a check -- the first version of the citation
+    audit read a mention in a comment and called the reference present.
+
+    Quote state is tracked, so a '#' inside a string is not a comment. The
+    suites print markers like ">>> RED: no damage over 400 frames" and one of
+    them puts a '#' in a message, and stripping that would hide the marker
+    the gate is supposed to read.
+    """
+    out: list[str] = []
+    in_block = False
+    in_triple = None
+    for raw in text.splitlines():
+        head = raw.lstrip()
+        if ext in (".ps1", ".mjs", ".js"):
+            if in_block:
+                if "#>" in raw or "*/" in raw:
+                    in_block = False
+                continue
+            if head.startswith("<#") or head.startswith("/*"):
+                if "#>" not in raw and "*/" not in raw:
+                    in_block = True
+                continue
+        if in_triple:
+            # A multi-line string is documentation or a payload, never a
+            # statement. A marker quoted inside one is not printed.
+            if in_triple in raw:
+                in_triple = None
+            out.append("")
+            continue
+        for q in ('"""', "'''"):
+            if ext == ".py" and q in raw and raw.count(q) == 1:
+                in_triple = q
+                break
+        if ext == ".ps1" and '@"' in raw and '"@' not in raw:
+            in_triple = '"@'
+            out.append("")
+            continue
+        chars: list[str] = []
+        quote = None
+        i = 0
+        while i < len(raw):
+            ch = raw[i]
+            if quote:
+                chars.append(ch)
+                if ch == "\\" and i + 1 < len(raw):
+                    chars.append(raw[i + 1])
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+                i += 1
+                continue
+            if ch in ("'", '"'):
+                quote = ch
+                chars.append(ch)
+                i += 1
+                continue
+            if ext in (".py", ".ps1") and ch == "#":
+                break
+            if ext in (".mjs", ".js") and raw.startswith("//", i):
+                break
+            chars.append(ch)
+            i += 1
+        out.append("".join(chars))
+    return out
+
+
+def _gate_red_markers(gate_text: str) -> list[str]:
+    """The markers the gate itself treats as red, read out of gate.ps1.
+
+    Parsed rather than copied, so the list cannot drift away from the gate:
+    a hardcoded copy here would be a second source of truth, and the whole
+    family this file exists to catch is a list that says one thing while the
+    gate does another.
+    """
+    m = re.search(r"\$RED\s*=\s*@\(([^)]*)\)", gate_text, re.S)
+    if not m:
+        return []
+    return re.findall(r"'([^']+)'", m.group(1))
+
+
 def _argv(cmd: str) -> list[str]:
     """Split a command line, unwrapping a fully-quoted token.
 
@@ -1184,6 +1283,65 @@ def cmd_doctor(_args) -> int:
             bad += len(orphans)
     else:
         print("  gate.ps1 not found; skipping")
+
+    print()
+    print("=== suite declarations vs the code (SPEC.yaml) ===")
+    # The gate decides red from EXPLICIT markers and prints green from a line
+    # matching VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS: (gate.ps1:93-94).
+    # A suite that declares neither is invisible to both halves of that, and a
+    # suite whose FILE IS MISSING prints a python error containing no marker
+    # at all -- which the gate scored "ok". A suite file that is not there
+    # must not be able to pass the gate. That is the hole this closes.
+    #
+    # Two classes, counted apart, both loud:
+    #   ERROR -- a declaration that is false (file missing, a declared marker
+    #            that the source does not contain, no verdict declared at all)
+    #   GAP   -- the source prints a red marker the registry does not declare
+    decl_err = 0
+    decl_gap = 0
+    gate_text = ""
+    if os.path.exists(GATE):
+        gate_text = open(GATE, encoding="utf-8", errors="replace").read()
+    red_markers = _gate_red_markers(gate_text)
+    suite_rows = spec_rows(spec, "suites")
+    for s in suite_rows:
+        sid = s.get("id", "?")
+        f = s.get("file", "")
+        p = _suite_path(f)
+        if not p or not os.path.exists(p):
+            print(f"  ERROR {sid:22s} FILE MISSING  {f}")
+            decl_err += 1
+            continue
+        ext = os.path.splitext(p)[1].lower()
+        blob = "\n".join(_strip_comments(
+            open(p, encoding="utf-8", errors="replace").read(), ext))
+        verdict = s.get("verdict") or ""
+        red = s.get("red_marker") or ""
+        problems = []
+        gaps = []
+        if not verdict:
+            problems.append("NO VERDICT DECLARED")
+        elif verdict not in blob:
+            problems.append(f"VERDICT NOT IN CODE  {verdict!r}")
+        if red and red not in blob:
+            problems.append(f"RED MARKER NOT IN CODE  {red!r}")
+        if red and red_markers and not any(red in rm for rm in red_markers):
+            problems.append(f"RED MARKER IS NOT ONE THE GATE READS  {red!r}"
+                            f"  gate reads {red_markers}")
+        printed = [rm for rm in red_markers if rm in blob]
+        if printed and not red:
+            gaps.append(f"PRINTS A RED MARKER BUT DECLARES NONE  {printed}")
+        for pr in problems:
+            print(f"  ERROR {sid:22s} {pr}")
+        for gp in gaps:
+            print(f"  GAP   {sid:22s} {gp}")
+        decl_err += 1 if problems else 0
+        decl_gap += 1 if gaps else 0
+        if not problems and not gaps:
+            print(f"  ok    {sid:22s} verdict={verdict!r} red_marker={red!r}")
+    print(f"  suite declarations: {len(suite_rows)} listed, "
+          f"{decl_err} with a false declaration, {decl_gap} with a missing one")
+    bad += decl_err + decl_gap
 
     print()
     print("=== test instance ===")

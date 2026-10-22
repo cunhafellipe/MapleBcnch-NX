@@ -269,6 +269,7 @@ suites:
     runner: python
     verdict: "VERDICT: attack-damage"
     asserts: true
+    red_marker: ">>> RED"
     areas: [simulate, mob]
     added: ADR-0005-2
     note: >
