@@ -12,17 +12,30 @@ removed; Z remains and is declared at the call site.
 MEASURED before the fix: the server accepted A, D, W, S and Z with `rejected: []`
 and the panel reported them bound. None of them could ever cast.
 """
-import json, os, urllib.parse, urllib.request
+import json, os, sys, urllib.parse, urllib.request
 try:
     from archivelib import archive_id
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
+except SyntaxError as exc:    # a helper that does not PARSE is not missing
+    print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
     raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
 
 _MAP_ID = archive_id("Map.nx", BASE)
 MAP = f"{_MAP_ID}/Map/Map1/100000004.img"
+
+# This suite binds a SKILL, so it reads the server's skill list, which is built
+# from Skill.nx. It never declared that dependency, so on an instance without
+# Skill.nx it went on to `skills[0]` with an empty list and died with
+# `IndexError: list index out of range` -- a traceback that says nothing about
+# the missing archive, while `gate.ps1:227` still turned it red. Rule 1: a
+# prerequisite that is absent is a loud failure that NAMES itself.
+# `archive_id` prints `>>> RED: Skill.nx is not open on this instance, so there
+# is nothing to judge` and exits 1 when it is not open (archivelib.py:43-46).
+_SKILL_ID = archive_id("Skill.nx", BASE)
 
 # Only Z, after WASD was removed.
 MOVEMENT = ["Z"]
@@ -46,8 +59,23 @@ def get(path, **q):
         return json.loads(r.read().decode("utf-8"))
 
 
-skills = get("/api/skill-cast/castable")["skills"]
+castable = get("/api/skill-cast/castable")
+if "skills" not in castable:
+    # A missing field and an empty list are different things, and a missing one
+    # used to arrive as a KeyError traceback that named nothing.
+    print(f">>> RED: /api/skill-cast/castable carried no 'skills' field; it "
+          f"returned {sorted(castable) if isinstance(castable, dict) else type(castable).__name__}")
+    raise SystemExit(1)
+skills = castable["skills"]
 print(f"the server offers {len(skills)} castable skill(s)")
+if not skills:
+    # The prerequisite is empty, not the verdict. Skill.nx IS open here (it was
+    # resolved by name above), so an empty list is a different failure from "the
+    # archive is missing" and it must say so.
+    print(f">>> RED: the server offers 0 castable skill(s) with Skill.nx open "
+          f"as {_SKILL_ID}; an empty skill list is a missing prerequisite, "
+          f"not a pass")
+    raise SystemExit(1)
 skill = skills[0]["skillId"]
 
 
@@ -88,3 +116,6 @@ if count:
     bad += 1
 
 print(f"\nBAD={bad}")
+# Rule 14: the gate greps the text, every other caller reads the exit code.
+# This file had no `sys.exit`, so `BAD=3` was exit 0 to the latter.
+sys.exit(1 if bad else 0)

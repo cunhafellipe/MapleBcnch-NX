@@ -11,11 +11,14 @@ same thing this file measured independently, which is the check that was missing
 CALIBRATION FIRST (R-9). The armed/unarmed pair is the discriminator this whole
 night turned on, so it runs first and both halves must agree.
 """
-import json, os, urllib.parse, urllib.request
+import json, os, sys, urllib.parse, urllib.request
 try:
     from archivelib import archive_id
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
+except SyntaxError as exc:    # a helper that does not PARSE is not missing
+    print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
     raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
@@ -182,12 +185,41 @@ if mv["severity"] == "error":
     if all("recoil" in e for e in mv["data"]["examples"]):
         print("  >>> every example is the sanctioned 2.17px recoil, not a walk")
 
-print("\n=== position jumps ===")
+print("\n=== position jumps (OBSERVATION -- deliberately NOT in BAD=) ===")
 pj = ca.get("mobPositionJump")
+if pj is None:
+    # The finding is absent, which is not the same as "there were no jumps".
+    print(">>> RED: the health audit returned no mobPositionJump finding at all; "
+          "the counts it carries are the only thing this block prints")
+    raise SystemExit(1)
 print(f"  {pj['code']}: {pj['text']}")
 if pj["severity"] == "error":
-    print(f"  >>> {pj['data']['examples']}")
-    bad += 1
+    # An ERROR finding carries the moves it saw. MEASURED 2026-10-23: a finding
+    # that reports NO move over 8px carries no `examples` key at all, so the
+    # list is only read where the finding says there is something in it.
+    examples = pj.get("data", {}).get("examples")
+    if examples is None:
+        print(">>> RED: mobPositionJump is an error but carries no examples; "
+              "the observation below would be a guess")
+        raise SystemExit(1)
+    print(f"  examples: {examples}")
+    print(f"  OBSERVED one-frame mob moves over 8px: {len(examples)}")
+else:
+    print("  examples: (none -- the finding reports no move over 8px)")
+    print("  OBSERVED one-frame mob moves over 8px: 0")
+print("  This count is printed, not judged. Two measured reasons, both about the")
+print("  JUDGEMENT and not about the product:")
+print("   1. The threshold behind it is `one-frame mob move exceeded 8px`, and that")
+print("      8px has no citation in the reference. A gate that turns red on an")
+print("      uncited number decides a correctness question with a number nobody can")
+print("      trace.")
+print("   2. The count is not reproducible: MEASURED 2026-10-23, one instance, one")
+print("      build, three runs of this file -> 0, 1, 2 jumps. `BAD=[1-9]` is the")
+print("      gate's second red channel (gate.ps1:364), so an unstable count decides")
+print("      green-vs-red, in both directions, and neither is attributable.")
+print("  => how many jumps is not a defect; jumping FURTHER THAN 8px is the claim,")
+print("     and that claim is not measured here. Fixing the rule means pinning the")
+print("     inputs AND finding the 8px in the reference -- not widening this suite.")
 
 # -------------------------------------------------- a mob WITH attack art
 print("\n=== a summoned mob that DOES carry attack art ===")
@@ -210,3 +242,9 @@ if not ghost or ghost[0]["code"] != "noSession":
     bad += 1
 
 print(f"\nBAD={bad}")
+# Rule 14: only the RED markers decide the gate's verdict, and EVERY OTHER CALLER
+# reads the exit code. This file had no `sys.exit` at all, so a run that printed
+# `BAD=3` was exit 0 to every caller that does not parse the text -- the shape
+# tools/verify/AGENTS.md records as `attackdrop-verify.py`. The marker stays the
+# gate's channel; this is the second one.
+sys.exit(1 if bad else 0)
