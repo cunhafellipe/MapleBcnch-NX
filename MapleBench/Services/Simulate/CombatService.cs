@@ -1464,16 +1464,32 @@ public sealed class CombatService
                         int mobWatk = TryReadIntChild(image, "info", "PADamage", out int ownWatk) ? ownWatk : 0;
                         int mobMatk = TryReadIntChild(image, "info", "MADamage", out int ownMatk) ? ownMatk : 0;
 
+                        // Mob.cpp:48-57 -- `info/link` borrows another mob's
+                        // GRAPHICS, and the attack's animation comes from the mob
+                        // that owns the graphics.
+                        WzObject animSource = AnimationSource(file, image);
+
                         // Mob.cpp:142-177, transcribed.
                         for (int i = 1; i <= 8; i++)
                         {
                             string action = "attack" + i.ToString(CultureInfo.InvariantCulture);
-                            if (!TryFindChild(image, action, out WzObject? act) || act is null)
+                            // `nl::node node = anisrc[action];`
+                            if (!TryFindChild(animSource, action, out WzObject? act) || act is null)
                                 continue;
                             // `if (!node["0"] || !data) continue;` -- both must exist.
                             if (!TryFindChild(act, "0", out _))
                                 continue;
-                            if (!TryFindChild(act, "info", out WzObject? info) || info is null)
+                            // `nl::node data = src[action]["info"]; if (!data)
+                            // data = node["info"];` -- the attack's own numbers
+                            // come from the mob that OWNS the attack, and only
+                            // from the borrowed mob's attack when the owner
+                            // declares no info of its own.
+                            WzObject? info = null;
+                            if (TryFindChild(image, action, out WzObject? ownAct) && ownAct is not null)
+                                TryFindChild(ownAct, "info", out info);
+                            if (info is null)
+                                TryFindChild(act, "info", out info);
+                            if (info is null)
                                 continue;
 
                             int type = ReadInt(info, "type") ?? 0;
@@ -1574,6 +1590,56 @@ public sealed class CombatService
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// The mob image an attack's ANIMATION comes from: the mob's own, or the
+    /// one its <c>info/link</c> borrows.
+    /// </summary>
+    /// <remarks>
+    /// <c>Mob.cpp:48-57</c>:
+    /// <code>
+    /// nl::node anisrc = src;
+    /// if (nl::node link = info["link"])
+    /// {
+    ///     std::string linkstrid = string_format::extend_id(link.get_integer(), 7);
+    ///     nl::node linksrc = nl::nx::mob[linkstrid + ".img"];
+    ///     if (linksrc["stand"] || linksrc["fly"])
+    ///         anisrc = linksrc;
+    /// }
+    /// </code>
+    /// ⇒ the link borrows GRAPHICS ONLY. The mob's own numbers
+    /// (<c>info/PADamage</c>, <c>info/MADamage</c>, <c>Mob.cpp:60-61</c>) and the
+    /// attack's own info node are still read from the mob that OWNS the attack.
+    /// <para>
+    /// MEASURED 2026-10-22 over the real Mob.nx with attack-frame-timing.py:
+    /// 439 of the 2,100 mob images carry an <c>info/link</c>, and 237 of those
+    /// have no attack node of their own at all -- for those the reference gives
+    /// the borrowed mob's attacks and the port published none. 3400000 is one:
+    /// its link names 9410005, whose attack1 is 1,800 ms.
+    /// </para>
+    /// </remarks>
+    private WzObject AnimationSource(OpenFile file, WzObject image)
+    {
+        if (!TryReadIntChild(image, "info", "link", out int linkId))
+            return image;
+
+        // `extend_id(link.get_integer(), 7)` -- the padded spelling first, the
+        // same list every other mob lookup in this file uses.
+        foreach (string name in ImageNames(linkId.ToString(CultureInfo.InvariantCulture)))
+        {
+            foreach (string prefix in new[] { "", "Mob/" })
+            {
+                if (_session.TryResolve(Path(file.Id, prefix, name + ".img")) is not { } linked)
+                    continue;
+                // `if (linksrc["stand"] || linksrc["fly"]) anisrc = linksrc;`
+                // -- a borrowed mob that has neither is not borrowed at all.
+                if (TryFindChild(linked, "stand", out _) || TryFindChild(linked, "fly", out _))
+                    return linked;
+                return image;
+            }
+        }
+        return image;
     }
 
     /// <summary>Sum of a mob action's per-frame delays, in ms.</summary>
