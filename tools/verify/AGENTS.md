@@ -644,8 +644,12 @@ The two `CHILD_EXIT_` counters are the harness proving it read its
       separately**, and mark the reviewed one as "true when measured".
     - **Byte-compare the region actually under review** before claiming
       their verdicts survive. In that instance the `CrashShapes` block
-      hashed identically on both sides (385 chars, same block digest), so
-      the reviewer's two verdicts stood — proved, not assumed.
+      hashed identically on both sides — 393 chars taken from the start of
+      the `$script:CrashShapes` line through the closing `}`, sha256
+      `83252AFC…` on both — so the reviewer's two verdicts stood, proved
+      rather than assumed. (The range matters: a digest taken from a
+      different start of the same block is a different number. See
+      rule 25.)
 
     **⇒ And the committer's side:** if someone is reviewing a file you are
     about to commit, tell them first. Also remember that a path-prefix
@@ -668,7 +672,7 @@ The two `CHILD_EXIT_` counters are the harness proving it read its
     CJK characters each replaced by three replacement characters, which is
     the signature of a **lossy decode that was re-encoded**.
 
-    **⇒ Three habits:**
+    **⇒ Six habits:**
     - **Print the first 8 bytes and assert them.** A byte census counts the
       body; only a header assertion can see that the header is gone.
     - **Search for `U+FFFD` as its own check.** A *passing* strict decode
@@ -677,6 +681,61 @@ The two `CHILD_EXIT_` counters are the harness proving it read its
     - **On a shared append-only file, compare the whole prefix, not the
       tail.** "My text is at the end" cannot see a damaged header; the
       person who checks the prefix is not the person who appends.
+    - **Every hash must print its EXTRACTION RULE and its RANGE LENGTH.**
+      Measured 2026-10-23: two people measured the same block and got
+      `385 chars / 1CF9336E…` and `393 chars / 83252AFC…`. Both were
+      internally valid; they measured different ranges — mine started at
+      the token `CrashShapes` and skipped the 8-byte prefix `$script:`.
+      `385 + 8 = 393`, and with the other person's rule the digests match
+      exactly. **⇒ A digest with no stated range is not a measurement
+      anyone else can check.** Print the rule, the length and the
+      algorithm together, every time.
+    - **Run the encoding check AFTER every write, not once.** A reviewer
+      measured `non_ascii=0` on his own report and then broke it in the
+      same turn by typing `…` and `⇒` into it. **⇒ The check belongs at
+      the point of delivery.** List every non-ASCII character, compare it
+      against a whitelist, abort on an unknown one, substitute, then
+      re-verify **by bytes** — and confirm the count of `?` did not
+      change, because an encoder can silently turn a character into `?`.
+    - **A `FROZEN` marker must be a FILE with a timestamp, not a message.**
+      A pin written into a chat message expires when the message scrolls
+      away; a pin in a file with `frozen_at=` does not.
+
+26. **A printed field that participates in a verdict must be recomputed
+    from a path INDEPENDENT of the verdict's own path. A field that cannot
+    be, should not be printed.** Measured 2026-10-23, by the agent whose
+    own checker caught it:
+
+    ```
+    rows reproduced: 16 of 16
+    ```
+
+    Both numbers were arithmetically perfect and the evidence value was
+    **zero**: the numerator and the denominator were computed from the
+    same in-memory variables as the verdict — `len(HIS) - len(moved)` —
+    with `moved` empty and **not one row compared**. The two fields were
+    mutually consistent and mutually worthless.
+
+    **⇒ Three habits, and the third is the one that bites:**
+    - **"Recomputable" is not enough. The recomputation must come from a
+      different source than the verdict.** Otherwise a self-consistent
+      arithmetic mistake looks like a measurement.
+    - **Scope the rule to the fields that matter.** A PID, a timestamp, a
+      duration and a sampled value have no second path and must not be
+      forced into one; a rule that demands the impossible gets ignored.
+      **⇒ The line is drawn at "does this field decide red or green", not
+      at "is this field a measurement".**
+    - **Do not print a field you cannot recompute.** A printed field
+      acquires argumentative weight whether or not it is true. That is why
+      a wrong `False` was persuasive: it sat underneath two plausible
+      digests. **⇒ "Not printed" is always safer than "printed wrong".**
+
+    **⇒ What a non-recomputable field looks like:** `Get-Content |
+    Measure-Object -Line` returned 619 for a file with a different line
+    count. It did not error, it did not warn — it simply handed over a
+    wrong number, and the only reason it was caught is that the same
+    number was also available from a second path. **⇒ A quiet number is
+    the dangerous kind.**
 
     **⇒ And the operation itself:** a read-modify-write of a shared file is
     not atomic. Seven agents append to that ledger concurrently, so an
