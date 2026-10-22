@@ -415,6 +415,47 @@ public sealed class FootholdPhysics
             double t = (double)(x - X1) / (X2 - X1);
             return Y1 + t * (Y2 - Y1);
         }
+
+        /// <summary>
+        /// The reference's INTEGER ground at an X: <c>y1 + (x - x1) * vdelta / hdelta</c>,
+        /// with the division truncating toward zero.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a different number from <see cref="SurfaceAtExact"/>, and the
+        /// reference uses it in exactly one place: <c>get_fhid_underneath</c>
+        /// (<c>FootholdTree.cpp:561-563</c>).
+        /// </para>
+        /// <code>
+        /// const int32_t xdelta = static_cast&lt;int32_t&gt;(x) - fh.x1();
+        /// const int32_t ydelta = static_cast&lt;int32_t&gt;(fh.y2()) - fh.y1();
+        /// const int32_t ground = fh.y1() + static_cast&lt;int64_t&gt;(xdelta) * ydelta / fh.hdelta();
+        /// </code>
+        /// <para>
+        /// Two details are load-bearing. The product is taken in 64-bit and the
+        /// division is INTEGER, so it truncates TOWARD ZERO, and toward zero is
+        /// not toward negative infinity: for a negative quotient the two differ by
+        /// one, and the reference's answer is the truncated one. And the whole
+        /// expression is done in integers here for the same reason: a double
+        /// division would round first and truncate second, which is a different
+        /// number at the scale a foothold is measured in.
+        /// </para>
+        /// </remarks>
+        public int GroundInteger(int x)
+        {
+            if (X1 == X2)
+            {
+                // A wall. The reference never reaches this -- get_fhid_underneath
+                // skips every x1 >= x2 before it computes anything -- but a caller
+                // must not divide by zero.
+                return Y1;
+            }
+
+            long xdelta = (long)x - X1;
+            long ydelta = (long)Y2 - Y1;
+            long hdelta = (long)X2 - X1;
+            return (int)(Y1 + xdelta * ydelta / hdelta);
+        }
     }
 
     /// <summary>
@@ -459,7 +500,7 @@ public sealed class FootholdPhysics
     public Foot? FindBelow(int x, int y, bool falling = true, FindBelowDiagnostics? diagnostics = null)
     {
         Foot? best = null;
-        double bestSurface = 0;
+        double bestValue = 0;
         diagnostics?.Begin(_footholds.Count, falling);
 
         // Compared in FLOAT against the exact interpolated height, so a gentle slope
@@ -517,27 +558,44 @@ public sealed class FootholdPhysics
                 continue;
             }
 
-            // The tolerance, and which branch gets it.
+            // The comparison, and which branch gets which NUMBER.
             //
-            // The two reference functions differ and so do the two branches here:
+            // The two reference functions differ in three ways, and the branch
+            // carries all three:
             //
-            //   falling  -> get_fhid_below        (FootholdTree.cpp:495)
-            //                if (comp >= ycomp && ycomp >= (fy - 0.5))   -> 0.5px
-            //   grounded -> get_fhid_underneath    (FootholdTree.cpp:564)
-            //                if (ground >= y && ground < best_y)           -> no tolerance
+            //   falling  -> get_fhid_below        (FootholdTree.cpp:493-499)
+            //                double ycomp = fh.ground_below(fx);
+            //                if (comp >= ycomp && ycomp >= (fy - 0.5))
+            //                a DOUBLE, and a 0.5px tolerance.
             //
-            // The selection rule settles which is which, and it is not a guess:
-            // `comp >= ycomp` walks DOWN from the top and keeps the highest
-            // surface still below the feet -- falling. `ground < best_y` walks
-            // down from y_max and keeps the lowest, the one the feet rest on --
-            // grounded. Those are the same two rules as below (:484).
+            //   grounded -> get_fhid_underneath    (FootholdTree.cpp:561-564)
+            //                const int32_t ground = fh.y1() + (int64_t)xdelta * ydelta / fh.hdelta();
+            //                if (ground >= y && ground < best_y)
+            //                an INTEGER, truncated toward zero, and no tolerance.
+            //
+            // Both of them end at the surface NEAREST the feet, which in this
+            // file's vocabulary is the HIGHEST surface (the smallest y):
+            // get_fhid_below walks down from the top and get_fhid_underneath
+            // walks up from the feet, and both stop at the one the character is
+            // on. That is why the selection below is the same comparison on both
+            // branches, and why the branch changes the NUMBER rather than the
+            // direction.
+            //
+            // The grounded branch used to keep the other end of the range -- the
+            // LOWEST surface, the deepest one below the feet -- which is neither
+            // reference function. On a ledge 1200px above a floor it named the
+            // floor. MEASURED 2026-10-22 by the position-accuracy judge: 67 of
+            // 82 probe points disagreed with get_fhid_underneath, and at x=2905
+            // the port named foothold 79 at y=-145 where the reference names
+            // foothold 10 at y=-1345.
             //
             // This used to be 1px on the grounded branch and 0 on the falling
             // one, which is the INVERSE of the reference, and the 1px had no
             // citation at all: its comment described a sub-step rounding gap that
             // the model below no longer has, since the caller now holds a foothold
             // and never asks what is under it.
-            if (sy < y - (falling ? 0.5 : 0))
+            double candidate = falling ? sy : f.GroundInteger(x);
+            if (candidate < y - (falling ? 0.5 : 0))
             {
                 if (diagnostics is not null) { diagnostics.ExcludedByTolerance++; }
                 continue;
@@ -548,17 +606,14 @@ public sealed class FootholdPhysics
             if (best is null)
             {
                 best = f;
-                bestSurface = sy;
+                bestValue = candidate;
                 continue;
             }
 
-            // Falling: take the highest surface still below. Grounded: take the
-            // lowest, which is the one the feet are actually resting on.
-            bool better = falling ? sy < bestSurface : sy > bestSurface;
-            if (better)
+            if (candidate < bestValue)
             {
                 best = f;
-                bestSurface = sy;
+                bestValue = candidate;
             }
         }
 
@@ -625,7 +680,7 @@ public sealed class FootholdPhysics
         /// </summary>
         public int ExcludedByNoSurface { get; internal set; }
 
-        /// <summary>Surface too far above the feet: <c>sy &lt; y - 0.5</c> falling, <c>sy &lt; y</c> grounded.</summary>
+        /// <summary>Surface too far above the feet: <c>sy &lt; y - 0.5</c> falling, the reference's integer ground <c>&lt; y</c> grounded.</summary>
         public int ExcludedByTolerance { get; internal set; }
 
         /// <summary>Footholds that passed every filter. More than one means the branch picked between them.</summary>
