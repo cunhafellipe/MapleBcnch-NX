@@ -224,10 +224,16 @@ tool, and the tool was not used.
       turns "my function was never called" from a mystery into one line.
 
 11. **A child process's exit code comes from `ProcessStartInfo.ExitCode`,**
-    never from `$LASTEXITCODE`. Which copy of that automatic variable a native
-    call updates depends on how the script was entered (incident 14), so the
-    read can be wrong in one invocation form and right in another **without
-    anything failing loudly**. `Common.ps1`'s `Invoke-CheckedProcess` already
+    never from `$LASTEXITCODE`. The reason is not "the automatic variable
+    behaves differently per invocation form" (incident 14's first
+    explanation, now corrected above): it is that a script which assigns
+    `$LASTEXITCODE = 0` **in script scope** shadows the real code in the
+    `-Command` form, where script scope is a child scope, and not in the
+    `-File` form, where it is the outermost scope. **=> Do not assign
+    `$LASTEXITCODE` in a script that later reads it** - that is the whole
+    defect, and it is silent: the read can be wrong in one invocation form
+    and right in another **without anything failing loudly**.
+    `Common.ps1`'s `Invoke-CheckedProcess` already
     does this correctly and hands `DOTNET_ROOT` to the child explicitly
     (incident 2), so use it rather than `& $exe`.
 
