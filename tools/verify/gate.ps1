@@ -39,6 +39,114 @@ try {
   $verdictsOk = $false
 }
 
+# The pre-gate: the doctor, asked once, before a single suite runs.
+#
+# MEASURED 2026-10-22: gate.ps1 ran a suite file that was not tracked. python
+# printed "can't open file ... No such file or directory" and exited 2. That
+# text contains neither '>>> RED' nor 'BAD=[1-9]', so $bad stayed empty and the
+# gate printed "ok" -- a suite that never ran, scored as a suite that passed.
+# A registry that cannot be trusted makes every suite verdict untrustworthy, so
+# the registry is checked FIRST, and a red doctor stops the run.
+#
+# The question asked is the SUITE one: "do the declarations in SPEC.yaml still
+# match the code?" The doctor's other sections are about this project's own
+# bookkeeping -- work items, invariants -- and must not be able to stop the
+# product from being measured. So the gate reads one machine-readable token,
+# DOCTOR_SUITES_PROBLEMS, and a MISSING token counts as red: a doctor that
+# could not be measured is not a doctor that found nothing.
+#
+# The exit code is read from ProcessStartInfo.ExitCode, never from
+# $LASTEXITCODE: which copy of that automatic variable a native call updates
+# depends on how this script was entered (incident 14), and the wrong copy
+# reads 0 for a child that failed. Common.ps1's Invoke-CheckedProcess does
+# this correctly, but it is not dot-sourced here: it sets
+# Set-StrictMode -Version Latest and $ErrorActionPreference = 'Stop', and
+# those would then apply to the whole gate -- the one tool that must not
+# start throwing halfway through a run.
+#
+# The repository root is never written into this file. It is derived from
+# $PSScriptRoot at run time, because the path contains non-ASCII characters
+# and a literal in a .ps1 gets mangled on write (incident 1). The child is
+# started with a RELATIVE argument and the root as its working directory, so
+# the non-ASCII path never passes through a command line.
+$doctorExit = $null
+$doctorOut = ''
+$doctorErr = ''
+$doctorProblem = ''
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = 'python'
+$psi.Arguments = 'tools/pm.py doctor'
+$psi.WorkingDirectory = $Root
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.CreateNoWindow = $true
+$psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$psi.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
+$proc = New-Object System.Diagnostics.Process
+$proc.StartInfo = $psi
+try {
+  [void]$proc.Start()
+} catch {
+  $doctorProblem = 'the doctor could not be started: ' + $_.Exception.Message
+}
+if ($doctorProblem -eq '') {
+  $outTask = $proc.StandardOutput.ReadToEndAsync()
+  $errTask = $proc.StandardError.ReadToEndAsync()
+  $exited = $proc.WaitForExit(300000)
+  if (-not $exited) {
+    try { $proc.Kill() } catch { }
+    $doctorProblem = 'the doctor did not finish within 300 s'
+  } else {
+    $doctorOut = $outTask.Result
+    $doctorErr = $errTask.Result
+    $doctorExit = $proc.ExitCode
+  }
+  $proc.Dispose()
+}
+$suiteProblems = $null
+if ($doctorOut -match 'DOCTOR_SUITES_PROBLEMS=(\d+)') { $suiteProblems = [int]$Matches[1] }
+$doctorRed = $false
+if ($doctorProblem -eq '') {
+  if ($null -eq $suiteProblems) {
+    $doctorProblem = 'the doctor did not report DOCTOR_SUITES_PROBLEMS'
+    $doctorRed = $true
+  } elseif ($suiteProblems -gt 0) {
+    $doctorRed = $true
+  }
+} else {
+  $doctorRed = $true
+}
+if ($doctorRed) {
+  ">>> RED (the doctor is not green -- no suite was run)"
+  "GATE_DOCTOR_EXIT=$doctorExit"
+  if ($doctorProblem -ne '') { "GATE_DOCTOR_ERROR=$doctorProblem" }
+  if ($doctorOut -ne '') { $doctorOut }
+  if ($doctorErr -ne '') { $doctorErr }
+  if ($verdictsOk) {
+    $lines = @('GATE_VERDICTS_FORMAT=1', 'RED_SUITES=1', 'RED_SUITE=doctor', 'GATE_STATE=doctor-red')
+    try {
+      Set-Content -LiteralPath $verdictsPath -Value $lines -Encoding ASCII
+    } catch {
+      "GATE_VERDICTS_WRITE_FAILED: $($_.Exception.Message)"
+    }
+    "GATE_VERDICTS=$verdictsPath"
+  }
+  exit 1
+}
+"GATE_DOCTOR_EXIT=$doctorExit (suite declarations: $suiteProblems problem(s))"
+if ($doctorExit -ne 0) {
+  # The doctor is red for a reason that is NOT about the suites. That is
+  # reported here, not hidden, and it does not stop the gate: what the gate
+  # needs to know is whether a suite's verdict can be trusted, and the
+  # question it asked is the suite one. MEASURED 2026-10-22: on a fresh
+  # export of HEAD the doctor exits 1 on the avatar-md5 invariant, because
+  # that invariant hashes a text file whose bytes differ between a working
+  # tree (CRLF) and a fresh checkout (LF). Keying the gate on the doctor's
+  # exit code would therefore refuse to run in a clean clone.
+  "GATE_DOCTOR_NOTE: the doctor is red for a reason that is not about the suites; the gate proceeded"
+}
+
 # RED is an EXPLICIT marker a suite prints, never an inference. Three attempts at
 # inferring red from prose each produced a false result: $LASTEXITCODE is not set
 # by a PowerShell script (flagged six green suites), and `\d+ failed` matches the

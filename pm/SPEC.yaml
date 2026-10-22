@@ -150,14 +150,14 @@ suites:
     file: tools/verify/suites/npcchat-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, npc]
   - id: sim-health
     file: tools/verify/suites/simhealth-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
     flaky: true
@@ -166,14 +166,14 @@ suites:
     file: tools/verify/suites/npcchat-frame-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, npc]
   - id: knockback
     file: tools/verify/suites/knockback-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: attack-drop
@@ -187,35 +187,35 @@ suites:
     file: tools/verify/suites/skillkey-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, skill]
   - id: projectile
     file: tools/verify/suites/projectile-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: hold-key
     file: tools/verify/suites/holdkey-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
   - id: npc-name
     file: tools/verify/suites/npcname-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [npc, string]
   - id: mob-fly
     file: tools/verify/suites/mobfly-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: ball-art
@@ -338,7 +338,7 @@ suites:
     file: tools/verify/suites/revive-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
   - id: mobinfo-verify
@@ -352,28 +352,28 @@ suites:
     file: tools/verify/suites/equipstats-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [items, simulate]
   - id: equipset-verify
     file: tools/verify/suites/equipset-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [items, simulate]
   - id: sheetfields-verify
     file: tools/verify/suites/sheetfields-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
   - id: sheet-verify
     file: tools/verify/suites/sheet-verify.py
     runner: python
     verdict: "BAD="
-    red_marker: ["BAD="]
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
   - id: save-audit

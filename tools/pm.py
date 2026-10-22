@@ -986,6 +986,42 @@ def _strip_comments(text: str, ext: str) -> list[str]:
     return out
 
 
+def _red_marker_commas(spec_text: str) -> list[tuple[str, str]]:
+    """Suites whose raw red_marker declaration has a comma inside a quoted
+    element.
+
+    The SPEC parser splits an inline list on commas (_scalar, pm.py:288), so
+    a marker that CONTAINS a comma is cut in two and neither half is the
+    marker the suite prints.
+
+    Sometimes that is loud: the halves are not in the source, and EDGE 1
+    says so. Sometimes it is NOT: a marker like ">>> RED, BAD=" splits into
+    two markers that ARE both in the source and ARE both ones the gate
+    reads -- so the declaration looks complete, the doctor is green, and
+    the gate has never seen the marker at all. That is the silent shape.
+
+    The parser is not changed for this -- 'areas' uses the same list syntax,
+    and changing the parser is a different decision. The declaration is
+    refused here instead.
+    """
+    out: list[tuple[str, str]] = []
+    sid = ""
+    for line in spec_text.splitlines():
+        m = re.match(r"^\s*- id:\s*(\S+)\s*$", line)
+        if m:
+            sid = m.group(1)
+            continue
+        m = re.match(r"^\s*red_marker:\s*(.*)$", line)
+        if not m:
+            continue
+        vals = (re.findall(r'"([^"]*)"', m.group(1))
+                + re.findall(r"'([^']*)'", m.group(1)))
+        for v in vals:
+            if "," in v:
+                out.append((sid, v))
+    return out
+
+
 def _gate_red_markers(gate_text: str) -> list[str]:
     """The markers the gate itself treats as red, read out of gate.ps1.
 
@@ -1383,9 +1419,39 @@ def cmd_doctor(_args) -> int:
         decl_gap += 1 if gaps else 0
         if not problems and not gaps:
             print(f"  ok    {sid:22s} verdict={verdict!r} red_marker={declared}")
+    # A red_marker that contains a comma is cut in two by the SPEC parser,
+    # and neither half is the marker the suite prints. Sometimes both halves
+    # happen to be markers the gate reads, so the declaration LOOKS complete
+    # and the doctor is green while the gate has never seen the marker. The
+    # declaration is refused here, because the parser is not being changed.
+    raw_spec = ""
+    try:
+        raw_spec = open(SPEC_FILE, encoding="utf-8-sig").read()
+    except Exception:
+        raw_spec = ""
+    for sid, val in _red_marker_commas(raw_spec):
+        print(f"  ERROR {sid:22s} RED MARKER CONTAINS A COMMA  {val!r}")
+        decl_err += 1
     print(f"  suite declarations: {len(suite_rows)} listed, "
           f"{decl_err} with a false declaration, {decl_gap} with a missing one")
+    # The machine-readable counter. The gate asks the doctor ONE question
+    # before it runs a single suite -- "do the declarations still match the
+    # code?" -- and reads this token. A MISSING token means the doctor could
+    # not be measured, which is not the same as finding nothing.
+    print(f"  DOCTOR_SUITES_PROBLEMS={decl_err + decl_gap}")
     bad += decl_err + decl_gap
+
+    print()
+    print("=== known limitations ===")
+    print("  - `red_marker` 含逗號會被切成兩條且兩條都查不到；"
+          "加入新的 marker 前先確認它不含逗號。")
+    print("    (A red_marker that contains a comma is split into two by the SPEC")
+    print("     parser and neither half is the marker the suite prints. The")
+    print("     parser is not changed -- 'areas' uses the same list syntax -- so")
+    print("     the doctor refuses such a declaration instead of reading it.)")
+    print("  - The declaration is checked against the SOURCE, not against a run.")
+    print("    A marker in a code path that never executes still counts as")
+    print("    declared. A dynamic receipt would catch that; this does not.")
 
     print()
     print("=== test instance ===")
