@@ -22,6 +22,9 @@ try:
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
+except SyntaxError as exc:    # a helper that does not PARSE is not missing
+    print(f">>> RED: archivelib.py next to this suite does not parse: {exc}")
+    raise SystemExit(1)
 
 
 def _repo_root():

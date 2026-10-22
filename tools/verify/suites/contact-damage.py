@@ -75,6 +75,9 @@ try:
 except ImportError:            # a missing module must not read as a pass
     print(">>> RED: contact-damage -- archivelib.py is missing next to this suite")
     raise SystemExit(1)
+except SyntaxError as exc:    # a helper that does not PARSE is not missing
+    print(f">>> RED: contact-damage -- archivelib.py next to this suite does not parse: {exc}")
+    raise SystemExit(1)
 
 # The gate's own override, so a gate pointed at another instance reaches this
 # judge too (the same two lines the other suites use).

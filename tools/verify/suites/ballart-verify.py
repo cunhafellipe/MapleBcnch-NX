@@ -132,7 +132,19 @@ def archive_id(name):
     Mob.nx on one instance and something else on another. A suite that
     hard-codes an id measures a different archive than the one it means to.
     """
-    for f in get("/api/files") or []:
+    files = get("/api/files")
+    if files is None:
+        files = []
+    if not isinstance(files, list):
+        # The same defect archivelib.py had: the container is never checked, so
+        # a JSON scalar (42) reached `for f in 42`, raised a TypeError, and the
+        # traceback then read as "could not reach the backend" -- while the
+        # backend was alive and the listing simply was not a list. "Could not
+        # list" and "not open" are different failures and must say so.
+        print(f">>> RED: could not list the open archives on this instance: "
+              f"the instance returned {type(files).__name__}, not a list")
+        raise SystemExit(1)
+    for f in files:
         if f.get("name") == name:
             return f.get("id")
     return None

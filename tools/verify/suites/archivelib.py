@@ -27,8 +27,19 @@ def archive_id(name, base):
     except Exception as exc:
         print(f">>> RED: could not list the open archives on this instance: {exc}")
         sys.exit(1)
+    if files is None:
+        files = []
+    if not isinstance(files, list):
+        # The isinstance() below guards the ELEMENT. The container was never
+        # checked, so a JSON scalar (42) reached `for f in 42` and raised a
+        # TypeError, and the traceback then read as "could not reach the
+        # backend" -- while the backend was alive and the list was simply
+        # not a list. "Could not list" is a different failure from "not open".
+        print(f">>> RED: could not list the open archives on this instance: "
+              f"the instance returned {type(files).__name__}, not a list")
+        sys.exit(1)
     listed = {f.get("name"): f.get("id")
-              for f in (files or []) if isinstance(f, dict)}
+              for f in files if isinstance(f, dict)}
     if name not in listed:
         print(f">>> RED: {name} is not open on this instance, "
               f"so there is nothing to judge")

@@ -17,7 +17,13 @@ $base = "http://127.0.0.1:$Port"
 # failure that says so -- and a missing helper is a failure that says so too,
 # because a suite that aborts without the red marker reads as a PASS.
 if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
-. "$PSScriptRoot\archivelib.ps1"
+try { . "$PSScriptRoot\archivelib.ps1" }
+catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception.Message)"; exit 1 }
+# Test-Path only catches MISSING. A helper that is present but does not parse
+# leaves Get-ArchiveId undefined, and the suite then measures a map it never
+# loaded -- ladderFrames=0/400, outOfBounds=400, "FAIL" -- and that red is
+# about the empty map, not about the resolver. Prove the function exists first.
+if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
 if (-not $Map) { $Map = "$(Get-ArchiveId -Base $base -Name 'Map.nx')/Map/Map1/100000004.img" }
 
 $script:Last = $null

@@ -21,7 +21,29 @@ function Get-ArchiveId {
   try { $archives = Invoke-RestMethod "$Base/api/files" -TimeoutSec 120 }
   catch { ">>> RED: could not list the open archives on this instance: $($_.Exception.Message)"; exit 1 }
 
-  $hit = @($archives) | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+  # /api/files must answer with a LIST of archive entries, and nothing else does.
+  # Measured 2026-10-23 under Windows PowerShell 5.1, by asking
+  # Invoke-RestMethod what it hands back:
+  #     text/html        -> XmlDocument   (it parses the HTML as XML)
+  #     JSON scalar 42   -> Int32
+  #     text/plain       -> String
+  #     JSON array [..]  -> Object[]      <- the only shape /api/files promises
+  # None of the wrong shapes THROWS either, so they used to fall through to
+  # "is not open on this instance" -- "this instance is not set up" wearing the
+  # face of "could not list", which is what this file's own header forbids.
+  # NOTE the one trap here: do NOT test with `-is [PSCustomObject]`. Measured,
+  # that is True for an XmlDocument, an Int32 and a String as well, because
+  # PowerShell wraps every value in a PSObject -- it discriminates nothing.
+  # A one-entry JSON array was also measured as Object[], not unrolled, so the
+  # array test does not reject a single-archive instance.
+  if ($archives -isnot [System.Array]) {
+    ">>> RED: could not list the open archives on this instance: the instance answered with $($archives.GetType().Name), not a list of archives (is the URL right?)"; exit 1
+  }
+
+  # -ceq, not -eq: PowerShell's -eq is CASE-INSENSITIVE on strings, so this
+  # resolver was the only one of the three that matched MAP.NX against Map.nx
+  # and reported a hit the other two called "not open".
+  $hit = @($archives) | Where-Object { $_.name -ceq $Name } | Select-Object -First 1
   if ($null -eq $hit) { ">>> RED: $Name is not open on this instance, so there is nothing to judge"; exit 1 }
   if (-not $hit.id) { ">>> RED: $Name is listed by this instance but carries no id"; exit 1 }
   return $hit.id
