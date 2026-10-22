@@ -311,6 +311,41 @@ tool, and the tool was not used.
     explicitly** (`>>> RED`), never continue against a wrong or missing
     target.
 
+    **⇒ And 18 more suites still hardcode `f4` and one hardcodes `f3`.** On an
+    instance whose `Map.nx` is `f2` they exit 1 with `HTTP Error 404` — and
+    **a 404 suite and a suite that measured a difference look almost the same
+    in the gate's output.** Fixing one suite's id is not fixing the family.
+
+17. **A judge pointed at an instance running a STALE binary is not a
+    measurement of the tree.** Measured 2026-10-22: the gate instance
+    (pid 14384) started 2026-10-21 20:24:37 and ran a `MapleBenchX.dll`
+    built 2026-10-20 19:35:06. **28 product commits landed after that
+    build**, and four of them were the fixes for the very suites the gate was
+    reporting red. Pointing `GATE_BASE` at an instance started after every
+    commit, with the same suites and the same archives and the sample sizes
+    unchanged, gave:
+
+    ```
+    position-accuracy   6/6     attack-frame-timing 9/9     attack-damage 11/11
+    ```
+
+    No inference was needed — the failure text printed the pre-fix behaviour
+    itself: `standingY -> 84 at y=-25` (the deepest foothold) where the
+    reference said the one underneath at `y=-535`, and the fix was exactly
+    "the nearest, not the deepest".
+
+    **⇒ Before trusting any red, check what the instance is running:**
+    the process start time against the build's mtime against the commits you
+    believe are in it. A red suite whose fix is already committed is not a
+    defect; it is a process that was never restarted.
+
+    **⇒ And the same family, second shape: a gate run that OVERLAPS a commit
+    is not a measurement either.** `4fc935f` landed at 15:50:04 while a gate
+    ran 15:41 to 15:52, so `ball-art` reported `BAD=45` under the old judge
+    and `BAD=40` under the new one — **each perfectly stable**, and neither
+    a flake. "The number changed between runs" is a hypothesis; "the tree
+    changed between runs" is a measurement you must exclude first.
+
 ---
 
 ## Before you trust a measurement
