@@ -428,7 +428,7 @@ things, and this list is the one to use from now on.
 | 7 | `WzSaveService.cs:124-129` | "NxWriter builds the whole archive into a single byte[]" | after `5ebcaf2` it streams | fixed | `b5ac0bb` |
 | 8 | `NxWriter.cs:696` audio guard | the comment itself says "downstream ... never reached" | the guard is unreachable | kept as a defensive change, and the comment is honest | - |
 | 9 | `FootholdPhysics.cs:526-533` vs `:557` | the grounded branch mirrors `get_fhid_underneath` (keep the LOWEST) | it keeps the HIGHEST | **being fixed** | task-60 [MEASURED - my own judge: 67 of 82 probe points disagree, and 53 of 76 cases where the character stands exactly on a foothold's own surface the port names a different one; the reference names the right one 76 of 76. The commit that CLAIMS to match the reference is `c0c3f22`.] |
-| 10 | `MobPatrol.cs` two publish paths, one of which never got the fix | the comment at `:1331-1335` records the fix ("this used a hardcoded 100 ms per index") | the LIST path (`:1253-1254`) still computes `ballIndex = (int)(e.ElapsedMs - e.DelayMs) / 100 % e.Spec.BallFrameCount` - a hardcoded 100 ms per frame; the SCALAR path (`:1336-1360`) uses `e.Spec.BallFrameDelays` and falls back to the same `/100` only when the frames declare none | **open, queued after task-60** | task-64 [MEASURED - the lead read both paths out of the file on 2026-10-22, and the observable consequence was measured by analyst-map: the published index is 0 at since=63.3/80/96.7 and 1 only at 113.3, i.e. the list path is running the 100 ms fallback. The comment names the fix that landed on the scalar path only.] |
+| 10 | `MobPatrol.cs` ball phase: two publish paths disagreed, then the shared helper froze on the last frame | the scalar path used the frames own delays, the LIST path ran a hardcoded 100 ms per index; after `9b3a783` unified them on one helper, BOTH froze, because the reference WRAPS (`Animation.cpp:316-320` sets `nextframe = 0` on the last frame) and the helper did not | **CLOSED 2026-10-22** | task-64 + task-67 (`49d064f` F2+F3, `a6ed7e2` F1). `since %= sum(delays)` with a `period > 0` guard; scalar and list now agree at 1,369/1,369; the first cycle is unchanged. F2 deleted a branch proven unreachable three independent ways (same FindBallNode, 0/1,667 mismatches in the archive, 0 differences over 88 distinct `since` values). **The judge `ballart-verify.py` was wrong and is now BAD=18 - fix is task-77.** Detail in section 5.6. |
 
 THE MECHANISM OF #9, kept for the record (this is the one still live):
 
@@ -722,3 +722,60 @@ lead 曾裁決「analyst-map 的 task-33 是錯的，成因是註解用過去式
 
 **⇒ 修的單是 task-73（implementer-nx）。⇒ 在它落地之前，閘紅是預期狀態。**
 **⇒ 下一個人看到閘紅，請先確認紅的是 `attack-frame-timing` 還是別的。**
+
+---------------------------------------------------------------------
+5.6 #10 球的相位：F1/F2/F3 全部關閉；而且**判官自己**把凍結寫成合法
+---------------------------------------------------------------------
+### #10（球的相位）—— F1 / F2 / F3 全部關閉，2026-10-22
+
+[實測 - implementer-nx task-67，commit `49d064f`（F2+F3）與 `a6ed7e2`（F1）]
+
+**⇒ F1（相位凍在最後一幀）已修。** 參照會回捲 ——
+`Animation.cpp:316-320` 在最後一幀時 `nextframe = 0`，
+所以相位是以 `sum(delays)` 為週期的鋸齒波；`MobAttack.cpp:36` 每 tick 都推進球。
+**⇒ port 走完 delays 就掉出迴圈、保留了最後的 index ⇒ 球停住。
+⇒ 現在 `since` 先縮進一個週期（`since %= period`，`period = sum(delays)`，有 `period > 0` 防護）再走 delays。**
+
+**⇒ 這個改動之後，scalar 與 list 兩邊的數字都會動**
+（每個「超過一個週期」的觀察改成不同的 index；**首個週期內完全不動**）。
+
+```
+4220000（2 幀 × 60 ms，週期 120 ms，飛行 50..147 ms）:
+  before:  113.33 -> 1   130.00 -> 1   146.67 -> 1     超過 120 ms 的 18 筆全部停在最後一幀
+  after:   113.33 -> 1   130.00 -> 0   146.67 -> 0     超過 120 ms 的 18 筆停在最後一幀的 = 0
+  首個週期不動：13.33/30.00/46.67 -> 0，63.33..113.33 -> 1
+  scalar 與 list 兩邊都一致：1,369/1,369（before）、1,369/1,369（after）
+```
+
+**⇒ F2（100 ms fallback 分支不可達，且註解寫反）已修 —— 刪掉那個分支，不是改註解。**
+- 程式：`CombatService.cs:1582` 與 `:1603` 同一個 `FindBallNode`、同一個 `int.TryParse` 過濾。
+- 資料：2,100 隻 mob、1,667 個 entry ⇒ `ballFrameCount != len(ballFrameDelays)` 的 **0** 個；
+  有球但沒 delays 的 **0** 個；count=0 卻有 delays 的 **0** 個。
+- 行為：舊 build 與新 build 在**全部 88 個相異 `since` 值上 index 完全相同，0 處差異**。
+  **⚠️ 架打長度每次不同（1,369／1,359／1,352 筆）⇒ 逐位元組 transcript 不相同，不宣稱相同；
+  相同的是相位對照表。**
+
+**⇒ F3（`Describe` 的註解說「scalar path above」，但 `AttackEntries` 在**下面**）已修** ——
+改成用方法名指向（`AttackEntries`），不再用方向。**這個錯誤在 helper 存在之前就已經是錯的。**
+
+**⇒ 回歸（兩個 build 都跑，結果相同）：**
+`position-accuracy.py` 6/6 exit 0、`projectile-verify.py` BAD=0、`mobfly-verify.py` BAD=0、
+`attackdrop-verify.py` exit 0、`first-attack-verify.ps1` exit 0 PASS、
+eol-check PASS / TRUST=HIGH / `text_equal=True`。
+**⇒ `attackafter-verify.py` BAD=1「no entry ever appeared」與
+`mob-attack-verify.ps1` exit 1「ABORT: no swing landed in 12 attempts」
+兩個 build **一模一樣** ⇒ 既存且與相位無關（mob 根本沒醒）。**
+
+**⇒ ⚠️ 閘會紅，而且紅在 **judge 身上**，不在 port 身上。**
+**⇒ `tools/verify/suites/ballart-verify.py`：F2-only build `BAD=0 exit 0`；
+F1 build `BAD=18 exit 0`（`>>> a published frame index matched NO admissible rule: 9`、
+`>>> the ball was still on frame 0 where it cannot be: 9`）。
+⇒ 原因是 **judge 自己的參照實作不對**：`phase_own_delays`（第 173 行）不回捲，
+而第 365 行的「不能在 frame 0」檢查拿**原始 `since`** 當門檻、不是拿相位。
+⇒ 兩處都把「凍結」寫成合法。⇒ 這是「判官編碼了 port 的缺陷，所以 port 修好時判官反而紅」的又一例。**
+**⇒ 修單：task-77。⇒ 在它落地之前，閘紅是樹的誠實狀態。**
+
+**⇒ 與參照剩下的差異只有**相位的起點**：參照的球從 mob 出生就在走、週期不對齊這次射擊；
+port 從 entry 的延遲結束那刻起算一個週期
+⇒ 2~3 幀的球「現在顯示哪一幀」仍可能不同；
+**⇒ 但「有沒有射擊在空中」「球會不會動」不可能不同。**
