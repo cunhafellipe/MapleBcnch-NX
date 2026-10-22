@@ -272,11 +272,31 @@ public sealed class CharacterPhysics
                         // no state changes. The reference has three separate locks and this one
                         // line is the shape they add up to:
                         //
-                        //   * every state machine's update() returns immediately while attacking
-                        //     (PlayerStates.cpp:112-113 standing, :174-175 walking, :219-220
-                        //     airborne, :364-365 flying), so the direction keys are never even
-                        //     READ — PlayerWalkState::update reads `hasrightinput` only after
-                        //     that guard (:177-181), so bypassing the setters would not help;
+                        //   * FOUR of the reference's twelve state handlers open with
+                        //     `if (player.is_attacking()) return;` — PlayerStates.cpp:112-113
+                        //     PlayerStandState::update, :174-175 PlayerWalkState::update, :219-220
+                        //     PlayerFallState::update, :364-365 PlayerFlyState::update — so in
+                        //     those the direction keys are never even READ:
+                        //     PlayerWalkState::update reads `hasrightinput` only after that
+                        //     guard (:177-181), so bypassing the setters would not help. The
+                        //     reference's other two hits (:96, :150) are `send_action`, not a
+                        //     state handler;
+                        //   * the other EIGHT handlers carry no such guard, and none of them
+                        //     needs one here. Four only call set_state()/set_direction() —
+                        //     PlayerNullState::update_state (:46), PlayerStandState::
+                        //     update_state (:135), PlayerWalkState::update_state (:197),
+                        //     PlayerFlyState::update_state (:378) — and the reference ignores
+                        //     both calls while attacking anyway (the two locks below).
+                        //     PlayerFallState::update_state (:239) adds only the
+                        //     landing-momentum rule (:246-250), which this port has no
+                        //     counterpart for. PlayerProneState::update (:289) sets only the
+                        //     CHECKBELOW physics flag (:291-292) and this port has no such
+                        //     flag (its prone branch, :432-443, is two lines).
+                        //     PlayerClimbState::update (:416) and PlayerClimbState::
+                        //     update_state (:459) cannot run while attacking on EITHER side:
+                        //     can_attack() refuses a climb (Player.cpp:1252), and this port
+                        //     refuses to start a swing on a ladder
+                        //     (MapSimSessionStore.cs:2916-2923);
                         //   * set_direction() ignores its argument while attacking
                         //     (Player.cpp:1214-1217);
                         //   * set_state() ignores its argument while attacking (Player.cpp:1220-1224).

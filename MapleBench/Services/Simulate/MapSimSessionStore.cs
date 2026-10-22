@@ -1764,9 +1764,14 @@ public sealed class MapSimSessionStore
 		// W-076. A CAST STOPS THE BODY, for the whole cast.
 		//
 		//   Char.cpp:911       Char::attack(action) sets `attacking = true`
-		//   PlayerStates.cpp:96,112,150,174,219,364
-		//                       every state handler opens with
-		//                       `if (is_attacking()) return;`
+		//   PlayerStates.cpp:112,174,219,364
+		//                       FOUR of the reference's twelve state handlers open
+		//                       with `if (is_attacking()) return;` -- stand, walk,
+		//                       fall and fly `update`. The other eight carry no
+		//                       such guard, and :96/:150 are `send_action` rather
+		//                       than handlers; CharacterPhysics.cs's swing-lock
+		//                       comment enumerates all twelve and says why this
+		//                       port needs none of the missing ones.
 		//   Player.cpp:869-871 the lock ends when the BODY animation ends
 		//
 		// We already had the lock for re-casting (`SkillPoseTicks > 0`,
