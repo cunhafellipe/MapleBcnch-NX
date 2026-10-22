@@ -1575,7 +1575,6 @@ def cmd_doctor(_args) -> int:
         bad += 1
 
     print()
-    print("=== suite declarations vs the code (SPEC.yaml) ===")
     # The gate decides red from EXPLICIT markers and prints green from a line
     # matching VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS: (gate.ps1:93-94).
     # A suite that declares neither is invisible to both halves of that, and a
@@ -1589,11 +1588,63 @@ def cmd_doctor(_args) -> int:
     #   GAP   -- the source prints a red marker the registry does not declare
     decl_err = 0
     decl_gap = 0
+    print()
+    print("=== suite declarations vs the code (SPEC.yaml) ===")
+    # The registry check compares two LISTS: SPEC.yaml's `suites:` against the
+    # `Run '...'` entries in gate.ps1. Two empty lists agree with each other,
+    # so emptying BOTH -- SPEC's list commented out, the gate's Run list
+    # emptied -- makes that comparison find nothing to disagree about, and the
+    # doctor reports 0 problems. The suite files are still sitting in
+    # tools/verify/suites/. "I measured nothing" reported as "nothing wrong",
+    # one layer deeper than a missing declaration file.
+    #
+    # MEASURED 2026-10-23 (arm A, first measured by the reviewer, reproduced
+    # here as case T16):
+    #   SPEC suites commented + gate Run list emptied -> exit 0, token ['0'],
+    #   DOCTOR_SUITES_DECLARED=0. Arm A', the same SPEC with the gate left
+    #   alone, was red with 33 orphans. A and A' differ only in the gate's Run
+    #   list, which is what made the emptiness invisible.
+    #
+    # The fix is a THIRD denominator that neither list can move: the suite
+    # files on disk. It is a census, not a cross-check, so it cannot be
+    # satisfied by making both sides agree.
+    on_disk = []
+    if os.path.isdir(SUITES):
+        for n in sorted(os.listdir(SUITES)):
+            if os.path.isfile(os.path.join(SUITES, n)):
+                on_disk.append(n)
+    print(f"  suite files on disk under tools/verify/suites/: {len(on_disk)}"
+          "   (the third denominator -- neither the SPEC list nor the gate's"
+          " Run list can move it)")
     gate_text = ""
     if os.path.exists(GATE):
         gate_text = open(GATE, encoding="utf-8", errors="replace").read()
     red_markers = _gate_red_markers(gate_text)
     suite_rows = spec_rows(spec, "suites")
+    # The third denominator. The check above compares TWO LISTS -- SPEC's
+    # `suites:` against the gate's `Run '...'` entries -- and two empty lists
+    # agree with each other, so emptying both makes that comparison find
+    # nothing to disagree about while 37 suite files sit on disk.
+    #
+    # MEASURED 2026-10-23, arm A (first measured by the reviewer, reproduced
+    # here as case T16): SPEC's suites commented out AND the gate's Run list
+    # emptied -> exit 0, token ['0'], DOCTOR_SUITES_DECLARED=0.
+    #
+    # It fires ONLY in that exact shape -- the registry is empty AND the gate
+    # contributes no Run entries. Whenever the gate DOES list suites, the
+    # orphan check above already reports the emptiness loudly (arm A': 33
+    # orphans), and counting the same emptiness twice would be double
+    # counting. It also stays out of the way when the gate file is missing,
+    # because that is already its own error.
+    gate_run_ids = set(re.findall(r"Run\s+'([^']+)'", gate_text)) if gate_text else set()
+    if not suite_rows and on_disk and os.path.exists(GATE) and not gate_run_ids:
+        print(f"  ERROR {'(no id)':22s} EMPTY REGISTRY BUT {len(on_disk)}"
+              " SUITE FILE(S) ON DISK")
+        print("      The registry declares nothing and the gate runs nothing, so"
+              " the gate-vs-SPEC comparison has nothing to disagree about and"
+              " reports 0 problems. Those suite files exist; nobody declared"
+              " them, and nobody ran them.")
+        decl_err += 1
     for s in suite_rows:
         sid = s.get("id", "?")
         f = s.get("file", "")

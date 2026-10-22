@@ -443,34 +443,53 @@ suites:
 # It is recorded here so the decision is not re-litigated from memory, and so
 # nobody re-adds it thinking it was an oversight.
 #
-# It was declared to catch "only the line endings changed". Measured, on this
-# repo, 2026-10-23 -- the SAME content in two forms:
+# ★★★ READ THIS BEFORE REPRODUCING ANY ARM BELOW: the arms are only
+# meaningful for a stated LINE-ENDING FORM, and the form is part of the
+# measurement. The earlier version of this note reported a table that had
+# been produced by committing the CRLF form. The reviewer measured the same
+# arms with the form this repository actually holds and the table did not
+# reproduce. The note has been rewritten around the real form. ★★★
 #
-#   LF   (what git stores)   32,989 bytes  md5=ba96b2d9727203279b8b784d256430b5
-#   CRLF (what an editor writes) 33,687 bytes md5=a1eb2eb47af42e07ee048762c2592456
+# THE FILE AS THIS REPOSITORY HOLDS IT (measured 2026-10-23):
 #
-# Then four commits of the CRLF form, one variable at a time:
+#   bytes=32,989   CR=0   raw md5=ba96b2d9727203279b8b784d256430b5
+#                           normalised md5=ba96b2d9727203279b8b784d256430b5
+#
+# FOUR ARMS, COMMITTING THE LF FORM -- the form the file actually has:
 #
 #   A  .gitattributes present + core.autocrlf=true   stored LF    content UNCHANGED
 #   B  .gitattributes deleted + core.autocrlf=true   stored LF    content UNCHANGED
 #   C  .gitattributes present + core.autocrlf=false  stored LF    content UNCHANGED
-#   D  .gitattributes deleted + core.autocrlf=false  stored CRLF  content CHANGED
+#   D  .gitattributes deleted + core.autocrlf=false  stored LF    content UNCHANGED
 #
-# Two conclusions, both measured, not inferred:
+#   In all four arms, raw=GREEN and normalised=GREEN. There is no arm in
+#   which the content changed: for the LF form the content does not change
+#   under any of the four checkout rules, so there is no "real change" case
+#   for a byte-level check to catch. (The reviewer is right that the earlier
+#   table, which showed raw RED in A/B/C, only appears when the CRLF form is
+#   committed -- and in that form the RED came from the probe having written
+#   CRLF, not from the project changing anything.)
 #
-#   1. On this file a raw-vs-normalised red means "the WORKING COPY's bytes
-#      differ from the spec", NOT "the project changed this file". In A, B and
-#      C the commit stored byte-identical content while the raw hash was red.
-#      That red is a false positive.
-#   2. In A, B and C the LF blob hashes the same raw and normalised, so a
-#      raw-hash check is a strict SUBSET of `avatar-md5`: it can never add
-#      information while normalisation is in force. It only diverges in D --
-#      the one shape in which git does not normalise.
+# WHY IT WAS REMOVED -- the reasons that actually hold:
 #
-# => On a TEXT file under this repo's checkout rules the byte-level invariant
-#    cannot report a real change without also reporting a false one, and it
-#    protects nothing `avatar-md5` does not already protect. A byte-level
-#    invariant belongs on a container git does not rewrite, not here.
+#   1. IT WAS NEVER IMPLEMENTED. The doctor has no `md5-raw` branch; the
+#      row fell through to "kind not checked here" and cost nothing. Since
+#      D1a, an unimplemented kind is a counted problem, so a declared row
+#      that the doctor cannot evaluate makes the doctor PERMANENTLY RED.
+#      A declared row must be implementable, or it must not be declared.
+#   2. IT IS REDUNDANT FOR THIS FILE. `avatar-md5` hashes the bytes with
+#      CRLF->LF normalised, and for the LF form the raw hash and the
+#      normalised hash are THE SAME VALUE. The two checks would return the
+#      same verdict on this file, always. It adds no information; it does
+#      not contradict anything.
+#   3. ITS VERDICT WOULD DEPEND ON THE READER'S CHECKOUT, NOT ON THE
+#      PROJECT. The one shape in which a raw hash is RED while the content
+#      is unchanged is a CRLF working copy with normalisation off (arm D of
+#      the CRLF-form table). That is a property of the machine the doctor
+#      happens to run on. A guard whose answer depends on that is not a
+#      guard on the project.
+#
+# => A byte-level invariant belongs on a container git does not rewrite.
 #
 # (The older note in this file said the raw hash was a1eb2eb4... in a working
 # tree and ba96b2d9... in a clone, and blamed the checkout shape. That was
@@ -504,6 +523,16 @@ invariants:
       而寫入 MPSHS 的是 suite，suite 跑在閘裡、doctor 跑完之後。
       doctor 仍然會額外比對執行開始時間（能抓到「這一次執行期間」的寫入），
       並在每一行印出用的是哪一個參照，但它**不是**宣告參照的替代品。
+      ★★ 這個參照值是**宣告值**，不是自動值 —— 它不會自己跟著檔案走。
+      如果有人**合法地**修改了 MPSHS 裡的檔案，doctor 會轉紅。
+      ★★ 那是重點，不是誤報：這個 invariant 的存在意義就是「測試沒有寫進
+      使用者的原始資料」，所以一次人為的合法修改轉紅，正是它應該做的事。
+      要讓它回到綠，必須**刻意地**把 `mtime:` 更新到那個修改之後：
+      先量 MPSHS 底下最新的 mtime（doctor 綠燈時那一行會印出
+      `newest=...`），再把 `mtime:` 改成那個值或更晚的一個瞬間，
+      然後重新跑 doctor 確認它綠。
+      ★ 不要為了讓它綠而把 `mtime:` 往後推到「現在」—— 那等於把這道防護
+      重新變成一個追不到任何寫入的擺設。
   - id: gate-has-verdict-markers
     kind: file-contains
     file: "tools/verify/gate.ps1"
