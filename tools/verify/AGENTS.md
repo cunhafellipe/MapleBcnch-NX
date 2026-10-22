@@ -8,11 +8,42 @@ than an obvious failure.** That is the failure mode to design against.
 
 ## Every failure here returned valid-looking data
 
-The numbers in the first column are **project-wide incident numbers**, not a
-count of the rows: #12 is the twelfth failure of this shape in the project and
-the sixth recorded in this directory; #13 is the thirteenth in the project and
-the seventh here; #14 and #15 are the fourteenth and fifteenth in the project
-and the eighth and ninth here.
+The first column is an **id used by this table**. It is not an ordinal, and it
+is not the numbering of any other list in this repository: no list here assigns
+these ids, and the sequence is internal to this table. Case names in
+`self-test.ps1` point at some of them: **`INC1`–`INC5` and `INC12`** name the
+corresponding rows here, and **rows 13 to 23 currently have no case name
+pointing at them.** A full scan of the repository's script and text files
+(`.ps1`, `.mjs`, `.py`, `.md`, `.js`, `.json`; `bin/`, `obj/`, `node_modules/`
+and `.git/` excluded) over 1,288 files found `INC`-style ids in
+`self-test.ps1` and in this paragraph only; a few tools cite the same rows in
+prose (`incident 14` in `gate.ps1`, `incident 12` in `require-fields.ps1`).
+**Re-run it before trusting this sentence; the file count moves.** The one
+numbering that lives elsewhere is `pm/TRAPS.md`'s `T-n`, and **it does not
+correspond to this column**: row #1's subject is T-15 there, and the other rows
+have no counterpart. Do not try to derive a mapping between the two.
+
+Counting rows in this table, #12 is the sixth row here, #13 the seventh, #14 and
+#15 the eighth and ninth, #16 the tenth, and **#17-#23 are the eleventh through
+seventeenth rows here**, added on 2026-10-23.
+
+**⇒ How to read this column.** Three things the numbers alone do not tell you:
+
+- **The number is an id, not an ordinal.** Do not renumber, and do not read a
+  gap as a row that was deleted. This table carries **17 rows** and its highest
+  number is **23**, so **6-11 are not used by this table, and this file does not
+  say why.** Those two counts are a **reading note, not a census**: true when
+  written, and stale the moment a row is added. Recount rather than trust them;
+  rule 16 raises exactly this against the census it documents.
+- **A number here does not mean the shape is still open.** Several rows record
+  a defect that has since been repaired (#5 produced a dedicated tool; #16 is
+  cited by rule 13). A row records that the failure happened and what rule it
+  produced, not that the defect is still present.
+- **A row that restates an earlier row is a second measurement, not a
+  duplicate.** #22 is another occurrence of #3's mechanism: the first
+  under-reported 35 modified files as 0, this one over-reported 42 untracked
+  files. Same rule, two runs, and the opposite sign is what makes the second
+  one worth a row of its own.
 
 | # | What happened | Why it was dangerous | Rule it produced |
 |---|---|---|---|
@@ -26,6 +57,13 @@ and the eighth and ninth here.
 | 14 | `self-test.ps1` read a child's exit code from `$LASTEXITCODE`. Which copy of that automatic variable a native call updates depends on how the script was entered: measured, the `-File` form updates the function-scope copy (LOCAL=1 GLOBAL=1) and the `-Command` form updates only the global one (LOCAL=0 GLOBAL=1). The function-scope read returned 0, so **15 of the 27 cases that ran — every one of them a case that expects a NON-ZERO exit — reported FAIL** while each tool's own stdout proved it had done the right thing. (The tree now carries 28 cases, after the `HARNESS-child-exit-codes-were-observed` case was added.) | Silent, and one-directional: **a genuinely broken tool would have been judged PASS.** | **Read a child's exit code from `ProcessStartInfo.ExitCode`, never from `$LASTEXITCODE`.** And assert that the harness observed a non-zero child exit code, so "read it and got 0" cannot look like "never read it". See rule 11. |
 | 15 | A citation extractor matched `Name.ext` without requiring the extension to END at a non-identifier character, so the C++ member access `phobj.hspeed = phobj.vx = 0;` was read as a citation of `phobj.h`, and `status.hp: 0` as a citation of `status.h`. Both were reported as `FILE_MISSING`. | The tool reported **2 reference files that do not exist and never needed to exist**. The output was a plausible, well-formed gap list, so a reviewer would have gone looking for two holes in the authoritative reference — and the real answer, "0 missing", was nowhere in the report. A false positive here manufactures work. | **A pattern that matches text must end at a BOUNDARY, not inside a word.** Require the match to be followed by a non-identifier character (`(?![A-Za-z0-9_])`). And when a category comes out empty, write `0` and say what was checked — never leave a reader with a list of things that are not there. See rule 12. |
 | 16 | `gate.ps1`'s `Alive` printed a "backend unreachable" message **and** returned `$false` from its `catch`. A PowerShell function returns everything it wrote, so it returned a **two-element array** (the message, then `False`); `-not` on a non-empty array is `$false`, so `if (-not (Alive $name))` **never fired**. | The message was on screen; the counter never knew it. With the backend down, every suite printed `>>> RED (backend unreachable)` and the gate still ended `RED SUITES: 0` and exit 0. A gate that cannot see a red suite is worse than no gate, because it reports green. | **A function that RETURNS A VALUE must not also WRITE to the success stream.** See rule 13. |
+| 17 | A measurement was taken from `git cat-file blob HEAD:<path>`, or from an older commit's tree, and the conclusion was then written as a statement about the code as it is now. This happened five times in one round. | The number is real and the sentence attached to it is false. A finding pinned to a tree nobody else holds reads as a defect in the tree the reader is looking at, and re-measuring it gives a different answer with no visible cause. | **Name the tree every report cites, and pin with `git write-tree`.** A pin built by a hand-rolled recipe is not a pin: a `TARGET_SHA256` assembled from a custom concatenation recipe could not be reproduced by the next agent at all, and an unreproducible pin is indistinguishable from no pin. See rules 23 and 24. |
+| 18 | A denominator was taken from the registry's own declaration. `DOCTOR_SUITES_DECLARED=34`, while the gate ran **33** — `save-audit` declares itself `in_gate: false`, so it is listed and never executed. | Every "0 of N" and every percentage is then about a population containing a member that was never measured. The number looks like a census of the run; it is a census of a declaration. | **Take the denominator from the EXECUTOR's own list.** The satisfiable form is `ran == registry=True rows`, never `ran == declared`. Report `scanned` next to `truncated`. See rules 18 and 20. |
+| 19 | A negative control used port 9 as a dead backend. Port 9 is on Chromium's blocked-port list, so `browser-verify.mjs` ended with `net::ERR_UNSAFE_PORT` and **never issued an HTTP request at all**. | The arm produces no backend-layer evidence: the failure happened one layer below the thing the control was built to observe. A reader looking for a connection-refused shape finds none, and may conclude either that the suite never measured anything or that it passed. | **A control arm must clear the CLIENT's own restrictions before it can be evidence.** State which layer the failure occurred at — browser, transport, or HTTP — and pick a dead port the client will actually attempt. |
+| 20 | A positive control captured the doctor's own error text `server NOT reachable at http://127.0.0.1:59997: URLError` up to `...59997:` — the colon belongs to the sentence, not to the URL — and compared that with the gate's `...59997`. On an arm where both sides were necessarily equal and correctly formatted, it reported a divergence. | The captured value was non-empty and plausible, so the control looked live while its boundary was wrong. The "disagreement" it reported did not exist. A capture that stops mid-URL is the same defect as one that captures nothing, wearing a value. | **A control must check the value is RIGHT, not merely that it captured something.** Assert the capture against a known answer — the exact string, without the trailing punctuation — and keep an arm that can only pass when the reader is correct. See rule 22. |
+| 21 | Reading `gate.ps1`, the export of the normalised base URL appears to happen after the value was already used, and reads as a defect. It is not: `pm.py` normalises with `startswith` and `gate.ps1` with `-notmatch`, which currently agree on `http://` and `https://`. Measured on task-133's no-scheme arm: the address the doctor printed was identical to the address the gate used (`identical=True`). | Recorded here so the next reader does not re-open it. A duplicate normalisation is indistinguishable from a real ordering bug by reading alone, and "fixing" it would change behaviour that two independent readers already agree on. | **When a parent normalises and a child re-normalises the same value, prove the two agree on the same input, then record that measurement beside the code.** A later export is not a defect. See rule 26. |
+| 22 | `Where-Object { $_ -like '??*' }` over `git status --porcelain` reported **42 untracked files**. `-like` treats `?` as a single-character wildcard, so the filter matched every line, including each staged `M `. | Same mechanism as incident 3, and the same danger with the sign flipped: a filter that matches everything yields a confident, wrong file list, and "42 files" is more believable than "0 files" because it is not the answer a reader expects. | **Use `-match '^\?\?'`, never `-like` with `?`.** See incident 3. |
+| 23 | A report stated that the doctor is blind to the instance, because `DOCTOR_SUITES_PROBLEMS=0` and `doctor: 0 problem(s)` were printed while the instance was unreachable. It is not blind: those counters consume the **declaration** family only (`decl_err + decl_gap`), and the instance block only prints — there is no `bad +=` in it. | An unreachable instance does not move those counters, and that is correct behaviour. But a reader who compares a declaration counter against an unreachable instance sees green where they expected red, and files a defect that does not exist. | **Read a counter against the family it actually counts before calling it wrong.** A block that only prints cannot change a counter, and must not. Report what each counter is fed by. See rule 18. |
 
 **⇒ Correction to #14's mechanism (measured 2026-10-22, ablation on a 30-line
 repro).** The observed `LOCAL`/`GLOBAL` numbers were right; the explanation
