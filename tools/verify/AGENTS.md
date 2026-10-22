@@ -346,6 +346,28 @@ tool, and the tool was not used.
     a flake. "The number changed between runs" is a hypothesis; "the tree
     changed between runs" is a measurement you must exclude first.
 
+18. **A census must report `scanned` AND `truncated`. A truncated census is
+    not a census.** Measured 2026-10-22, in a single turn, the same analyst
+    made this mistake twice:
+
+    - A string pool of 5,942 entries was decoded 400 at a time and the
+      partial was read as the whole table.
+    - An archive sweep with `limit=500` was read as "0 of 500 are mutually
+      exclusive"; the full sweep (`limit=5000`, `scanned=126396`,
+      `truncated=False`) showed **69 level nodes carry BOTH `lt`/`rb` and
+      `range`** — the opposite conclusion.
+
+    **⇒ Two ways this fails, and both look like a finding:**
+    - **under-reporting** — a partial sweep reads as "none of them";
+    - **trunc vs round** — `trunc` and `Math.Round(ToEven)` differed on
+      **0 of 69** of those nodes, so a rounding rule cannot be distinguished
+      from a data rule on a truncated sample.
+
+    **⇒ Report the scan size and the truncation flag with every count, and
+    if a count is 0, say what was scanned.** "0 hits" over an unstated
+    denominator is the same shape as incident 12: a missing field and a zero
+    look identical.
+
 ---
 
 ## Before you trust a measurement
