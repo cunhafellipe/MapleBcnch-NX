@@ -4,40 +4,6 @@ Scripts that decide whether a change is correct. **These tools have been wrong
 nine times, and every time they returned a plausible-looking wrong answer rather
 than an obvious failure.** That is the failure mode to design against.
 
-20. **A script told to measure two different things and reporting the same
-    thing for both has measured one.** Measured 2026-10-22: a census that
-    counts hard-coded archive ids was run twice to compare "before" and
-    "after" a change that removed every one of them. Both runs printed the
-    same file count, the same hit count, **and the same line numbers**. The
-    reason was that its input directory was a **hard-coded literal** and it
-    ignored its own command-line argument entirely, so the second run
-    re-read the first run's tree. The reported result was `CODE 31 in 21
-    files` for both, printed side by side, where `0` was the answer.
-
-    **⇒ It was not the census that caught this. A different experiment did:**
-    an instance with **no archives open** printed the expected failure for
-    all 21 suites, which contradicted the census's "31 hits remain". Only
-    that contradiction sent anyone back to the script. **⇒ When two arms of
-    a comparison measure different trees and report an identical count, the
-    instrument is the suspect — not the conclusion.**
-
-    **⇒ Three habits:**
-    - **Print the input you actually measured** — the resolved path, and
-      something that differs between the two arms (a file count, a hash, a
-      commit id). A census that cannot show its own inputs cannot be
-      compared with anything.
-    - **Make the two arms structurally different.** Pass the path as a
-      parameter and **assert the two resolved paths are not equal** before
-      comparing. An assertion is cheaper than a wrong census.
-    - **Treat a perfect tie as a failure of the experiment, not a result.**
-      Real worlds rarely tie exactly; a tie almost always means one side
-      was not measured. `files scanned: 34 -> CODE 31` and
-      `files scanned: 37 -> CODE 0` is a result; `34 -> 31` and `34 -> 31`
-      is a warning.
-
-    **⇒ Same family as rule 18 (a truncated census is not a census) and
-    rule 19 (a comparison that read zero lines is not a comparison): the
-    tool returned a well-formed number for a run that did not happen.**
 ---
 
 ## Every failure here returned valid-looking data
@@ -458,6 +424,41 @@ tool, and the tool was not used.
     was indented. **⇒ Both were caught only because the receipt was written
     to DERIVE its conclusion from the run instead of printing a constant.**
     **⇒ That design is worth more than the individual counters.**
+
+20. **A script told to measure two different things and reporting the same
+    thing for both has measured one.** Measured 2026-10-22: a census that
+    counts hard-coded archive ids was run twice to compare "before" and
+    "after" a change that removed every one of them. Both runs printed the
+    same file count, the same hit count, **and the same line numbers**. The
+    reason was that its input directory was a **hard-coded literal** and it
+    ignored its own command-line argument entirely, so the second run
+    re-read the first run's tree. The reported result was `CODE 31 in 21
+    files` for both, printed side by side, where `0` was the answer.
+
+    **⇒ It was not the census that caught this. A different experiment did:**
+    an instance with **no archives open** printed the expected failure for
+    all 21 suites, which contradicted the census's "31 hits remain". Only
+    that contradiction sent anyone back to the script. **⇒ When two arms of
+    a comparison measure different trees and report an identical count, the
+    instrument is the suspect — not the conclusion.**
+
+    **⇒ Three habits:**
+    - **Print the input you actually measured** — the resolved path, and
+      something that differs between the two arms (a file count, a hash, a
+      commit id). A census that cannot show its own inputs cannot be
+      compared with anything.
+    - **Make the two arms structurally different.** Pass the path as a
+      parameter and **assert the two resolved paths are not equal** before
+      comparing. An assertion is cheaper than a wrong census.
+    - **Treat a perfect tie as a failure of the experiment, not a result.**
+      Real worlds rarely tie exactly; a tie almost always means one side
+      was not measured. `files scanned: 34 -> CODE 31` and
+      `files scanned: 37 -> CODE 0` is a result; `34 -> 31` and `34 -> 31`
+      is a warning.
+
+    **⇒ Same family as rule 18 (a truncated census is not a census) and
+    rule 19 (a comparison that read zero lines is not a comparison): the
+    tool returned a well-formed number for a run that did not happen.**
 
 ---
 
