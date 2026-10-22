@@ -92,20 +92,91 @@
   const s = view.scale;
   const px = (x) => (x - view.minX) * s;
   const py = (y) => (y - view.minY) * s;
-  const dir = tick.dir ?? 1;
-  const at = v.avatar.placement(tick.x, tick.y, dir);
+  // The viewer resolves the facing the same way when it draws (walkview.js:4583),
+  // so the probe must not resolve it differently.
+  const dir = tick.dir ?? (tick.facing >= 0 ? 1 : -1);
   const fr = part.frames[0];
-  const anchorX = part.anchorX ?? fr.originX;
-  const anchorY = part.anchorY ?? fr.originY;
-  const layers = fr.layers?.length ? fr.layers : [fr];
-  const body = layers[layers.length - 1];
-  const bottom = at.y + (anchorY - body.originY) + body.height;
+
+  // WHICH shape this frame carries.
+  //
+  // Measured on a private instance (2026-10-23, avatar frame 0 of stand1): the
+  // composed look publishes `parts` -- 16 of them, each with
+  // path/width/height/originX/originY/screen -- and the FRAME itself carries
+  // neither `layers` nor `originX`/`originY`/`width`/`height`. avatar.js:590
+  // reads `frames[index].parts`, so that is the shape an avatar has.
+  //
+  // The other two shapes are real too and stay in the resolver: an NX
+  // animation frame publishes `layers` (animation.js:119) and a WZ
+  // single-canvas frame IS the frame. The old code read `layers` only, so on
+  // an avatar it fell back to `[fr]` and every field it then read was
+  // undefined: `L.path.split` threw at :121, and `body.originY`/`body.height`
+  // would have made `bottom` a NaN at :102 even if the throw were removed.
+  const shape = fr.parts?.length ? 'parts' : fr.layers?.length ? 'layers' : 'frame';
+  if (shape === 'frame') {
+    throw new Error('>>> RED: avatar frame 0 carries neither parts nor layers, so there is nothing to place; frame keys: '
+      + Object.keys(fr).join(','));
+  }
+  const items = shape === 'parts' ? fr.parts : fr.layers;
+
+  // The frame the viewer actually drew. The product publishes it
+  // (walkview.js:4596), so the probe's numbers describe that frame and not a
+  // guess about which one the clock was on.
+  const drawnFrame = v.lastAvatarPose?.frame ?? part.index ?? 0;
+  const at = v.avatar.placement(tick.x, tick.y, dir, drawnFrame);
+
+  // One element's rectangle in WORLD units, in the product's own arithmetic.
+  //
+  //   parts  -> avatar.js rectOf(): the part's `screen` offset is already
+  //             anchored to the character (the feet sit at screen.y = 0) and
+  //             the mirror negates the horizontal offset and nothing else.
+  //   layers -> walkview.js:4050: the canvas is blitted top-left at
+  //             (x - originX, y - originY), and the mirror flips the PIXELS
+  //             about the origin node, so the rectangle itself does not move.
+  const rectOfItem = (it) => {
+    const w = it.width ?? 0;
+    const h = it.height ?? 0;
+    if (shape === 'parts') {
+      const dx = it.screen?.x ?? 0;
+      const dy = it.screen?.y ?? 0;
+      return { x: at.flip ? at.cx - dx - w : at.cx + dx, y: at.cy + dy, w, h };
+    }
+    const ox = it.originX ?? 0;
+    const oy = it.originY ?? 0;
+    return { x: at.cx - ox, y: at.cy - oy, w, h };
+  };
+  const rects = items.map(rectOfItem);
+
+  // The lowest world line the avatar covers. The old code took the LAST layer
+  // and called it "the body"; on an avatar there is no such element -- the body
+  // is one part among sixteen -- so the bottom is the union's bottom edge.
+  const bottom = rects.length ? Math.max(...rects.map((r) => r.y + r.h)) : at.cy;
+
+  // A probe that cannot measure must say so instead of publishing zeros or
+  // NaN (rule 1). Every number below comes from one of these.
+  const finite = (n) => typeof n === 'number' && Number.isFinite(n);
+  if (!rects.length || !finite(bottom) ||
+      [at.cx, at.cy, at.w, at.h, at.originX, at.originY].some((n) => !finite(n)) ||
+      rects.some((r) => ![r.x, r.y, r.w, r.h].every(finite))) {
+    throw new Error('>>> RED: the avatar placement could not be measured (a non-finite number): '
+      + JSON.stringify({ shape, at, rects: rects.slice(0, 3), bottom }));
+  }
+  const nameOf = (it) => (it.path ? String(it.path).split('/').pop() : '(no path)');
 
   const data = g.getImageData(0, 0, c.width, c.height).data;
   let nonBlank = 0;
   for (let i = 0; i < data.length; i += 4) {
     if (data[i] || data[i+1] || data[i+2]) nonBlank++;
   }
+
+  // The union of the computed rectangles, in the canvas' own units, so the
+  // numbers the probe computes can be compared with the pixels the avatar
+  // actually changed. The measured box is in DEVICE pixels and the computed
+  // one in CSS pixels, so the device ratio is carried with them.
+  const dpr = window.devicePixelRatio || 1;
+  const ux0 = Math.min(...rects.map((r) => px(r.x)));
+  const uy0 = Math.min(...rects.map((r) => py(r.y)));
+  const ux1 = Math.max(...rects.map((r) => px(r.x) + r.w * s));
+  const uy1 = Math.max(...rects.map((r) => py(r.y) + r.h * s));
 
   return {
     map: v.path,
@@ -118,15 +189,23 @@
               bitmaps: v.avatar.bitmaps.size, missing: v.avatar.missingLayers ?? [] },
     placement: at,
     placementTypes: Object.fromEntries(Object.entries(at).map(([k, x]) => [k, typeof x])),
-    layerRects: layers.map((L) => ({ part: L.path.split('/').pop(),
-      screen: [+px(at.flip
-        ? at.x + at.w - (anchorX - L.originX) - L.width
-        : at.x + (anchorX - L.originX)).toFixed(1),
-        +py(at.y + (anchorY - L.originY)).toFixed(1),
-        +(L.width * s).toFixed(1), +(L.height * s).toFixed(1)] })),
+    frameShape: shape,
+    elementCount: items.length,
+    drawnFrame,
+    avatarPose: v.lastAvatarPose ?? null,
+    // `layerRects` now describes the elements of the frame that was DRAWN: the
+    // avatar's `parts` (16 rects -- the composed look) and not `layers`, which
+    // is a different thing (one resource's stacked canvases, animation.js:119).
+    layerRects: rects.map((r, i) => ({ part: nameOf(items[i]),
+      world: [+r.x.toFixed(2), +r.y.toFixed(2), +r.w.toFixed(2), +r.h.toFixed(2)],
+      screen: [+px(r.x).toFixed(1), +py(r.y).toFixed(1), +(r.w * s).toFixed(1), +(r.h * s).toFixed(1)] })),
     drawAvatarCalls: observed,
     pixelsChangedByAvatar: diff,
     avatarRectScreen: diff ? { x: bx0, y: by0, w: bx1 - bx0 + 1, h: by1 - by0 + 1 } : null,
+    dpr,
+    computedUnionScreen: { x: +ux0.toFixed(1), y: +uy0.toFixed(1), w: +(ux1 - ux0).toFixed(1), h: +(uy1 - uy0).toFixed(1) },
+    measuredBoxCss: diff ? { x: +(bx0 / dpr).toFixed(1), y: +(by0 / dpr).toFixed(1),
+      w: +((bx1 - bx0 + 1) / dpr).toFixed(1), h: +((by1 - by0 + 1) / dpr).toFixed(1) } : null,
     nonBlank, totalPx: data.length / 4,
     feet: {
       tickY: tick.y,
