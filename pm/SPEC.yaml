@@ -95,36 +95,42 @@ suites:
     file: tools/verify/suites/ladder-all.ps1
     runner: powershell
     verdict: "ALL LADDERS PASS"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate]
   - id: attack-test
     file: tools/verify/suites/attack-test.ps1
     runner: powershell
     verdict: "VERDICT:"
+    red_marker: [">>> RED", "NO damage number"]
     asserts: true
     areas: [simulate]
   - id: skill-test
     file: tools/verify/suites/skill-test.ps1
     runner: powershell
     verdict: "VERDICT: skill-test"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, skill]
   - id: mob-attack-verify
     file: tools/verify/suites/mob-attack-verify.ps1
     runner: powershell
     verdict: "VERDICT: mob-attack-verify"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, mob]
   - id: first-attack-verify
     file: tools/verify/suites/first-attack-verify.ps1
     runner: powershell
     verdict: "PASS:"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, mob]
   - id: npc-label-check
     file: tools/verify/suites/npc-label-check.ps1
     runner: powershell
     verdict: "VERDICT: npc-label-check"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [npc, string]
     added: W-069
@@ -137,18 +143,21 @@ suites:
     file: MapleBench/tools/sim-skills-check.mjs
     runner: node
     verdict: "passed,"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, skill]
   - id: npc-chat
     file: tools/verify/suites/npcchat-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate, npc]
   - id: sim-health
     file: tools/verify/suites/simhealth-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate]
     flaky: true
@@ -157,61 +166,70 @@ suites:
     file: tools/verify/suites/npcchat-frame-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate, npc]
   - id: knockback
     file: tools/verify/suites/knockback-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: attack-drop
     file: tools/verify/suites/attackdrop-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: [">>> RED", "BAD="]
     asserts: true
-    red_marker: ">>> RED"
     areas: [simulate, mob]
   - id: skill-key
     file: tools/verify/suites/skillkey-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate, skill]
   - id: projectile
     file: tools/verify/suites/projectile-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: hold-key
     file: tools/verify/suites/holdkey-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate]
   - id: npc-name
     file: tools/verify/suites/npcname-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [npc, string]
   - id: mob-fly
     file: tools/verify/suites/mobfly-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: ball-art
     file: tools/verify/suites/ballart-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, mob]
   - id: attack-after
     file: tools/verify/suites/attackafter-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, mob]
     note: >
@@ -223,6 +241,7 @@ suites:
     file: tools/verify/suites/node-verify.py
     runner: python
     verdict: "VERDICT: node-verify"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [node]
     added: W-068
@@ -235,6 +254,7 @@ suites:
     file: tools/verify/suites/skill-e2e.py
     runner: python
     verdict: "VERDICT: skill-e2e"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, skill]
     added: W-070
@@ -247,12 +267,14 @@ suites:
     file: tools/verify/suites/position-accuracy.py
     runner: python
     verdict: "VERDICT: position-accuracy"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate]
   - id: attack-frame-timing
     file: tools/verify/suites/attack-frame-timing.py
     runner: python
     verdict: "VERDICT: attack-frame-timing"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, mob]
     added: ADR-0005-2
@@ -268,8 +290,8 @@ suites:
     file: tools/verify/suites/attack-damage.py
     runner: python
     verdict: "VERDICT: attack-damage"
+    red_marker: [">>> RED"]
     asserts: true
-    red_marker: ">>> RED"
     areas: [simulate, mob]
     added: ADR-0005-2
     note: >
@@ -290,6 +312,7 @@ suites:
     file: tools/verify/suites/skillshape-verify.mjs
     runner: node
     verdict: "BAD="
+    red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate, skill]
     added: W-087
@@ -297,6 +320,7 @@ suites:
     file: MapleBench/tools/browser-verify.mjs
     runner: node
     verdict: "VERDICT: browser-verify"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, skill]
     added: W-079
@@ -314,42 +338,49 @@ suites:
     file: tools/verify/suites/revive-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate]
   - id: mobinfo-verify
     file: tools/verify/suites/mobinfo-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [mob]
   - id: equipstats-verify
     file: tools/verify/suites/equipstats-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [items, simulate]
   - id: equipset-verify
     file: tools/verify/suites/equipset-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [items, simulate]
   - id: sheetfields-verify
     file: tools/verify/suites/sheetfields-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate]
   - id: sheet-verify
     file: tools/verify/suites/sheet-verify.py
     runner: python
     verdict: "BAD="
+    red_marker: ["BAD="]
     asserts: true
     areas: [simulate]
   - id: save-audit
     file: tools/verify/suites/save-audit.py
     runner: python
     verdict: "VERDICT: save-audit"
+    red_marker: [">>> RED"]
     asserts: true
     areas: [save]
     one_shot: true

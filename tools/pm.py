@@ -989,15 +989,50 @@ def _strip_comments(text: str, ext: str) -> list[str]:
 def _gate_red_markers(gate_text: str) -> list[str]:
     """The markers the gate itself treats as red, read out of gate.ps1.
 
-    Parsed rather than copied, so the list cannot drift away from the gate:
-    a hardcoded copy here would be a second source of truth, and the whole
-    family this file exists to catch is a list that says one thing while the
-    gate does another.
+    TWO places in the gate decide red, and both are read here rather than
+    copied:
+      * $RED = @('>>> RED', 'NO damage number')        (gate.ps1:47)
+      * the inline test $text -match 'BAD=[1-9]'        (gate.ps1:98)
+
+    A copied list here would be a second source of truth, and the whole
+    family this file exists to catch is a list that says one thing while
+    the gate does another.
+
+    The second one is a PATTERN, not a literal. What a suite prints is the
+    part before the character class -- 'BAD=' -- so that is what a
+    declaration can name.
     """
+    out: list[str] = []
     m = re.search(r"\$RED\s*=\s*@\(([^)]*)\)", gate_text, re.S)
-    if not m:
+    if m:
+        out += re.findall(r"'([^']+)'", m.group(1))
+    # Anchored on the line that ADDS to $bad, so the other -match tests in
+    # the gate (the traceback test, the green-shape test) cannot be picked
+    # up by mistake.
+    b = re.search(r"\$text\s+-match\s+'([^']+)'\s*\)\s*\{\s*\$bad\s*\+=", gate_text)
+    if b:
+        literal = b.group(1).split("[")[0]
+        if literal and literal not in out:
+            out.append(literal)
+    return out
+
+
+def _red_marker_list(value) -> list[str]:
+    """A suite's declared red markers, as a list.
+
+    The field may be written as one string or as a list of them, because a
+    suite can print more than one: attack-test prints both '>>> RED' and
+    'NO damage number', and both are markers the gate reads. gate.ps1:47
+    holds $RED as an ARRAY for the same reason, and a schema that cannot
+    hold the array cannot describe the array.
+    """
+    if value is None or value == "":
         return []
-    return re.findall(r"'([^']+)'", m.group(1))
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value if str(v).strip()]
+    return [str(value)]
 
 
 def _argv(cmd: str) -> list[str]:
@@ -1316,21 +1351,30 @@ def cmd_doctor(_args) -> int:
         blob = "\n".join(_strip_comments(
             open(p, encoding="utf-8", errors="replace").read(), ext))
         verdict = s.get("verdict") or ""
-        red = s.get("red_marker") or ""
+        declared = _red_marker_list(s.get("red_marker"))
         problems = []
         gaps = []
         if not verdict:
             problems.append("NO VERDICT DECLARED")
         elif verdict not in blob:
             problems.append(f"VERDICT NOT IN CODE  {verdict!r}")
-        if red and red not in blob:
-            problems.append(f"RED MARKER NOT IN CODE  {red!r}")
-        if red and red_markers and not any(red in rm for rm in red_markers):
-            problems.append(f"RED MARKER IS NOT ONE THE GATE READS  {red!r}"
-                            f"  gate reads {red_markers}")
+        # EDGE 1 -- declaration -> reality. Every declared marker must be a
+        # string the source contains, and one the gate actually reads.
+        for d in declared:
+            if d not in blob:
+                problems.append(f"RED MARKER NOT IN CODE  {d!r}")
+            if red_markers and not any(d in rm for rm in red_markers):
+                problems.append(f"RED MARKER IS NOT ONE THE GATE READS  {d!r}"
+                                f"  gate reads {red_markers}")
+        # EDGE 2 -- reality -> declaration. Every red channel the suite can
+        # print must be declared. Without this edge a suite that prints a
+        # marker nobody declared is invisible: the gate greps the OUTPUT,
+        # never the registry, so an undeclared marker is a marker nobody is
+        # keeping honest.
         printed = [rm for rm in red_markers if rm in blob]
-        if printed and not red:
-            gaps.append(f"PRINTS A RED MARKER BUT DECLARES NONE  {printed}")
+        undeclared = [rm for rm in printed if rm not in declared]
+        if undeclared:
+            gaps.append(f"PRINTS A RED MARKER BUT DECLARES NONE  {undeclared}")
         for pr in problems:
             print(f"  ERROR {sid:22s} {pr}")
         for gp in gaps:
@@ -1338,7 +1382,7 @@ def cmd_doctor(_args) -> int:
         decl_err += 1 if problems else 0
         decl_gap += 1 if gaps else 0
         if not problems and not gaps:
-            print(f"  ok    {sid:22s} verdict={verdict!r} red_marker={red!r}")
+            print(f"  ok    {sid:22s} verdict={verdict!r} red_marker={declared}")
     print(f"  suite declarations: {len(suite_rows)} listed, "
           f"{decl_err} with a false declaration, {decl_gap} with a missing one")
     bad += decl_err + decl_gap
