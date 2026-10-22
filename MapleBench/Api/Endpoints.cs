@@ -41,7 +41,6 @@ public static class Endpoints
         api.MapAnimationAudits();
         api.MapTransfers();
         api.MapNxMerge();
-        api.MapNxMerge();
         api.MapImport();
         api.MapAudit();
         api.MapRepair();
