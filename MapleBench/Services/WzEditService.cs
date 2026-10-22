@@ -993,7 +993,7 @@ public sealed class WzEditService
                 ?? throw new InvalidOperationException("This node's parent does not hold an ordered list.");
             int oldIndex = collection.IndexOf(property);
             if (oldIndex < 0)
-                throw new InvalidOperationException("Node is no longer in its parent.");
+                throw new ServerFailureException("Node is no longer in its parent.");
 
             newIndex = Math.Clamp(newIndex, 0, collection.Count - 1);
             if (newIndex == oldIndex)

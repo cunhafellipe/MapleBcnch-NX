@@ -139,7 +139,7 @@ public sealed class OpenFile : IDisposable
 
             // Without this the null slipped through `!` and every later request
             // for this file died with an opaque 500.
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"'{Name}' is no longer loaded. A save released it and it could not be reopened. " +
                 "Close it and open it again.");
         }

@@ -1,4 +1,5 @@
 using MapleBench.Models;
+using MapleBench.Services;
 
 namespace MapleBench.Api;
 
@@ -66,6 +67,21 @@ internal static class ApiErrorFilter
         catch (ArgumentException ex)
         {
             return Results.BadRequest(new ApiError(ex.Message));
+        }
+        catch (ServerFailureException ex)
+        {
+            // The request was well formed and the server's own work came out
+            // wrong: a file it wrote did not read back, a serialisation produced
+            // nothing, a hash could not be computed. Answering 400 here would
+            // tell the user their request was malformed, and send them looking
+            // at the one thing that was not the problem.
+            //
+            // The message is the server's own sentence about its own failure,
+            // and it is safe to show: it names a file and a count, never a
+            // path the caller supplied and never a stack.
+            return Results.Json(
+                new ApiError("The server could not complete the operation.", ex.Message),
+                statusCode: 500);
         }
         catch (InvalidOperationException ex)
         {

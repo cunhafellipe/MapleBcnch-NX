@@ -79,7 +79,7 @@ public sealed class ExportService
             // not have. Neither is a no-op for a real .wz, so this stays on the common path.
             byte[] data = NxWzExport.SerializeImageAsWz(image);
             if (data.Length == 0)
-                throw new InvalidOperationException("The image serialised to zero bytes, so no download was made.");
+                throw new ServerFailureException("The image serialised to zero bytes, so no download was made.");
 
             string name = Sanitise(image.Name ?? "export.img");
             if (!name.EndsWith(".img", StringComparison.OrdinalIgnoreCase))
@@ -209,7 +209,7 @@ public sealed class ExportService
                             }
 
                             if (data.Length == 0)
-                                throw new InvalidOperationException("The node serialised to zero bytes, so no download was made.");
+                                throw new ServerFailureException("The node serialised to zero bytes, so no download was made.");
 
                             string name = Sanitise(asName ?? image.Name ?? "node");
                             if (!name.EndsWith(".img", StringComparison.OrdinalIgnoreCase))

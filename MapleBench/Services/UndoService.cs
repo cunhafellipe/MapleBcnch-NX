@@ -331,7 +331,7 @@ public sealed class UndoService
                 SealAll();
                 _undo.Clear();
                 _redo.Clear();
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     "That change could not be undone — the nodes it referred to have moved or been " +
                     "replaced. The undo history has been cleared. Nothing on disk was touched.");
             }
@@ -361,7 +361,7 @@ public sealed class UndoService
                 SealAll();
                 _undo.Clear();
                 _redo.Clear();
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     "That change could not be redone — the nodes it referred to have moved or been " +
                     "replaced. The undo history has been cleared. Nothing on disk was touched.");
             }

@@ -6636,7 +6636,7 @@ public sealed class PortService
         if (rewrites.TryGetValue(key, out string? already)
             && !string.Equals(already, now, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"'{was}' was going to be rewritten both to '{already}' and to '{now}'. Nothing was written.");
         }
         rewrites[key] = now;
@@ -7091,13 +7091,13 @@ public sealed class PortService
         {
             PortNamedRef edge = spec.Named?.FirstOrDefault(
                     e => string.Equals(e.Path, edgePath, StringComparison.Ordinal))
-                ?? throw new InvalidOperationException(
+                ?? throw new ServerFailureException(
                     $"A rename was recorded for '{edgePath}', which is not a named edge the "
                     + $"'{spec.Kind}' kind declares. Nothing was rewritten.");
 
             if (edge.SetRole is not { } role)
             {
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"The named edge '{edge.Path}' declares no WzNamedRole, so its rename "
                     + $"('{was}' -> '{now}') cannot be expressed to the reference layer without keying "
                     + "on the name alone — which would rewrite every other role's set of that name. "
@@ -8623,7 +8623,7 @@ public sealed class PortService
         // says so out loud.
         if (!string.Equals(results[0].Path, targetPath, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The copy landed at '{results[0].Path}' rather than '{targetPath}', which means the target " +
                 "already held that name. Nothing here will use a renamed copy — a client looks the id up by " +
                 "name and would never find it.");

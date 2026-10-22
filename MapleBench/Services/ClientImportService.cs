@@ -659,7 +659,7 @@ public sealed class ClientImportService
             (int images, int directories, int reserialised) = Census(output.WzDirectory);
             if (images == 0)
             {
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"{archive.Name} assembled to zero images. Its parts, packs and sub-archives were all read " +
                     "and none of them contained an image — that is a bug in this importer or a client layout it " +
                     "does not understand.");
@@ -866,7 +866,7 @@ public sealed class ClientImportService
             if (bytes == 0)
             {
                 TryDelete(temp);
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"{archive.Name} serialised to zero bytes. Nothing was written.");
             }
 
@@ -879,7 +879,7 @@ public sealed class ClientImportService
             catch (Exception ex)
             {
                 TryDelete(temp);
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"The converted {archive.Name}.wz could not be read back, so nothing was written to " +
                     $"'{destination}'.\n\nDetail: {ex.Message}", ex);
             }
@@ -891,7 +891,7 @@ public sealed class ClientImportService
                 string rescued = Path.Combine(directory,
                     $"{archive.Name}.rejected-{DateTime.Now:yyyyMMdd-HHmmss}.wz");
                 TryMove(temp, rescued);
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"The converted {archive.Name}.wz does not match the client it came from, so nothing was " +
                     $"written to '{destination}':\n" +
                     string.Join("\n", defects.Select(d => "  - " + d)) +

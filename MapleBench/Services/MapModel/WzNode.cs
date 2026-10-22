@@ -1,5 +1,6 @@
 using MapleLib.WzLib;
 using MapleLib.WzLib.WzProperties;
+using MapleBench.Services;
 
 namespace MapleBench.Services.MapModel;
 
@@ -442,7 +443,7 @@ public sealed class WzNode
                 // payload without decoding it, so it is applied and nothing else
                 // is.
                 if (Payload == null)
-                    throw new InvalidOperationException(
+                    throw new ServerFailureException(
                         $"Node '{Name}' is of carried type {Type} but holds no payload, so there is " +
                         "nothing to write. This is a bug in the loader, not in the data.");
                 Payload.Name = Name;

@@ -130,7 +130,7 @@ public sealed class NxMergeService
             {
                 if (check.NodeCount != report.Nodes)
                 {
-                    throw new InvalidOperationException(
+                    throw new ServerFailureException(
                         $"The NX file written for '{Path.GetFileName(target)}' did not read back with the " +
                         $"expected node count ({check.NodeCount} of {report.Nodes}). It was discarded and " +
                         "the destination was not touched.");
@@ -139,7 +139,7 @@ public sealed class NxMergeService
                 {
                     if (!Resolves(check.Root, entry.ImagePath))
                     {
-                        throw new InvalidOperationException(
+                        throw new ServerFailureException(
                             $"The written NX file does not contain '{entry.ImagePath}'. It was discarded " +
                             "and the destination was not touched.");
                     }

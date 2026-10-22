@@ -264,7 +264,7 @@ public sealed class UolSite : ReferenceSite
             throw new ArgumentNullException(nameof(uol));
 
         FieldInfo field = LinkValField
-            ?? throw new InvalidOperationException(
+            ?? throw new ServerFailureException(
                 "WzUOLProperty.linkVal is gone or was renamed. It is the memo a UOL write has to clear; "
                 + "without clearing it every later read of this link returns the node it used to point at. "
                 + "Update UolSite before shipping this.");
@@ -332,7 +332,7 @@ public sealed class TextReferenceSite : ReferenceSite
                 number.Value = short.Parse(value, CultureInfo.InvariantCulture);
                 break;
             default:
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"'{_carrier.FullPath}' is a {_carrier.PropertyType} and holds no text to rewrite.");
         }
 

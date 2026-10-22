@@ -218,14 +218,14 @@ public static class WzContentHasher
         {
             if (_onPath.Count >= MaxDepth)
             {
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"'{Describe(node)}' is more than {MaxDepth} levels deep, which no real WZ tree is. " +
                     "Its content hash cannot be computed, so nothing may be decided from it.");
             }
 
             if (!_onPath.Add(node))
             {
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     $"'{Describe(node)}' contains itself, so it has no content hash — hashing it would " +
                     "not terminate. Nothing may be decided from a hash of this node.");
             }

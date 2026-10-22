@@ -132,7 +132,7 @@ public static class MbPngCodec
         // ask for Bgr565 when we actually want 517.
         if (produced != format)
         {
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"Expected to encode as {format} but MapleLib produced {produced}.");
         }
         return data;
