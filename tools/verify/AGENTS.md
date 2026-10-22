@@ -53,8 +53,8 @@ tool, and the tool was not used.
 1. **A tool that cannot measure must fail loudly.** Return non-zero, or emit a
    token the caller greps for. Never let a measurement collapse to `0`, `""`,
    `null`, or an empty array and let that pass as data.
-2. **Always run `self-test.ps1` after changing anything here.** It carries 28
-   known-answer cases precisely so the nine failures above cannot return.
+2. **Always run `self-test.ps1` after changing anything here.** It carries a growing set of known-answer cases (31 on 2026-10-22)
+   precisely so the nine failures above cannot return.
    **It takes no `-RepoRoot`** — its only parameter is `-KeepFixtures`.
 
    ```powershell
@@ -70,16 +70,23 @@ tool, and the tool was not used.
    Measured 2026-10-22 on a healthy tree, with git and a usable `DOTNET_ROOT`:
 
    ```
-   CASES_PASS=28
+   CASES_PASS=31
    CASES_FAIL=0
    CASES_SKIP=0
    RESULT=PASS
    TRUST=HIGH
-   CHILD_EXIT_CAPTURED=24
-   CHILD_EXIT_NONZERO=15
+   CHILD_EXIT_CAPTURED=27
+   CHILD_EXIT_NONZERO=16
    ```
 
-   The two `CHILD_EXIT_` counters are the harness proving it read its
+   **⇒ The citation cases are a CONTROL GROUP, not three extra checks.**
+Same fixture, same spec format; only the cited text differs, and the
+wrong-citation case must exit NON-ZERO. A tool that returned 0 for
+every run would still pass the two green cases, and only the third
+catches it. **⇒ When you add cases, ask what a broken tool would
+still pass; that is the case worth adding.**
+
+The two `CHILD_EXIT_` counters are the harness proving it read its
    children's **real** exit codes (rule 11). **`CHILD_EXIT_NONZERO` must be
    greater than zero** — if it is 0, the harness is reading 0 for everything
    and every case that expects a non-zero exit is meaningless.
