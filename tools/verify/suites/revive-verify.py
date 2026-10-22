@@ -1,6 +1,6 @@
 """A dead character must be able to come back, and must act again afterwards.
 
-MEASURED before this existed, on `f4/Map/Map0/000000000.img` with `4220000`
+MEASURED before this existed, on `Map.nx/Map/Map0/000000000.img` with `4220000`
 summoned beside the character: contact damage (`PADamage 135`) killed a 50 HP
 character on frame 0, and from then on the attack key did nothing, the skill key
 did nothing, the character would not walk, and `/revive`, `/respawn` and
@@ -12,9 +12,17 @@ The revive is the reference's: `Stage::respawn(portalid)` /
 reached from the revive prompt at UIStateGame.cpp:548-556.
 """
 import json, os, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map0/000000000.img"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+MAP = f"{_MAP_ID}/Map/Map0/000000000.img"
+
 KILLER = "4220000"
 bad = 0
 

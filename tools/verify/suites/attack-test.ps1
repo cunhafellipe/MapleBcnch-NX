@@ -10,9 +10,19 @@
 # stance and lands a hit on a MOB; neither depends on the character surviving, and
 # invulnerability does not touch either (the player's damage number comes from
 # `mobPatrol.TakeHit`, not from `PlayerStatus.Hurt`).
-param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = "f4/Map/Map1/100000004.img")
+param([int]$Port = $(if ($env:GATE_BASE) { $q = ([uri]$env:GATE_BASE).Port; if ($q -gt 0) { $q } else { 5591 } } else { 5591 }), [string]$Map = "")
 
 $base = "http://127.0.0.1:$Port"
+
+# The archive's session id is resolved BY NAME, never hard-coded: the ids are
+# handed out in the order the archives were opened, so "f4" is Map.nx on one
+# instance and something else on another. An archive that is not open is a
+# failure that says so -- and a missing helper is a failure that says so too,
+# because a suite that aborts without the red marker reads as a PASS.
+if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
+. "$PSScriptRoot\archivelib.ps1"
+if (-not $Map) { $Map = "$(Get-ArchiveId -Base $base -Name 'Map.nx')/Map/Map1/100000004.img" }
+
 $script:Last = $null
 
 function New-Session([int]$x, [int]$y, [string]$weapon = "01302000.img", [string]$eq = "01302000") {

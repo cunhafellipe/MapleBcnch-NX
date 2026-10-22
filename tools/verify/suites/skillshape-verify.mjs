@@ -54,7 +54,22 @@
 //       MULTIMOB=0                   (skip the nearest-N section)
 
 const BASE = process.env.BASE ?? process.env.GATE_BASE ?? 'http://127.0.0.1:5591';
-const MAP = process.env.MAP ?? 'f4/Map/Map1/100000004.img';
+// The archive's session id is resolved BY NAME, never hard-coded: the ids are
+// handed out in the order the archives were opened, so 'f4' is Map.nx on one
+// instance and something else on another. An archive that is not open is a
+// failure that says so, and the ways it can fail are told apart: the archives
+// could not be listed, the archive is absent, or the archive is listed but
+// carries no id. Each prints the red marker the gate reads and stops.
+async function archiveId(name) {
+  let files;
+  try { files = await api('/api/files'); }
+  catch (exc) { console.log(`>>> RED: could not list the open archives on this instance: ${exc.message ?? exc}`); process.exit(1); }
+  const listed = new Map((files ?? []).filter((f) => f && typeof f === 'object').map((f) => [f.name, f.id]));
+  if (!listed.has(name)) { console.log(`>>> RED: ${name} is not open on this instance, so there is nothing to judge`); process.exit(1); }
+  if (!listed.get(name)) { console.log(`>>> RED: ${name} is listed by this instance but carries no id`); process.exit(1); }
+  return listed.get(name);
+}
+const MAP = process.env.MAP ?? `${await archiveId('Map.nx')}/Map/Map1/100000004.img`;
 const MOB = process.env.MOB ?? '9400101';
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map((s) => s.trim())) : null;
 const RUN_MULTI = process.env.MULTIMOB !== '0';

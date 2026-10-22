@@ -5,8 +5,16 @@ A reader that read only one archive would find every NPC silent, and a reader
 that guessed the key names would find the wrong ones.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+
+_STRING_ID = archive_id("String.nx", BASE)
+_NPC_ID = archive_id("Npc.nx", BASE)
 bad = 0
 
 
@@ -33,7 +41,7 @@ def strings(nid):
     except ValueError:
         pass
     for name in dict.fromkeys(shapes):
-        url = f"{BASE}/api/inspect?path={urllib.parse.quote(f'f3/Npc.img/{name}')}"
+        url = f"{BASE}/api/inspect?path={urllib.parse.quote(f'{_STRING_ID}/Npc.img/{name}')}"
         try:
             with urllib.request.urlopen(url, timeout=240) as r:
                 return {c["name"]: c.get("value")
@@ -44,7 +52,7 @@ def strings(nid):
 
 
 def npcnode(nid, *path):
-    url = f"{BASE}/api/inspect?path={urllib.parse.quote('f6/' + nid + '.img/' + '/'.join(path))}"
+    url = f"{BASE}/api/inspect?path={urllib.parse.quote(_NPC_ID + '/' + nid + '.img/' + '/'.join(path))}"
     try:
         with urllib.request.urlopen(url, timeout=240) as r:
             return [c.get("value") for c in json.loads(r.read().decode("utf-8")).get("children", [])]

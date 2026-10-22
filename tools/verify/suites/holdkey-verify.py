@@ -16,9 +16,18 @@ The suite therefore holds the key down for a long, unbroken run and counts the
 damage numbers, which is the case nobody had measured.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map0/000000000.img"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+_MOB_ID = archive_id("Mob.nx", BASE)
+MAP = f"{_MAP_ID}/Map/Map0/000000000.img"
+
 bad = 0
 
 
@@ -36,7 +45,7 @@ def post(route, body):
 
 
 print("=== an empty map, a weapon, and a summoned mob ===")
-# MEASURED: f4/Map/Map0/000000000.img starts the character at (0,95) with no mobs
+# MEASURED: Map.nx/Map/Map0/000000000.img starts the character at (0,95) with no mobs
 # and a foothold underfoot. A map full of mobs kills a 50 HP character before the
 # question can be asked.
 #
@@ -65,7 +74,7 @@ CANDIDATES = ("9500302", "9500195", "2110200", "2220100", "9400100")
 mid = None
 for cand in CANDIDATES:
     try:
-        node = get_node(f"f5/{cand}.img/stand/0")
+        node = get_node(f"{_MOB_ID}/{cand}.img/stand/0")
     except Exception:
         continue
     kids = {c["name"] for c in node.get("children", [])}

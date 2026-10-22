@@ -16,17 +16,25 @@
 So a mob whose image carries a non-empty `fly` action NEVER plays `stand`, even
 when `stand` exists.
 
-The damage that does: `f5/9300104.img` carries attack1, die1, fly and hit1 and
+The damage that does: `Mob.nx/9300104.img` carries attack1, die1, fly and hit1 and
 no `stand` at all, so asking it for `stand` returned no art AND a zero collision
 box -- a mob the player could not hit with a swing, a skill, or contact damage,
 while its `fly/0` carries a perfectly good `lt`/`rb`. The summon guard was right
 to accept it: `Mob.cpp:55` accepts `stand` OR `fly`.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map0/000000000.img"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+MAP = f"{_MAP_ID}/Map/Map0/000000000.img"
+
 bad = 0
 
 

@@ -12,9 +12,16 @@ MEASURED: for every attack node in a sample, compare
 and report every node we do not report, with the reason.
 """
 import json, os, sys, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 from collections import Counter
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+
+_MOB_ID = archive_id("Mob.nx", BASE)
 
 
 def get(route, **q):
@@ -68,7 +75,7 @@ no_info = 0
 no_anim = 0
 counts = Counter()
 for mid in judged:
-    img = inspect(f"f5/{mid}.img")
+    img = inspect(f"{_MOB_ID}/{mid}.img")
     if not img:
         continue
     attack_nodes = [c["name"] for c in (img.get("children") or [])
@@ -78,8 +85,8 @@ for mid in judged:
     counts[len(attack_nodes)] += 1
     reported = {a.get("action") for a in get("/api/simulate/mob-attacks", mobId=mid)["attacks"]}
     for node in attack_nodes:
-        has_info = inspect(f"f5/{mid}.img/{node}/info") is not None
-        kids = inspect(f"f5/{mid}.img/{node}")
+        has_info = inspect(f"{_MOB_ID}/{mid}.img/{node}/info") is not None
+        kids = inspect(f"{_MOB_ID}/{mid}.img/{node}")
         has_anim = bool(kids and any((c.get("childCount") or 0) > 0
                                      or c.get("kind") == "Canvas"
                                      for c in (kids.get("children") or [])))
@@ -119,15 +126,15 @@ for row in dropped[:20]:
 mismatch = 0
 kept_by_reference = Counter()
 for mid in judged:
-    img = inspect(f"f5/{mid}.img")
+    img = inspect(f"{_MOB_ID}/{mid}.img")
     if not img:
         continue
     nodes = [c["name"] for c in (img.get("children") or []) if c["name"].startswith("attack")]
     good = []
     for n in nodes:
-        if inspect(f"f5/{mid}.img/{n}/info") is None:
+        if inspect(f"{_MOB_ID}/{mid}.img/{n}/info") is None:
             continue
-        kids = inspect(f"f5/{mid}.img/{n}")
+        kids = inspect(f"{_MOB_ID}/{mid}.img/{n}")
         has_zero = any(c["name"] == "0" for c in (kids.get("children") or []))
         if has_zero:
             good.append(n)

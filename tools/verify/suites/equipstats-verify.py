@@ -6,8 +6,15 @@ The three cases that a name-based reader would fail are the point of this file:
   Weapon/01302000.img  the eight-digit form a slot actually hands over
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+
+_CHAR_ID = archive_id("Character.nx", BASE)
 
 
 def stats(item):
@@ -42,7 +49,7 @@ CASES = [
 
 for prefix, item, why in CASES:
     d = stats(item)
-    t = truth(f"f1/{prefix}/info")
+    t = truth(f"{_CHAR_ID}/{prefix}/info")
     print(f"\n=== {prefix}  (asked as {item!r}) — {why}")
     print(f"    found={d.get('found')} code={d.get('weaponCode')} type={d.get('weaponType')!r} "
           f"attackSpeed={d.get('attackSpeed')} slot={d.get('slot')!r} anomalies={d.get('spellingAnomalies')}")

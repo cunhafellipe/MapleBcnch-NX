@@ -23,8 +23,16 @@ ten distinct values (200, 140, 230, 170, 250, 150, -200, 350, 260, 120) and the
 `range` is `{r, sp}` on exactly 326 slots.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+_MOB_ID = archive_id("Mob.nx", BASE)
 STEP_MS = 1000 / 60
 bad = 0
 
@@ -138,13 +146,13 @@ def fighter_of(mob_id):
     if len(proj) != 1:
         return None, None                 # one projectile attack: the timeline is unambiguous
     try:
-        f0 = get("/api/inspect", path=f"f5/{mob_id}.img/stand/0")
+        f0 = get("/api/inspect", path=f"{_MOB_ID}/{mob_id}.img/stand/0")
     except Exception:
         return None, None
     kids = {c["name"] for c in f0.get("children", [])}
     if not ("lt" in kids and "rb" in kids):
         return None, None                 # a point box can never be hit or touched
-    if str(node_value(f"f5/{mob_id}.img/info/firstAttack")) != "1":
+    if str(node_value(f"{_MOB_ID}/{mob_id}.img/info/firstAttack")) != "1":
         return None, None                 # must acquire on its own, no blow needed
     return mob_id, proj[0]
 
@@ -198,8 +206,8 @@ print(f"  {mid} {spec['action']}: type={spec['type']} power={spec['power']} "
 print(f"    delay {delay_frames:.0f} frames + flight {life_frames:.0f} frames "
       f"= {earliest:.0f} frames from the begin_attack before it can touch anything")
 
-# An EMPTY map. MEASURED: `f4/Map/Map0/000000000.img` starts the character at
-# (0, 95) with zero mobs and a foothold underfoot; `f4/Map/Map1/100000004.img`, the
+# An EMPTY map. MEASURED: `Map.nx/Map/Map0/000000000.img` starts the character at
+# (0, 95) with zero mobs and a foothold underfoot; `Map.nx/Map/Map1/100000004.img`, the
 # map every earlier probe used, carries 24 map mobs whose contact hits land on top
 # of the one under test.
 #
@@ -210,7 +218,7 @@ print(f"    delay {delay_frames:.0f} frames + flight {life_frames:.0f} frames "
 # never observe a projectile, and neither can it observe the decision cadence. The
 # evidence below is the ENTRY's own position and clock, which `Hurt` does not touch.
 s = post("/api/simulate/session",
-         {"path": "f4/Map/Map0/000000000.img",
+         {"path": f"{_MAP_ID}/Map/Map0/000000000.img",
           # `weapon` is the SWING BOX, `equippedWeapon` is the WZ image that decides
           # which swing STANCES exist. Omit the second and `AttackStancesFor` is
           # empty, `Swing` arms nothing, and there is no weapon box at all.

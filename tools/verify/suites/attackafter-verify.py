@@ -13,9 +13,17 @@ The rule being checked is `MobAttack.cpp:199` —
 TIMESTEP is 16.667ms, so 1200ms is frame 72.0 and a hit cannot be tested before it.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map0/000000000.img"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+MAP = f"{_MAP_ID}/Map/Map0/000000000.img"
+
 STEP_MS = 1000 / 60
 bad = 0
 

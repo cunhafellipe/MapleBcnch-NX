@@ -12,9 +12,17 @@ CALIBRATION FIRST (R-9). The armed/unarmed pair is the discriminator this whole
 night turned on, so it runs first and both halves must agree.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map1/100000004.img"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+MAP = f"{_MAP_ID}/Map/Map1/100000004.img"
+
 bad = 0
 
 

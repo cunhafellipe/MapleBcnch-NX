@@ -13,7 +13,7 @@
                                           : "String/Npc.img/" + ID.IntID();
 
 So the pool is keyed by the id with its leading zeros STRIPPED. That is not a width
-sweep and the archive says so: on `f4/Map/Map0/000000002.img`, `0002000` is
+sweep and the archive says so: on `Map.nx/Map/Map0/000000002.img`, `0002000` is
 `String.nx/Npc.img/2000` and `9101002` is `9101002` -- the same number both times.
 
 MEASURED before the fix: `CombatService.NpcText` built the pool path from the
@@ -21,9 +21,18 @@ verbatim map id, so four of that map's six NPCs had no name at all and the wire
 read `id=0002000 name=''`.
 """
 import json, os, urllib.parse, urllib.request
+try:
+    from archivelib import archive_id
+except ImportError:            # a missing module must not read as a pass
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
-MAP = "f4/Map/Map0/000000002.img"
+
+_MAP_ID = archive_id("Map.nx", BASE)
+_STRING_ID = archive_id("String.nx", BASE)
+MAP = f"{_MAP_ID}/Map/Map0/000000002.img"
+
 bad = 0
 
 
@@ -57,7 +66,7 @@ for m in npcs:
     answers = {}
     for form in dict.fromkeys([npc_id, stripped]):
         try:
-            node = get("/api/inspect", path=f"f3/Npc.img/{form}/name")
+            node = get("/api/inspect", path=f"{_STRING_ID}/Npc.img/{form}/name")
             answers[form] = (node.get("node") or {}).get("value") or ""
         except Exception:
             answers[form] = None
