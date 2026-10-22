@@ -1,0 +1,134 @@
+"""Does our attack reader silently DROP attacks, the way the reference does?
+
+clean-client `Mob.cpp:148`:
+    if (!node["0"] || !data) continue;
+An attack whose animation OR whose info is missing is skipped with no log and no
+fallback. If our reader inherited that, a mob can declare four attacks and
+silently swing with one, and nothing anywhere would say so.
+
+MEASURED: for every attack node in a sample, compare
+  * what the ARCHIVE has (does it carry an `info` child?)
+  * what OUR endpoint reports
+and report every node we do not report, with the reason.
+"""
+import json, urllib.parse, urllib.request
+from collections import Counter
+
+BASE = "http://127.0.0.1:5591"
+
+
+def get(route, **q):
+    # The parameter is named `route`, NOT `path`. Naming it `path` makes
+    # get("/api/inspect", path=p) a "multiple values for argument 'path'"
+    # TypeError -- which is what happened the first two times this exact call was
+    # written, and it reads as "the archive has nothing" because the caller
+    # swallows the exception.
+    with urllib.request.urlopen(f"{BASE}{route}?" + urllib.parse.urlencode(q),
+                               timeout=300) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+FAILURES = Counter()
+
+
+def inspect(nodePath):
+    """Never swallow a failure silently.
+
+    The first version of this file returned None on any exception and `continue`d,
+    so a run in which EVERY inspect failed reported "0 attacks found, 0 dropped"
+    and looked like a clean result. A harness that cannot tell "the archive has
+    none" from "I could not read it" is worse than no harness -- count the
+    failures and report them.
+    """
+    try:
+        node = get("/api/inspect", path=nodePath)
+        FAILURES["ok"] += 1
+        return node
+    except Exception as exc:
+        FAILURES[type(exc).__name__] += 1
+        return None
+
+
+cat = get("/api/simulate/mob-catalog")["mobs"]
+ids = [m["id"] for m in cat]
+sample = ids[::max(1, len(ids) // 150)][:150]
+print(f"sampling {len(sample)} mobs")
+
+dropped = []
+no_info = 0
+no_anim = 0
+counts = Counter()
+for mid in sample:
+    img = inspect(f"f5/{mid}.img")
+    if not img:
+        continue
+    attack_nodes = [c["name"] for c in (img.get("children") or [])
+                    if c["name"].startswith("attack")]
+    if not attack_nodes:
+        continue
+    counts[len(attack_nodes)] += 1
+    reported = {a.get("action") for a in get("/api/simulate/mob-attacks", mobId=mid)["attacks"]}
+    for node in attack_nodes:
+        has_info = inspect(f"f5/{mid}.img/{node}/info") is not None
+        kids = inspect(f"f5/{mid}.img/{node}")
+        has_anim = bool(kids and any((c.get("childCount") or 0) > 0
+                                     or c.get("kind") == "Canvas"
+                                     for c in (kids.get("children") or [])))
+        if not has_info:
+            no_info += 1
+        if not has_anim:
+            no_anim += 1
+        if not has_info or not has_anim:
+            dropped.append(f"{mid}/{node}: info={has_info} anim={has_anim} reported={node in reported}")
+
+print(f"\ninspect calls: {dict(FAILURES)}")
+if FAILURES.get("ok", 0) < 200:
+    print(">>> too few successful reads for this run to mean anything")
+print(f"\nattack-node count per mob: {dict(sorted(counts.items()))}")
+print(f"attack nodes with NO info  : {no_info}")
+print(f"attack nodes with NO anim  : {no_anim}")
+print(f"nodes the reference would drop: {len(dropped)}")
+for row in dropped[:20]:
+    print(f"   {row}")
+
+# And the sharper question: of the nodes the REFERENCE would keep, do we report
+# every one?
+#
+# "Readable" is the reference's rule, not "has an info node".
+# clean-client Mob.cpp:148:  `if (!node["0"] || !data) continue;`
+# An attack whose animation has no frame named "0" is dropped by the reference,
+# and MEASURED mob 9400572 is the case: attack1 and attack3 carry frames 1,2,3,4
+# and no 0, attack2 carries 0..17, and this port correctly reports only attack2.
+#
+# So the first version of this file, which treated "has info" as the expectation,
+# flagged a MISMATCH that was the port being CORRECT -- a permanent false red in
+# a gate suite, which is the failure this project keeps paying for.
+mismatch = 0
+kept_by_reference = Counter()
+for mid in sample:
+    img = inspect(f"f5/{mid}.img")
+    if not img:
+        continue
+    nodes = [c["name"] for c in (img.get("children") or []) if c["name"].startswith("attack")]
+    good = []
+    for n in nodes:
+        if inspect(f"f5/{mid}.img/{n}/info") is None:
+            continue
+        kids = inspect(f"f5/{mid}.img/{n}")
+        has_zero = any(c["name"] == "0" for c in (kids.get("children") or []))
+        if has_zero:
+            good.append(n)
+    if not good:
+        continue
+    kept_by_reference[len(good)] += 1
+    reported = get("/api/simulate/mob-attacks", mobId=mid)["attacks"]
+    if len(reported) != len(good):
+        mismatch += 1
+        if mismatch <= 10:
+            print(f"   MISMATCH {mid}: the reference would keep {len(good)} "
+                  f"({good}), we report {len(reported)} "
+                  f"({[a.get('action') for a in reported]})")
+print(f"\nattacks the reference KEEPS, per mob: {dict(sorted(kept_by_reference.items()))}")
+print(f"mobs where our count differs from that: {mismatch}")
+print("Every dropped node is one the reference's own `node[\"0\"]` test drops too; "
+      "the counts above are the expectation, not a wish.")

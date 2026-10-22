@@ -92,37 +92,37 @@ areas:
 # --------------------------------------------------------------------------- #
 suites:
   - id: ladder-all
-    file: ladder-all.ps1
+    file: tools/verify/suites/ladder-all.ps1
     runner: powershell
     verdict: "ALL LADDERS PASS"
     asserts: true
     areas: [simulate]
   - id: attack-test
-    file: attack-test.ps1
+    file: tools/verify/suites/attack-test.ps1
     runner: powershell
     verdict: "VERDICT:"
     asserts: true
     areas: [simulate]
   - id: skill-test
-    file: skill-test.ps1
+    file: tools/verify/suites/skill-test.ps1
     runner: powershell
     verdict: "VERDICT: skill-test"
     asserts: true
     areas: [simulate, skill]
   - id: mob-attack-verify
-    file: mob-attack-verify.ps1
+    file: tools/verify/suites/mob-attack-verify.ps1
     runner: powershell
     verdict: "closed the distance"
     asserts: true
     areas: [simulate, mob]
   - id: first-attack-verify
-    file: first-attack-verify.ps1
+    file: tools/verify/suites/first-attack-verify.ps1
     runner: powershell
     verdict: "PASS:"
     asserts: true
     areas: [simulate, mob]
   - id: npc-label-check
-    file: npc-label-check.ps1
+    file: tools/verify/suites/npc-label-check.ps1
     runner: powershell
     verdict: "VERDICT: npc-label-check"
     asserts: true
@@ -140,13 +140,13 @@ suites:
     asserts: true
     areas: [simulate, skill]
   - id: npc-chat
-    file: npcchat-verify.py
+    file: tools/verify/suites/npcchat-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, npc]
   - id: sim-health
-    file: simhealth-verify.py
+    file: tools/verify/suites/simhealth-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
@@ -154,62 +154,62 @@ suites:
     flaky: true
     note: 2026-10-16 實測：單跑 BAD=0，在 gate 上下文曾 BAD=1，原因未查清。
   - id: npc-chat-frame
-    file: npcchat-frame-verify.py
+    file: tools/verify/suites/npcchat-frame-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, npc]
   - id: knockback
-    file: knockback-verify.py
+    file: tools/verify/suites/knockback-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, mob]
   - id: attack-drop
-    file: attackdrop-verify.py
+    file: tools/verify/suites/attackdrop-verify.py
     runner: python
     verdict: ""
     asserts: true
     red_marker: ">>> RED"
     areas: [simulate, mob]
   - id: skill-key
-    file: skillkey-verify.py
+    file: tools/verify/suites/skillkey-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, skill]
   - id: projectile
-    file: projectile-verify.py
+    file: tools/verify/suites/projectile-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, mob]
   - id: hold-key
-    file: holdkey-verify.py
+    file: tools/verify/suites/holdkey-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate]
   - id: npc-name
-    file: npcname-verify.py
+    file: tools/verify/suites/npcname-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [npc, string]
   - id: mob-fly
-    file: mobfly-verify.py
+    file: tools/verify/suites/mobfly-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, mob]
   - id: ball-art
-    file: ballart-verify.py
+    file: tools/verify/suites/ballart-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate, mob]
   - id: attack-after
-    file: attackafter-verify.py
+    file: tools/verify/suites/attackafter-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
@@ -220,7 +220,7 @@ suites:
       被看到時已經 1383ms 老，而 delay 是 1600ms，正確答案是 (1600-1383)/16.67 = 13.0
       幀，它量到的也正是 13。現在斷言的是「延遲到之前沒有任何一幀可測」。
   - id: node-verify
-    file: node-verify.py
+    file: tools/verify/suites/node-verify.py
     runner: python
     verdict: "VERDICT: node-verify"
     asserts: true
@@ -232,7 +232,7 @@ suites:
       節點名大小寫不敏感（T-10）、缺席必須是 null/錯誤而不是 0（R-5）、
       編輯只留在記憶體且檔案被標記 dirty（README）。
   - id: skill-e2e
-    file: skill-e2e.py
+    file: tools/verify/suites/skill-e2e.py
     runner: python
     verdict: "VERDICT: skill-e2e"
     asserts: true
@@ -243,6 +243,13 @@ suites:
       它同時讀取**實際載入的** livewalk.js 原始碼，用正則斷言 onKeyDown 裝的是
       skill.skillId 而不是 skill.key（W-065 的那個字元），所以客戶端那一半不是複製品。
       實測 14 斷言 3/3 綠，傷害 103-104，封存的 level/1/damage 是 135。
+  - id: skillshape
+    file: tools/verify/suites/skillshape-verify.mjs
+    runner: node
+    verdict: "BAD="
+    asserts: true
+    areas: [simulate, skill]
+    added: W-087
   - id: browser-verify
     file: MapleBench/tools/browser-verify.mjs
     runner: node
@@ -260,43 +267,44 @@ suites:
       頁面自己的 loop 和手動灌幀搶同一個 LiveWalk，輸的那次 this.busy 已經是 true 而
       什麼都沒做——同一台伺服器、同一份 build，綠一次紅一次。page.keyboard.down/up 和
       page.waitForFunction 讓這兩件事根本不會發生。實測 12 斷言連續 4 次全綠。
-    file: revive-verify.py
+  - id: revive
+    file: tools/verify/suites/revive-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate]
   - id: mobinfo-verify
-    file: mobinfo-verify.py
+    file: tools/verify/suites/mobinfo-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [mob]
   - id: equipstats-verify
-    file: equipstats-verify.py
+    file: tools/verify/suites/equipstats-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [items, simulate]
   - id: equipset-verify
-    file: equipset-verify.py
+    file: tools/verify/suites/equipset-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [items, simulate]
   - id: sheetfields-verify
-    file: sheetfields-verify.py
+    file: tools/verify/suites/sheetfields-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate]
   - id: sheet-verify
-    file: sheet-verify.py
+    file: tools/verify/suites/sheet-verify.py
     runner: python
     verdict: "BAD="
     asserts: true
     areas: [simulate]
   - id: save-audit
-    file: save-audit.py
+    file: tools/verify/suites/save-audit.py
     runner: python
     verdict: "VERDICT: save-audit"
     asserts: true
@@ -327,6 +335,6 @@ invariants:
       2026-10-16 的 save-audit 每次都assert MPSHS 的 md5 前後一致。
   - id: gate-has-verdict-markers
     kind: file-contains
-    file: "gate.ps1"
+    file: "tools/verify/gate.ps1"
     contains: ">>> RED"
     why: gate 只認顯式標記；這一條是 gate 自己可信的前提。

@@ -873,8 +873,13 @@ def generate_state_md() -> str:
 # --------------------------------------------------------------------------- #
 # PM v2 commands: start / doctor / coverage / verify / critical / stream
 # --------------------------------------------------------------------------- #
-SCRATCH = os.path.join(os.environ.get("USERPROFILE", ""), "AppData", "Local",
-                       "hermes", "cache", "scratch")
+# The gate's suites and its runner live in the repository. They used to live in
+# an agent cache under the user profile, and that cache pruned them on
+# 2026-10-21; they survived only because a shadow copy taken an hour earlier
+# still held them. A directory that prunes itself is not a place to keep the
+# thing that decides whether the code is correct.
+SUITES = os.path.join(ROOT, "tools", "verify", "suites")
+GATE = os.path.join(ROOT, "tools", "verify", "gate.ps1")
 
 WORKSTREAMS = ("save", "simulate", "archive", "editor-ui", "infra", "parity",
                "reference", "unassigned")
@@ -891,8 +896,9 @@ def item_verify(item: dict) -> list[dict]:
     return out
 
 
-def _scratch(name: str) -> str:
-    return os.path.join(SCRATCH, name)
+def _suite(name: str) -> str:
+    """A suite file, resolved inside the repository."""
+    return os.path.join(SUITES, name)
 
 
 def _argv(cmd: str) -> list[str]:
@@ -942,7 +948,7 @@ def _decode(raw) -> str:
 
 def run_cmd(cmd: str, timeout: int = 2400) -> tuple[int, str]:
     import subprocess as sp
-    cmd = cmd.replace("$S", _scratch("")).replace("%LOCALAPPDATA%",
+    cmd = cmd.replace("$S", _suite("")).replace("%LOCALAPPDATA%",
                                                    os.environ.get("LOCALAPPDATA", ""))
     if cmd.lstrip().lower().startswith("powershell"):
         # Insert -ExecutionPolicy Bypass right after the executable, so the order
@@ -1141,8 +1147,9 @@ def cmd_doctor(_args) -> int:
                 print(f"      expected {inv['md5']} -- {inv.get('why','')}")
                 bad += 1
         elif kind == "file-contains":
-            p = _scratch(inv["file"]) if not os.path.isabs(inv["file"]) \
-                else inv["file"]
+            # A bare name is a suite; a name with a directory is repo-relative.
+            p = inv["file"] if os.path.dirname(inv["file"]) else _suite(inv["file"])
+            p = p if os.path.isabs(p) else os.path.join(ROOT, p)
             ok = os.path.exists(p) and inv["contains"] in open(p, encoding="utf-8",
                                                               errors="replace").read()
             print(f"  {inv['id']}: {'ok' if ok else 'MISSING'}")
@@ -1153,7 +1160,7 @@ def cmd_doctor(_args) -> int:
 
     print()
     print("=== gate vs the suite registry (SPEC.yaml) ===")
-    gate = _scratch("gate.ps1")
+    gate = GATE
     if os.path.exists(gate):
         text = open(gate, encoding="utf-8", errors="replace").read()
         # Match `Run '<id>'` and NOT a bare substring.
@@ -1286,8 +1293,7 @@ def cmd_start(_args) -> int:
 
 
 def cmd_gate(args) -> int:
-    scratch = os.environ.get("USERPROFILE", "")
-    runner = os.path.join(scratch, "AppData", "Local", "hermes", "cache", "scratch", "gate.ps1")
+    runner = GATE
     if not os.path.exists(runner):
         print(f"gate runner not found at {runner}")
         return 1

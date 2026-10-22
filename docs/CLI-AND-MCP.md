@@ -65,7 +65,7 @@
 >   echo "$p -> $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$p/api/files)"
 > done
 > ```
-> Python 呼叫端已封裝好這兩件事：`tools/maple_mcp.py` 的 `MapleMcp()`。
+> Python 呼叫端已封裝好這兩件事：`tools/probe/maple_mcp.py` 的 `MapleMcp()`。
 
 握手實測（2026-10-11，合併 `wz_asset_*` 與 `wz_archive_*` 後）：
 
