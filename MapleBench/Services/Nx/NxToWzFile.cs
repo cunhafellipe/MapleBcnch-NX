@@ -565,11 +565,11 @@ internal static unsafe class NxAudioBytes
         // own mistake. This is the site that fires, because the tree is built before the
         // writer runs -- NxWriter's own copy of the same bytes is downstream of this one
         // and never reached.
-        if (length > NxWriter.MaxOutputBytes)
+        if (length > NxWriter.MaxSingleBufferBytes)
         {
             throw new InvalidDataException(
                 $"{Describe(audio)} is {length:N0} bytes, which is larger than the " +
-                $"{NxWriter.MaxOutputBytes:N0}-byte limit of a single buffer. This archive cannot be " +
+                $"{NxWriter.MaxSingleBufferBytes:N0}-byte limit of a single buffer. This archive cannot be " +
                 "opened or saved as it stands.");
         }
 

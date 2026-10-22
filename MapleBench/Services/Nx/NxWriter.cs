@@ -40,19 +40,43 @@ namespace MapleBench.Services.Nx;
 public static unsafe class NxWriter
 {
     /// <summary>
-    /// The largest output this writer will build, in bytes.
+    /// The largest single byte[] this runtime will hand out, in bytes.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is the CLR's own ceiling for a single array, not a policy number: a byte[] tops out
     /// at 0x7FFFFFC4 because the object header shares the allocation with the length, so an
     /// <c>int.MaxValue</c>-length array cannot exist. Everything above it has to fail loudly
     /// rather than be discovered as an allocation error halfway through a write.
-    ///
-    /// <b>Exposed because the save path must check it before starting.</b> A refusal after
-    /// gigabytes have been allocated is an out-of-memory crash; the same refusal before the
-    /// first byte is a sentence the user can act on. See <c>WzSaveService.SaveNx</c>.
+    /// </para>
+    /// <para>
+    /// <b>It is not the size of an archive.</b> It bounds ONE payload -- one canvas, one
+    /// audio entry -- and nothing else. A whole archive is streamed to the destination and
+    /// never held in one buffer, and the NX header's own table offsets are 64-bit, so the
+    /// format has no size ceiling this writer can reach. The other two limits in this file
+    /// are separate numbers under separate names:
+    /// <see cref="MaxInMemoryArchiveBytes"/> bounds a whole archive, and only on the
+    /// overload that builds one in memory; the streaming overload has no size limit at all.
+    /// </para>
     /// </remarks>
-    public const long MaxOutputBytes = 0x7FFFFFC4;
+    public const long MaxSingleBufferBytes = 0x7FFFFFC4;
+
+    /// <summary>
+    /// The largest whole archive this writer can build in memory, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The overload that hands back a byte[] holds the archive in a MemoryStream, and a
+    /// MemoryStream cannot grow past <c>int.MaxValue</c>. That is the real ceiling on that
+    /// path, and it is a different quantity from <see cref="MaxSingleBufferBytes"/>: that
+    /// one bounds a single payload, this one bounds the whole file.
+    /// </para>
+    /// <para>
+    /// The streaming overload does not have this problem and does not have this limit: it
+    /// writes the bytes out as it produces them.
+    /// </para>
+    /// </remarks>
+    public const long MaxInMemoryArchiveBytes = int.MaxValue;
 
     /// <summary>
     /// Appends little-endian values to a seekable destination, and knows exactly how long it
@@ -91,9 +115,20 @@ public static unsafe class NxWriter
         private readonly byte[] _staging = new byte[StagingBytes];
         private int _staged;
         private long _length;
+        private readonly long _maxBytes;
         private readonly List<PendingPatch> _patches = new();
 
-        internal NxSink(Stream stream) => _stream = stream;
+        /// <param name="stream">Where the archive goes.</param>
+        /// <param name="maxBytes">
+        /// The most this sink will write, or <see cref="long.MaxValue"/> for no limit at all.
+        /// It is the destination's limit, not the format's: a MemoryStream cannot grow past
+        /// <c>int.MaxValue</c>, and a file can hold anything.
+        /// </param>
+        internal NxSink(Stream stream, long maxBytes)
+        {
+            _stream = stream;
+            _maxBytes = maxBytes;
+        }
 
         /// <summary>Bytes written so far. A long, because the output can pass 2 GB.</summary>
         internal long Position => _length;
@@ -245,15 +280,18 @@ public static unsafe class NxWriter
 
         private void Reserve(int extra)
         {
-            // The ceiling is unchanged from the buffer era and is still refused before the
-            // first byte is written, but the reason it exists has changed: it was the
-            // array's own limit, and it is now a policy the save path checks up front.
-            // See WzSaveService.SaveNx, which refuses before calling here.
-            if (_length + extra > MaxOutputBytes)
+            // The limit is the destination's, not a property of the format. The streaming
+            // writer has none -- the archive goes out as it is produced, and the NX header's
+            // table offsets are 64-bit -- and the in-memory writer has the MemoryStream's own
+            // int.MaxValue. What the check buys is a sentence that names the archive instead
+            // of the MemoryStream's "Stream too long.", which says nothing about it.
+            //
+            // The comparison subtracts rather than adds, so it cannot overflow.
+            if (_length > _maxBytes - extra)
             {
                 throw new InvalidDataException(
-                    $"This archive needs more than {MaxOutputBytes:N0} bytes to write, which is more than " +
-                    "this writer will produce. Nothing was written and the destination is unchanged.");
+                    $"This archive needs more than {_maxBytes:N0} bytes to write, which is more than " +
+                    "this writer will hold in memory. Nothing was written.");
             }
         }
     }
@@ -270,7 +308,7 @@ public static unsafe class NxWriter
         ArgumentNullException.ThrowIfNull(file);
 
         using MemoryStream buffer = new();
-        Write(file, buffer, out report);
+        Write(file, buffer, MaxInMemoryArchiveBytes, out report);
 
         // GetBuffer, not ToArray: ToArray copies the whole archive again, and this is
         // exactly the copy the stream overload exists to avoid. The slice is the logical
@@ -287,6 +325,12 @@ public static unsafe class NxWriter
     /// patch. The archive is never held whole — the bytes go to the destination as they are
     /// produced — so the peak memory of a save is the plan's canvas copies and not a second
     /// copy of the output.
+    /// <para>
+    /// There is no size limit here. The bytes go out as they are produced, the header's
+    /// table offsets are 64-bit, and the reader reads them as 64-bit, so there is no
+    /// archive size this writer cannot write. The limit on the in-memory overload is that
+    /// overload's own business, and it is a different number.
+    /// </para>
     /// </remarks>
     public static void Write(WzFile file, Stream destination, out NxWriteReport report)
     {
@@ -300,10 +344,24 @@ public static unsafe class NxWriter
                 nameof(destination));
         }
 
+        Write(file, destination, long.MaxValue, out report);
+    }
+
+    /// <summary>
+    /// The writer itself, with the destination's own size limit.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="maxBytes"/> is the most the destination can hold: a MemoryStream's
+    /// <c>int.MaxValue</c>, or <see cref="long.MaxValue"/> for a stream that has no limit of
+    /// its own. The refusal is made here rather than left to the destination, because the
+    /// destination's own exception says nothing about the archive that caused it.
+    /// </remarks>
+    private static void Write(WzFile file, Stream destination, long maxBytes, out NxWriteReport report)
+    {
         var plan = Plan(file);
         var strings = BuildStringPool(plan);
 
-        var w = new NxSink(destination);
+        var w = new NxSink(destination, maxBytes);
 
         // ---- header, patched at the end once every offset is known ----
         w.Write(NxArchive.Magic);
@@ -638,18 +696,20 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
     /// instead so the sentence names the archive, the payload and the limit.
     /// </para>
     /// <para>
-    /// The ceiling is the same number as <see cref="MaxOutputBytes"/> because it is the
-    /// same limit: the largest byte[] this runtime will hand out. It is not a new
-    /// policy, and <see cref="MaxOutputBytes"/> itself is unchanged.
+    /// The ceiling is <see cref="MaxSingleBufferBytes"/>: the largest byte[] this runtime
+    /// will hand out. It bounds ONE payload. It is not the size of the archive -- a whole
+    /// archive is streamed out and the format's offsets are 64-bit -- and the archive-wide
+    /// limit is the separate <see cref="MaxInMemoryArchiveBytes"/>, which applies only to
+    /// the overload that builds one in memory.
     /// </para>
     /// </remarks>
     private static void RequireFitsOneBuffer(uint length, string what)
     {
-        if (length > MaxOutputBytes)
+        if (length > MaxSingleBufferBytes)
         {
             throw new InvalidDataException(
                 $"This archive holds a {length:N0}-byte {what} payload, which is larger than the " +
-                $"{MaxOutputBytes:N0}-byte limit of a single buffer. It cannot be written, and nothing " +
+                $"{MaxSingleBufferBytes:N0}-byte limit of a single buffer. It cannot be written, and nothing " +
                 "was written: the file on disk is unchanged.");
         }
     }

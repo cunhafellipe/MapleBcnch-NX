@@ -121,23 +121,22 @@ public sealed class WzSaveService
         // of UI art to re-encode it identically would be the single most expensive thing this
         // save could do. Everything below only moves and validates files.
 
-        // Refuse here rather than inside the writer, because the failure mode being avoided is
-        // an allocation one. NxWriter builds the whole archive into a single byte[], which tops
-        // out at NxWriter.MaxOutputBytes; finding out after the fact means gigabytes are already
-        // allocated before anything can say so. This branch's source is already an NX, and the
-        // writer carries each canvas payload through byte for byte, so the source file's own
-        // length is a sound bound on the output and costs one FileInfo to read.
-
-        // Mob.nx is 1,549,688,422 bytes and sits under the ceiling, so it still saves -- see the
-        // growth clamp in NxWriter.Ensure, which is what makes that true rather than a second
-        // way to hang.
-        if (File.Exists(source) && new FileInfo(source).Length > NxWriter.MaxOutputBytes)
-        {
-            throw new InvalidDataException(
-                $"'{file.Name}' is {new FileInfo(source).Length:N0} bytes, and writing an NX that size " +
-                $"needs a single buffer larger than this writer can hold ({NxWriter.MaxOutputBytes:N0} " +
-                "bytes). Nothing was written and the file on disk is unchanged.");
-        }
+        // There is no size check here, and the one that was here until recently was checking
+        // the wrong quantity. It refused an archive larger than what was then called
+        // NxWriter.MaxOutputBytes, on the stated ground that "NxWriter builds the whole
+        // archive into a single byte[]". That stopped being true in 5ebcaf2: the writer
+        // streams the archive out to a stream and never holds it whole. The number it
+        // compared against was the CLR's ceiling for ONE array -- a limit on a single
+        // canvas or audio payload, not on a file -- and that constant's own documentation
+        // said it was "not a policy number", while the check was using it as one.
+        //
+        // Nothing replaces it, because nothing needs replacing. The NX header holds its four
+        // table offsets in 64-bit fields, the offset tables inside it are 64-bit too, and the
+        // reader reads every one of them as 64-bit, so the format has no size ceiling this
+        // writer can reach. The limits that are real live where the allocation happens: a
+        // single payload has to fit in one buffer (NxWriter.RequireFitsOneBuffer refuses
+        // before allocating), and the writer overload that does build a whole archive in
+        // memory has the MemoryStream's own int.MaxValue.
 
         // Beside the target, and named the way NewTempName names the classic
         // scratch files. This used to be target + ".partial", which no sweep could
@@ -175,7 +174,7 @@ public sealed class WzSaveService
             {
                 if (check.NodeCount != report.Nodes)
                 {
-                    throw new InvalidOperationException(
+                    throw new ServerFailureException(
                         $"The NX file written for '{Path.GetFileName(target)}' did not read back with the " +
                         $"expected node count ({check.NodeCount} of {report.Nodes}). It was discarded and " +
                         "the destination was not touched.");
@@ -1081,7 +1080,7 @@ public sealed class WzSaveService
         {
             TryDelete(temp);
             RecoverToOriginal(file, originalPath, openedVersion, openedIv, gameVersion);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 "The archive serialised to zero bytes, so nothing was written. " + EditsLostNote());
         }
 
@@ -1096,7 +1095,7 @@ public sealed class WzSaveService
             // the platter -- the bytes are still every edit the user made.
             string rescued = KeepForRecovery(temp, destination);
             RecoverToOriginal(file, originalPath, openedVersion, openedIv, gameVersion);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The rewritten archive could not be flushed to disk, so '{Path.GetFileName(destination)}' was " +
                 $"left exactly as it was.\n\nWhat was written is kept at:\n{rescued}\n{EditsLostNote()}\n\n" +
                 $"Detail: {ex.Message}", ex);
@@ -1115,7 +1114,7 @@ public sealed class WzSaveService
         {
             TryDelete(temp);
             RecoverToOriginal(file, originalPath, openedVersion, openedIv, gameVersion);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The rewritten archive could not be read back, so '{Path.GetFileName(destination)}' was left " +
                 $"exactly as it was. {EditsLostNote()}\n\nDetail: {ex.Message}", ex);
         }
@@ -1130,7 +1129,7 @@ public sealed class WzSaveService
         {
             string rescued = KeepForRecovery(temp, destination);
             RecoverToOriginal(file, originalPath, openedVersion, openedIv, gameVersion);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The rewritten archive does not match what was open, so '{Path.GetFileName(destination)}' " +
                 $"was left exactly as it was:\n" +
                 string.Join("\n", verification.Select(v => "  - " + v)) +
@@ -1582,7 +1581,7 @@ public sealed class WzSaveService
         if (status != WzFileParseStatus.Success)
         {
             reopened.Dispose();
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The file was written to '{path}' but could not be reopened: {status.GetErrorDescription()}. " +
                 "The saved file is on disk — verify it before overwriting your client.");
         }
@@ -1641,7 +1640,7 @@ public sealed class WzSaveService
 
         if (!File.Exists(temp))
         {
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 "The image was serialised but no output file appeared; the original was left untouched.");
         }
 
@@ -1649,7 +1648,7 @@ public sealed class WzSaveService
         if (bytes == 0)
         {
             TryDelete(temp);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 "The image serialised to zero bytes; the original file was left untouched.");
         }
 
@@ -1662,7 +1661,7 @@ public sealed class WzSaveService
         catch (Exception ex)
         {
             string rescued = KeepForRecovery(temp, destination);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The image could not be flushed to disk, so '{Path.GetFileName(destination)}' was left " +
                 $"untouched.\n\nWhat was written is kept at:\n{rescued}\n\nDetail: {ex.Message}", ex);
         }
@@ -1679,7 +1678,7 @@ public sealed class WzSaveService
         catch (Exception ex)
         {
             TryDelete(temp);
-            throw new InvalidOperationException(
+            throw new ServerFailureException(
                 $"The rewritten image did not verify, so '{Path.GetFileName(destination)}' was left " +
                 $"untouched. Detail: {ex.Message}", ex);
         }
@@ -1828,13 +1827,13 @@ public sealed class WzSaveService
         try
         {
             if (!candidate.ParseImage())
-                throw new InvalidOperationException("the candidate cannot be parsed as a WZ image");
+                throw new ServerFailureException("the candidate cannot be parsed as a WZ image");
 
             WzContentHasher.ClearCache();
             string actualHash = WzContentHasher.Hash(candidate);
             if (!string.Equals(expectedHash, actualHash, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
+                throw new ServerFailureException(
                     "the candidate's complete property tree differs from the edited image");
             }
 
