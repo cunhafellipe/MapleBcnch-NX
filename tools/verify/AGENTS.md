@@ -27,6 +27,22 @@ and the eighth and ninth here.
 | 15 | A citation extractor matched `Name.ext` without requiring the extension to END at a non-identifier character, so the C++ member access `phobj.hspeed = phobj.vx = 0;` was read as a citation of `phobj.h`, and `status.hp: 0` as a citation of `status.h`. Both were reported as `FILE_MISSING`. | The tool reported **2 reference files that do not exist and never needed to exist**. The output was a plausible, well-formed gap list, so a reviewer would have gone looking for two holes in the authoritative reference — and the real answer, "0 missing", was nowhere in the report. A false positive here manufactures work. | **A pattern that matches text must end at a BOUNDARY, not inside a word.** Require the match to be followed by a non-identifier character (`(?![A-Za-z0-9_])`). And when a category comes out empty, write `0` and say what was checked — never leave a reader with a list of things that are not there. See rule 12. |
 | 16 | `gate.ps1`'s `Alive` printed a "backend unreachable" message **and** returned `$false` from its `catch`. A PowerShell function returns everything it wrote, so it returned a **two-element array** (the message, then `False`); `-not` on a non-empty array is `$false`, so `if (-not (Alive $name))` **never fired**. | The message was on screen; the counter never knew it. With the backend down, every suite printed `>>> RED (backend unreachable)` and the gate still ended `RED SUITES: 0` and exit 0. A gate that cannot see a red suite is worse than no gate, because it reports green. | **A function that RETURNS A VALUE must not also WRITE to the success stream.** See rule 13. |
 
+**⇒ Correction to #14's mechanism (measured 2026-10-22, ablation on a 30-line
+repro).** The observed `LOCAL`/`GLOBAL` numbers were right; the explanation
+was wrong. The `0` was **not** left behind by the native call, and it was
+**not** a function-scope copy — it was the script's **own** top-level
+`$LASTEXITCODE = 0`, sitting in **script scope**. In the `-File` form,
+script scope IS the outermost scope, so the native call overwrites that
+same copy and the read is right. In the `-Command` form, script scope is a
+**child** of the `-Command` scope, the native call writes the real code one
+level **out**, and the script's own `0` **shadows it at read time**. Scope
+dump: `-Command` => SCOPE 1 = 0 (script), SCOPE 2 = 1 (-Command), GLOBAL = 1;
+`-File` => SCOPE 1 = 1, GLOBAL = 1. Removing that one assignment makes the
+`-Command` form correct on its own; removing `$global:LASTEXITCODE = 0` or
+`Set-StrictMode` changes nothing. **⇒ The culprit is the assignment, not
+the invocation form.** The fix is in `d8b7405` (the harness reads
+`ProcessStartInfo.ExitCode`); only this explanation was stale.
+
 Two of these were **the same bug twice**: #5 had already produced a dedicated
 tool, and the tool was not used.
 
@@ -367,15 +383,21 @@ tool, and the tool was not used.
     censused, one module name per root, plus an assertion that every
     resolved suite path lies inside that root.
 
-    **⇒ What is left on 2026-10-22:** 2 declared suites
-    (`MapleBench/tools/browser-verify.mjs`,
-    `MapleBench/tools/sim-skills-check.mjs`), and 6 probe scripts that
-    really do talk to an instance (`tools/probe/probe-e2e.js`,
-    `probe-load.js`, `probe-paintwalk.js`, `probe-tiles.js`,
-    `tools/probe/task23-shapes.py`, `MapleBench/tools/probe-A-lib.mjs`).
-    Three other hits (`tools/probe/avatar-check.mjs`,
-    `tools/probe/close-stub.js`, `tools/probe/mcp-assets.mjs`) are
-    **deliberate fakes** and are not defects.
+    **⇒ Do not read "what is left" out of this rule — read it out of the
+    census.** A rule that lists current contents is stale the moment the
+    next commit lands, and a stale list is worse than no list: it sends
+    someone to fix what is already fixed. Run the instrument and compare:
+
+    ```
+    python tools/verify/archive-id-census.py --root . --label current
+    ```
+
+    **⇒ The expected answer on 2026-10-22, after `2216675`:**
+    `suites_with_CODE = 0` among the declared suites, and the only CODE
+    hits left are 3 **deliberate fakes** (`tools/probe/avatar-check.mjs`,
+    `tools/probe/close-stub.js`, `tools/probe/mcp-assets.mjs`) — those are
+    not defects. **⇒ If your number differs, the census is right and this
+    paragraph is out of date; fix the paragraph, not the census.**
 
 17. **A judge pointed at an instance running a STALE binary is not a
     measurement of the tree.** Measured 2026-10-22: the gate instance
