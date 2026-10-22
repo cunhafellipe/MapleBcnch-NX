@@ -36,7 +36,36 @@
 //
 // Run:  node MapleBench/tools/probe-C3-node-shapes.mjs
 
-const BASE = process.env.BASE ?? 'http://127.0.0.1:5591';
+// The backend comes from BASE and from nowhere else (task-134).  The variable
+// is NOT renamed: pm/loop/go-01/E-harness.md and this file's own header both
+// document BASE as this family's override, so changing it would change a live
+// calling convention.  What goes away is the DEFAULT PORT: an instance older
+// than this tree answers every one of these requests happily, and a probe that
+// silently measures it reports the stale numbers as findings.
+// The shape is the one tools/verify/suites/skillshape-verify.mjs uses; the
+// trailing-slash strip is load-bearing (a doubled slash 404s every request).
+const BASE_ENV = (process.env.BASE || '').trim();
+const OTHER_BASE = (process.env.GATE_BASE || '').trim();
+if (BASE_ENV && OTHER_BASE && BASE_ENV !== OTHER_BASE) {
+  console.log(`>>> RED: BASE and GATE_BASE name different instances: `
+    + `BASE=${JSON.stringify(BASE_ENV)} GATE_BASE=${JSON.stringify(OTHER_BASE)}. `
+    + `Set BASE only.`);
+  process.exit(1);
+}
+if (OTHER_BASE && !BASE_ENV) {
+  console.log(`>>> RED: GATE_BASE is set (${JSON.stringify(OTHER_BASE)}) but BASE is not. `
+    + `This probe family reads BASE; set BASE and unset GATE_BASE.`);
+  process.exit(1);
+}
+if (!BASE_ENV) {
+  console.log('>>> RED: BASE is not set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         BASE=http://127.0.0.1:<port> node " + (process.argv[1] || 'this probe'));
+  console.log('       There is no default port on purpose: an older instance on the');
+  console.log('       usual port answers every one of these requests.');
+  process.exit(1);
+}
+const BASE = BASE_ENV.replace(/\/+$/, '');
 
 const get = async (p) => {
   const r = await fetch(`${BASE}${p}`);

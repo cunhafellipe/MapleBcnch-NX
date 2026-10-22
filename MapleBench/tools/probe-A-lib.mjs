@@ -2,7 +2,38 @@
 // Every helper prints NUMBERS, never "ok".
 import { setTimeout as sleep } from 'node:timers/promises';
 
-export const BASE = process.env.MB_BASE ?? 'http://127.0.0.1:5591';
+// The backend comes from MB_BASE and from nowhere else (task-134).  The variable
+// is NOT renamed: pm/loop/go-01/A-damage-hitbox.md:335 documents
+// "(override with MB_BASE)", so MB_BASE is a live calling convention.  What goes
+// away is the DEFAULT PORT: an instance older than this tree answers every one of
+// these requests happily, and a probe that silently measures it reports the stale
+// numbers as findings.
+// The shape is the one tools/verify/suites/skillshape-verify.mjs uses, keyed to
+// this family's variable; the trailing-slash strip is load-bearing (a doubled
+// slash 404s every request).  A module-level exit is right here: this file is
+// imported by probe-A1..A5, and every importer must refuse too.
+const MB_BASE = (process.env.MB_BASE || '').trim();
+const OTHER_BASE = (process.env.BASE || '').trim();
+if (MB_BASE && OTHER_BASE && MB_BASE !== OTHER_BASE) {
+  console.log(`>>> RED: MB_BASE and BASE name different instances: `
+    + `MB_BASE=${JSON.stringify(MB_BASE)} BASE=${JSON.stringify(OTHER_BASE)}. `
+    + `Set MB_BASE only.`);
+  process.exit(1);
+}
+if (OTHER_BASE && !MB_BASE) {
+  console.log(`>>> RED: BASE is set (${JSON.stringify(OTHER_BASE)}) but MB_BASE is not. `
+    + `The probe-A family reads MB_BASE; set MB_BASE and unset BASE.`);
+  process.exit(1);
+}
+if (!MB_BASE) {
+  console.log('>>> RED: MB_BASE is not set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         MB_BASE=http://127.0.0.1:<port> node " + (process.argv[1] || 'this probe'));
+  console.log('       There is no default port on purpose: an older instance on the');
+  console.log('       usual port answers every one of these requests.');
+  process.exit(1);
+}
+export const BASE = MB_BASE.replace(/\/+$/, '');
 
 // The archive id is handed out in the order the archives were opened, so 'f4'
 // is Map.nx on one instance and something else on another. Resolve it by NAME.
