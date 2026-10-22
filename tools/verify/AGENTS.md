@@ -234,6 +234,33 @@ tool, and the tool was not used.
     "clean" must never share a report — the same species as incident 12 and
     as a gate reading a MISSING suite file as GREEN.
 
+14. **A suite's GREEN shape is decoration; only its RED markers decide the
+    verdict.** `gate.ps1` decides what to PRINT from one list
+    (`VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS:`) and decides what to JUDGE
+    from a different one (`$RED` plus `BAD=[1-9]`). A suite with no green
+    shape only makes the gate print `(read the tail)` — a **readability**
+    defect. A suite with no red marker leaves `$bad` empty, so the gate
+    prints `ok` and the suite **passes** — a **verdict** defect.
+
+    The two differ by an order of magnitude, so a review that lists them
+    side by side understates the second.
+
+    Measured 2026-10-22: `attackdrop-verify.py` has no `sys.exit`, no
+    `>>> RED` and no `BAD=` anywhere in the file, so it is **structurally
+    incapable of reporting red**. Fifty mobs with the wrong attack count
+    produce one line of text and the gate says `ok`.
+
+    **A suite that cannot print the marker the gate greps for does not exist
+    as far as the gate is concerned** — and a suite that aborts without a
+    marker is worse than one that never ran, because the abort reads as a
+    pass.
+
+    And note the case sensitivity: `String.Contains` is case-sensitive, so
+    `NO DAMAGE over 400 frames` does not match the marker `NO damage
+    number`. A fix already exists in the tree — `mob-attack-verify.ps1`
+    carries the corrected form — so **copy the shape that is already
+    there; do not invent a new marker.**
+
 ---
 
 ## Before you trust a measurement
