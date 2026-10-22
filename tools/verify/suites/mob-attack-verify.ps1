@@ -186,7 +186,16 @@ if ($hits.Count -eq 0) {
   # case, so a mob that never touched the player scored GREEN. Emit the marker
   # the gate actually reads.
   ">>> RED: no damage over 400 frames, and the character was alive throughout -- the mob never connected"
+  # A suite that fails must ALSO exit non-zero. The gate greps the output, but
+  # every other caller in this project reads the exit code (AGENTS.md rule 14).
+  exit 1
 } else {
   $hits | ForEach-Object { $_ }
   "  gap $gap0 -> closest $closest : the mob closed the distance on its own after one landed hit"
+  # The gate PRINTS the last line matching VERDICT|ALL LADDERS PASS|passed,|
+  # BAD=|PASS: (gate.ps1:93-94) and without one it can only show "(read the
+  # tail)", which pushes the verdict onto a human reading every suite's
+  # output. This line is the green shape; the red branches above stay
+  # marker-only, so a red never also prints a green shape.
+  "VERDICT: mob-attack-verify closed the distance on its own and landed hits"
 }

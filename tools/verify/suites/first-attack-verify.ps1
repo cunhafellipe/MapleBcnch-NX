@@ -19,7 +19,9 @@ function Step($sid, $k) {
 # firstAttack; it does not, so the test proved nothing while looking like a pass.
 $fa = Invoke-RestMethod "$base/api/inspect?path=$([uri]::EscapeDataString("$mobId/$FirstAttackMob.img/info/firstAttack"))" -TimeoutSec 300
 "calibration: $FirstAttackMob firstAttack = '$($fa.node.value)'  (must be '1')"
-if ($fa.node.value -ne '1') { "ABORT: that mob has no firstAttack; the test would prove nothing."; exit 1 }
+# The gate decides the verdict from EXPLICIT markers (gate.ps1:47, :97-99) and
+# never reads an exit code, so an "ABORT:" in prose used to score "ok".
+if ($fa.node.value -ne '1') { ">>> RED: that mob has no firstAttack; the test would prove nothing."; exit 1 }
 $pl = try {
   (Invoke-RestMethod "$base/api/inspect?path=$([uri]::EscapeDataString("$mobId/$PlainMob.img/info/firstAttack"))" -TimeoutSec 300).node.value
 } catch {
@@ -60,9 +62,14 @@ for ($i = 0; $i -lt 400; $i++) {
 }
 $m = @($a.mobs)[$($sum.indexes[0])]
 "  plain mob x $startX -> $([double]$m.x)  (closest approach to the player: $closest px)"
+$stage1Failed = $false
 if ([Math]::Abs([double]$m.x - $startX) -lt 1) { "  PASS: it did not walk toward the player -- no firstAttack, never struck" }
-else { "  FAIL: it moved $([Math]::Abs([double]$m.x - $startX)) px toward a player it was never told about" }
+# Same trap as the ABORT above: a "FAIL" in prose is not a marker. The gate
+# would print "ok" and this failure would be counted as a pass.
+else { $stage1Failed = $true; ">>> RED: it moved $([Math]::Abs([double]$m.x - $startX)) px toward a player it was never told about" }
 Invoke-RestMethod "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+# A failing suite must also exit non-zero -- callers read the exit code (rule 14).
+if ($stage1Failed) { exit 1 }
 
 "=== 2. a mob WITH firstAttack must PURSUE and hit, unprovoked ==="
 $s2 = Sess 1710 -25
@@ -75,6 +82,10 @@ for ($i = 0; $i -lt 400; $i++) {
   if ($a.playerDamage -gt 0) { $hits += "  +$i frames: hit for $($a.playerDamage), hp $($a.status.hp)/$($a.status.maxHp)" }
   if ($hits.Count -ge 2) { break }
 }
-if ($hits.Count -eq 0) { "  NO DAMAGE over 400 frames -- FAIL (firstAttack did not acquire)" }
+# W-056, the same bug the sibling suite already fixed: the gate reads the
+# literal "NO damage number" and String.Contains does not match on case.
+$stage2Failed = $false
+if ($hits.Count -eq 0) { $stage2Failed = $true; ">>> RED: no damage over 400 frames -- firstAttack did not acquire" }
 else { $hits | ForEach-Object { $_ }; "  PASS: it attacked without being struck" }
 Invoke-RestMethod "$base/api/simulate/session/$($s2.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+if ($stage2Failed) { exit 1 }

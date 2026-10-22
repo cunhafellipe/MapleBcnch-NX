@@ -11,7 +11,7 @@ MEASURED: for every attack node in a sample, compare
   * what OUR endpoint reports
 and report every node we do not report, with the reason.
 """
-import json, os, urllib.parse, urllib.request
+import json, os, sys, urllib.parse, urllib.request
 from collections import Counter
 
 BASE = os.environ.get("GATE_BASE") or "http://127.0.0.1:5591"
@@ -91,8 +91,12 @@ for mid in judged:
             dropped.append(f"{mid}/{node}: info={has_info} anim={has_anim} reported={node in reported}")
 
 print(f"\ninspect calls: {dict(FAILURES)}")
-if FAILURES.get("ok", 0) < 200:
-    print(">>> too few successful reads for this run to mean anything")
+too_few_reads = FAILURES.get("ok", 0) < 200
+if too_few_reads:
+    # The gate decides the verdict from EXPLICIT markers (gate.ps1:47, :97-99)
+    # and never reads an exit code, so a run that measured nothing used to be
+    # scored "ok" -- the suite that proved nothing read as a pass.
+    print(">>> RED: too few successful reads for this run to mean anything")
 print(f"\nattack-node count per mob: {dict(sorted(counts.items()))}")
 print(f"attack nodes with NO info  : {no_info}")
 print(f"attack nodes with NO anim  : {no_anim}")
@@ -141,3 +145,17 @@ print(f"\nattacks the reference KEEPS, per mob: {dict(sorted(kept_by_reference.i
 print(f"mobs where our count differs from that: {mismatch}")
 print("Every dropped node is one the reference's own `node[\"0\"]` test drops too; "
       "the counts above are the expectation, not a wish.")
+
+# A count that differs from the reference IS a defect, and until now it was
+# only a number in a sentence: this file had no >>> RED, no BAD= and no
+# sys.exit anywhere, so the gate scored it "ok" whatever it measured. Fifty
+# mobs with the wrong attack count produced one line of text and a green.
+if mismatch:
+    print(f">>> RED: {mismatch} mob(s) where our attack count differs from what the reference keeps")
+
+# BAD=n is the shape the other python suites use (knockback-verify.py:168,
+# projectile-verify.py:404). It is the green shape the gate PRINTS, and for a
+# non-zero count it is also the red marker the gate JUDGES on.
+bad = (1 if too_few_reads else 0) + mismatch
+print(f"\nBAD={bad}")
+sys.exit(1 if bad else 0)
