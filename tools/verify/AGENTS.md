@@ -71,7 +71,29 @@ tool, and the tool was not used.
    Without a usable `DOTNET_ROOT` or without git, the affected cases report
    SKIP **and say why**. **Anything else means this tooling is now
    unreliable.**
-3. **Known-answer tests only.** A test that cannot fail proves nothing.
+3. **Known-answer tests only.** A test that cannot fail proves nothing.   **A test that fails for the WRONG reason is not a test** — it is worse
+   than no test, because it passes later for a reason nobody checked.
+
+   Measured 2026-10-22: a case meant to isolate "the census was truncated"
+   was built from three *real* citations, and it went red — but for
+   `NO_TEXT`, because a sweep never carries citation text (rule 14's own
+   mechanism). The truncation it was supposed to prove was never exercised.
+   Re-built from three citations naming files that do not exist, the only
+   thing left that can turn it red is the truncation itself, and the tool
+   printed `exit=0 CITATIONS_TRUNCATED=2 RESULT=PASS` — the defect the case
+   was written to catch.
+
+   **⇒ When a case fails, read WHICH counter moved.** "Red" is not evidence;
+   the counter that went up is. A case that is red for an incidental reason
+   will stop being red the moment that incidental reason is fixed, and the
+   case it was written for will never have been tested.
+
+   **⇒ One observable quantity per case** (rule 14 again, applied to the
+   test rather than the tool). Assert the exit code alone when the exit code
+   is the claim; assert one named counter when the claim is about a count.
+   **⇒ And a fix that renames or re-shapes the output must update the
+   assertion in the same commit — never widen the assertion to turn it
+   green.**
 4. **`eol-check.ps1` compares the working tree against `HEAD`, not against the
    index.** A bare `git diff` compares the working tree with the index, so on
    a file whose changes are already staged it is empty — and that empty output
