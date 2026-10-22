@@ -44,7 +44,7 @@ public static class Program
                 };
 
                 options.ServerInstructions = """
-                    Nine surfaces over one MapleBench backend, 90 tools.
+                    Nine surfaces over one MapleBench backend, 91 tools.
                     All need the backend running (MapleBenchX.exe --browser
                     --port <p>), and the archives must be OPENED first.
 

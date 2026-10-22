@@ -195,7 +195,16 @@ public static class RenderTools
         if (files is not JsonArray arr) return null;
         foreach (JsonNode? f in arr)
         {
-            string? n = f?["name"]?.ToString();
+            // A null element has no "name", so it can never be the Mob archive. Saying
+            // that outright is what the compiler needed: with `f?["name"]` the flow
+            // analysis could not prove `f` was non-null at the `f["id"]` below and
+            // reported CS8602, even though `f?["name"]` returning null already implies
+            // `f` was null. Written as an explicit null check the fact is visible, so
+            // no suppression is needed. Behaviour is unchanged either way: a null
+            // element fell through the `n != null` test before.
+            if (f is null) continue;
+
+            string? n = f["name"]?.ToString();
             if (n != null && n.StartsWith("Mob", StringComparison.OrdinalIgnoreCase))
                 return f["id"];
         }

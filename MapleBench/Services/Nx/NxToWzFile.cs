@@ -552,6 +552,27 @@ internal static unsafe class NxAudioBytes
             return [];
         }
 
+        // The length is a uint out of the archive and the destination is a byte[], so the
+        // copy is bounded twice: by int.MaxValue for the conversion and by the CLR's
+        // array ceiling (0x7FFFFFC4) for the allocation. Past either one the array
+        // allocation throws with a sentence that says nothing about the archive --
+        // "Arithmetic operation resulted in an overflow." or "Array dimensions exceeded
+        // supported range." -- and the caller sees an HTTP 500 whose message is
+        // "Something went wrong.".
+        //
+        // MEASURED 2026-10-22 on a hand-built NX whose single audio payload was
+        // 2,147,483,648 bytes: exactly that, on a path a tester cannot tell from their
+        // own mistake. This is the site that fires, because the tree is built before the
+        // writer runs -- NxWriter's own copy of the same bytes is downstream of this one
+        // and never reached.
+        if (length > NxWriter.MaxOutputBytes)
+        {
+            throw new InvalidDataException(
+                $"{Describe(audio)} is {length:N0} bytes, which is larger than the " +
+                $"{NxWriter.MaxOutputBytes:N0}-byte limit of a single buffer. This archive cannot be " +
+                "opened or saved as it stands.");
+        }
+
         var buffer = new byte[length];
         System.Runtime.InteropServices.Marshal.Copy(
             new IntPtr(audio.Archive.PointerAt(offset)), buffer, 0, (int)length);

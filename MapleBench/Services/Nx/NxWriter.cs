@@ -606,11 +606,52 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
         plan.BitmapByOrigin[key] = node.BitmapIndex;
 
         var (offset, length) = nx.Canvas.EncodedRange;
+        RequireFitsOneBuffer(length, "canvas");
         byte[] encoded = new byte[length];
         System.Runtime.InteropServices.Marshal.Copy(
             new IntPtr(nx.Canvas.Archive.PointerAt(offset)), encoded, 0, (int)length);
         plan.Bitmaps.Add(encoded);
         plan.CanvasesCopied++;
+    }
+
+    /// <summary>
+    /// Refuses a payload that no single buffer can hold, before the allocation that
+    /// would throw something meaningless.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The payload length is a <c>uint</c> read out of the archive, and the array it is
+    /// about to be copied into is a <c>byte[]</c>, so the copy is bounded twice: by
+    /// <see cref="int.MaxValue"/> for the conversion and by the CLR's array ceiling
+    /// (0x7FFFFFC4) for the allocation. Both limits fail with a message that says
+    /// nothing about the archive:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>over int.MaxValue: "Arithmetic operation resulted in an overflow."</description></item>
+    /// <item><description>over the array ceiling: "Array dimensions exceeded supported range."</description></item>
+    /// </list>
+    /// <para>
+    /// MEASURED 2026-10-22 on a hand-built NX whose single audio payload was
+    /// 2,147,483,648 bytes: the save answered HTTP 500 with
+    /// <c>message: "Something went wrong."</c> and that overflow text hidden in
+    /// <c>detail</c>. A tester would read that as their own mistake. The check is here
+    /// instead so the sentence names the archive, the payload and the limit.
+    /// </para>
+    /// <para>
+    /// The ceiling is the same number as <see cref="MaxOutputBytes"/> because it is the
+    /// same limit: the largest byte[] this runtime will hand out. It is not a new
+    /// policy, and <see cref="MaxOutputBytes"/> itself is unchanged.
+    /// </para>
+    /// </remarks>
+    private static void RequireFitsOneBuffer(uint length, string what)
+    {
+        if (length > MaxOutputBytes)
+        {
+            throw new InvalidDataException(
+                $"This archive holds a {length:N0}-byte {what} payload, which is larger than the " +
+                $"{MaxOutputBytes:N0}-byte limit of a single buffer. It cannot be written, and nothing " +
+                "was written: the file on disk is unchanged.");
+        }
     }
 
     private static byte[] EncodeWebp(Bitmap bitmap, NxPlan plan)
@@ -652,6 +693,7 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
             // The NX form keeps an 82-byte sound header that the MapleLib property does not
             // hold, so the original payload is the only complete answer.
             var (offset, length) = nx.EncodedRange;
+            RequireFitsOneBuffer(length, "audio");
             payload = new byte[length];
             System.Runtime.InteropServices.Marshal.Copy(
                 new IntPtr(nx.Archive.PointerAt(offset)), payload, 0, (int)length);
