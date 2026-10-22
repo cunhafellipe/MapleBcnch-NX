@@ -485,6 +485,80 @@ if ($haveGit -and $script:VerifyDotNet.Status -eq 'OK') {
                                   ' dotnet=' + $script:VerifyDotNet.Status)
 }
 
+# =========================================================================
+# CITATION CHECK : a checker that cannot go red is not a check
+# =========================================================================
+# citation-check.py is a Python tool, so it needs its own launcher.  The
+# exit code comes from ProcessStartInfo.ExitCode through Invoke-CheckedProcess
+# (rule 11) -- never from $LASTEXITCODE.
+#
+# Three cases.  The last two are a PAIR over ONE fixture that differ only
+# in the spec: the same file, the same line, quoted text that IS on the line
+# in one spec and is NOT in the other.  A tool that always exits 0 fails
+# the red arm; a tool that always exits non-zero fails the green arm and
+# the self-test arm.  Either arm on its own would be satisfied by a broken
+# tool, which is the whole point of the control group.
+function Invoke-PythonTool {
+    param([string]$Script, [string[]]$ToolArgs = @())
+    $path = Join-Path $PSScriptRoot $Script
+    if (-not [System.IO.File]::Exists($path)) { throw ('tool not found: ' + $path) }
+    $py = (Get-Command python -ErrorAction SilentlyContinue)
+    if ($null -eq $py) { throw 'python is not on PATH' }
+    $r = Invoke-CheckedProcess -FilePath $py.Source -ArgumentList (@($path) + $ToolArgs) -TimeoutSeconds 600
+    if ($r.LaunchError -ne '') { throw ('could not launch ' + $Script + ': ' + $r.LaunchError) }
+    if ($r.TimedOut) { throw ($Script + ' timed out') }
+
+    $script:ChildExitCaptured++
+    $code = [int]$r.ExitCode
+    if ($code -ne 0) { $script:ChildExitNonZero++ }
+
+    $out = ([string]$r.StdOut)
+    $err = ([string]$r.StdErr)
+    if ($err.Trim() -ne '') { $out = $out + "`n" + $err }
+    return @{ Exit = $code; Out = $out }
+}
+
+$pyExe = (Get-Command python -ErrorAction SilentlyContinue)
+$havePython = ($null -ne $pyExe)
+if ($haveGit -and $havePython) {
+    # A repository with ONE committed, CLEAN file.  The file must be clean:
+    # a dirty file is reported unblessed, and an unblessed row is a defect,
+    # so a dirty fixture would make the green arm red for the wrong reason.
+    $citeRepo = Join-Path $root 'citerepo'
+    New-Item -ItemType Directory -Path $citeRepo -Force | Out-Null
+    $ccg = { param([string[]]$a) Invoke-CheckedProcess -FilePath $gitExe.Source -ArgumentList $a -WorkingDirectory $citeRepo -TimeoutSeconds 60 }
+    & $ccg @('init', '-q', '-b', 'main') | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $citeRepo 'cited.cs'), ("the marker line`nsecond line`n"), $utf8NoBom)
+    & $ccg @('-c', 'user.email=vself@example.invalid', '-c', 'user.name=vself', '-c', 'core.autocrlf=false', 'add', '-A') | Out-Null
+    & $ccg @('-c', 'user.email=vself@example.invalid', '-c', 'user.name=vself', '-c', 'core.autocrlf=false', 'commit', '-q', '-m', 'add cited') | Out-Null
+
+    $citeGood = Join-Path $root 'cite-good.json'
+    $citeBad = Join-Path $root 'cite-bad.json'
+    [System.IO.File]::WriteAllText($citeGood, '{"citations":[{"file":"cited.cs","line":1,"text":"the marker line"}]}', $utf8NoBom)
+    [System.IO.File]::WriteAllText($citeBad, '{"citations":[{"file":"cited.cs","line":1,"text":"a line that is on no line at all"}]}', $utf8NoBom)
+
+    $rCiteSelf = Invoke-PythonTool -Script 'citation-check.py' -ToolArgs @('--self-test')
+    Add-Case -Id 'CITE-self-test-is-green' `
+        -Expectation 'the citation checker passes its own known-answer suite' `
+        -Ok (($rCiteSelf.Exit -eq 0) -and ((Get-ToolField -Out $rCiteSelf.Out -Field 'CASES_FAIL') -eq '0')) `
+        -Evidence ("exit=" + $rCiteSelf.Exit + ' CASES_PASS=' + (Get-ToolField -Out $rCiteSelf.Out -Field 'CASES_PASS') +
+                   ' CASES_FAIL=' + (Get-ToolField -Out $rCiteSelf.Out -Field 'CASES_FAIL'))
+
+    $rCiteGood = Invoke-PythonTool -Script 'citation-check.py' -ToolArgs @('--spec', $citeGood, '--repo', $citeRepo)
+    Add-Case -Id 'CITE-a-correct-citation-is-green' `
+        -Expectation 'a citation whose quoted text really is on the cited line passes' `
+        -Ok (($rCiteGood.Exit -eq 0) -and ((Get-ToolField -Out $rCiteGood.Out -Field 'CITATION_OK') -eq '1')) `
+        -Evidence ("exit=" + $rCiteGood.Exit + ' CITATION_OK=' + (Get-ToolField -Out $rCiteGood.Out -Field 'CITATION_OK'))
+
+    $rCiteBad = Invoke-PythonTool -Script 'citation-check.py' -ToolArgs @('--spec', $citeBad, '--repo', $citeRepo)
+    Add-Case -Id 'CITE-a-wrong-citation-goes-red' `
+        -Expectation 'a citation whose quoted text is on no line at all fails' `
+        -Ok (($rCiteBad.Exit -ne 0) -and ((Get-ToolField -Out $rCiteBad.Out -Field 'CITATION_NOT_FOUND') -eq '1')) `
+        -Evidence ("exit=" + $rCiteBad.Exit + ' CITATION_NOT_FOUND=' + (Get-ToolField -Out $rCiteBad.Out -Field 'CITATION_NOT_FOUND'))
+} else {
+    Add-Skip -Id 'CITE-*' -Why ('needs git and python; git=' + $haveGit + ' python=' + $havePython)
+}
+
 # Rule 10 sentinel: prove the harness observed the children's REAL exit
 # codes, not a constant zero.
 #
