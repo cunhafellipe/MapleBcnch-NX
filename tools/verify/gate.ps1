@@ -141,6 +141,15 @@ Run 'position-accuracy' { python "$S\position-accuracy.py" }
 # by agreeing with itself. It needs Mob.nx open, which the documented loop does.
 Run 'attack-frame-timing' { python "$S\attack-frame-timing.py" }
 
+# ADR-0005 criterion 2 again, the other two numbers the same info node carries:
+# the attack's DAMAGE (Mob.cpp:160, with the mob's own PADamage/MADamage as the
+# fallback when the attack declares none) and the projectile's speed
+# (Mob.cpp:161). Same shape as the suite above: the numbers come from the
+# ARCHIVE and the reference's formulas are applied to them here, so a port that
+# publishes a wrong damage number cannot pass by agreeing with itself. It needs
+# Mob.nx open, which the documented loop does.
+Run 'attack-damage' { python "$S\attack-damage.py" }
+
 # W-089. The 66-skill SHAPE sweep, resident.
 #
 # W-087 found that 22 of the 66 castable skills dealt no damage, and the reason

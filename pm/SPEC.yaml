@@ -112,7 +112,7 @@ suites:
   - id: mob-attack-verify
     file: tools/verify/suites/mob-attack-verify.ps1
     runner: powershell
-    verdict: "closed the distance"
+    verdict: "VERDICT: mob-attack-verify"
     asserts: true
     areas: [simulate, mob]
   - id: first-attack-verify
@@ -168,7 +168,7 @@ suites:
   - id: attack-drop
     file: tools/verify/suites/attackdrop-verify.py
     runner: python
-    verdict: ""
+    verdict: "BAD="
     asserts: true
     red_marker: ">>> RED"
     areas: [simulate, mob]
@@ -264,6 +264,27 @@ suites:
       就不能靠同意自己過關。斷言：槽位集合、duration、命中時刻、投射物自己的幀延遲，
       加上兩組寫下來的已知答案。覆蓋面是全體：2,100 張 mob img、1,677 個 attack 節點、
       參照承認的 2,023 個槽位，沒有抽樣。
+  - id: attack-damage
+    file: tools/verify/suites/attack-damage.py
+    runner: python
+    verdict: "VERDICT: attack-damage"
+    asserts: true
+    areas: [simulate, mob]
+    added: ADR-0005-2
+    note: >
+      ADR-0005 第二條「機制準確」的第二支判官，攻擊的傷害數字與投射物速度。
+      抄進程式碼的參照規則：Mob.cpp:160（power = 攻擊自己的 MADamage/PADamage，
+      沒有就退回 Mob.cpp:60-61 怪物自己的 info/MADamage|PADamage；三元條件是節點
+      「存在」而非值為真，node.cpp:152-154）、Mob.cpp:161（bullet_speed =
+      max(1, bulletSpeed)，預設 100）、node.cpp:227-229（get_bool 只有整數節點
+      為真）、Mob.cpp:169（geometry type）、node.cpp:155-173（字串以 stoll 解析，
+      所以 "900" 是 900）、MobAttack.cpp:157（投射物飛行時間 = 半徑×600/速度）。
+      封存的數值從 archive 端連同節點「型別」一起讀（/api/inspect），因為參照的規則
+      是用型別寫的。斷言：傷害數字、magic 旗標、投射物速度、geometry type，加上六組
+      寫下來的已知答案（含一個字串傷害與一個退回怪物自身數值的案例）。覆蓋面是全體：
+      2,100 張 mob img、1,677 個 attack 節點、1,180 隻有攻擊的怪、port 發佈的每一個
+      槽位都逐槽比對，沒有抽樣；port 未發佈的槽位只計數不判（那是 attack-frame-timing
+      的斷言）。
   - id: skillshape
     file: tools/verify/suites/skillshape-verify.mjs
     runner: node
