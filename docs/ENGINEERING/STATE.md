@@ -768,7 +768,7 @@ eol-check PASS / TRUST=HIGH / `text_equal=True`。
 
 **⇒ ⚠️ 閘會紅，而且紅在 **judge 身上**，不在 port 身上。**
 **⇒ `tools/verify/suites/ballart-verify.py`：F2-only build `BAD=0 exit 0`；
-F1 build `BAD=18 exit 0`（`>>> a published frame index matched NO admissible rule: 9`、
+F1 build `BAD=18 exit 0` (9+9 on one run, 32 (16+16) on another - the count follows the swing length, which varies run to run)（`>>> a published frame index matched NO admissible rule: 9`、
 `>>> the ball was still on frame 0 where it cannot be: 9`）。
 ⇒ 原因是 **judge 自己的參照實作不對**：`phase_own_delays`（第 173 行）不回捲，
 而第 365 行的「不能在 frame 0」檢查拿**原始 `since`** 當門檻、不是拿相位。
