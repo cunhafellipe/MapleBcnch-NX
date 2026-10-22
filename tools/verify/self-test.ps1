@@ -382,6 +382,62 @@ Add-Case -Id 'INC12-present-fields-pass' -Expectation 'the fields the payload do
     -Ok ($rInc12Present.Exit -eq 0) `
     -Evidence ("exit=" + $rInc12Present.Exit + ' ' + [string](Get-ToolField -Out $rInc12Present.Out -Field 'MESSAGE'))
 
+# =========================================================================
+# Untracked product sources: only a clean clone can see them
+# =========================================================================
+# Three times this repository built in its working directory and would not
+# build from a clean clone, because product sources were never added to git.
+# A worktree cannot catch that -- the untracked .cs file sits next to its
+# callers and everything compiles. So the fixture is a repository that DOES
+# clone and DOES build, and the case asserts both that it passes and that a
+# file present only in the working tree makes it fail.
+#
+# Needs both git and a usable DOTNET_ROOT, because the check builds for real.
+if ($haveGit -and $script:VerifyDotNet.Status -eq 'OK') {
+    $cloneRepo = Join-Path $root 'clonefixture'
+    $cloneLib = Join-Path $cloneRepo 'lib'
+    New-Item -ItemType Directory -Path $cloneLib -Force | Out-Null
+
+    $miniProj =
+        '<Project Sdk="Microsoft.NET.Sdk">' + "`n" +
+        '  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>' + "`n" +
+        '</Project>' + "`n"
+    [System.IO.File]::WriteAllText((Join-Path $cloneLib 'Thing.csproj'), $miniProj)
+    [System.IO.File]::WriteAllText((Join-Path $cloneLib 'Thing.cs'), "public class Thing { public int V => 1; }`n")
+
+    $cg = { param([string[]]$a) Invoke-CheckedProcess -FilePath $gitExe.Source -ArgumentList $a -WorkingDirectory $cloneRepo -TimeoutSeconds 120 }
+    & $cg @('init', '-q', '-b', 'main') | Out-Null
+    & $cg @('-c', 'user.email=vself@example.invalid', '-c', 'user.name=vself', '-c', 'core.autocrlf=false', 'add', '-A') | Out-Null
+    & $cg @('-c', 'user.email=vself@example.invalid', '-c', 'user.name=vself', '-c', 'core.autocrlf=false', 'commit', '-q', '-m', 'init') | Out-Null
+
+    $rCloneOk = Invoke-Tool -Script 'clean-clone-check.ps1' -ToolArgs @(
+        '-RepoRoot', $cloneRepo, '-Project', 'lib/Thing.csproj', '-SourceSubdir', 'lib', '-CloneParent', $root)
+    Add-Case -Id 'CLONE-fully-tracked-builds' -Expectation 'a clone whose sources are all tracked builds and passes' `
+        -Ok (($rCloneOk.Exit -eq 0) -and ((Get-ToolField -Out $rCloneOk.Out -Field 'CS_DELTA') -eq '0') `
+              -and ((Get-ToolField -Out $rCloneOk.Out -Field 'BUILD_EXIT') -eq '0') `
+              -and ((Get-ToolField -Out $rCloneOk.Out -Field 'CLONE_REMOVED') -eq 'True')) `
+        -Evidence ("exit=" + $rCloneOk.Exit + ' CS_DELTA=' + (Get-ToolField -Out $rCloneOk.Out -Field 'CS_DELTA') +
+                   ' BUILD_EXIT=' + (Get-ToolField -Out $rCloneOk.Out -Field 'BUILD_EXIT') +
+                   ' helpers=' + (Get-ToolField -Out $rCloneOk.Out -Field 'HELPER_CALLS') +
+                   ' (helpers > 0 proves the tool ran its own code, incident 13)')
+
+    # A .cs file that exists in the working tree and not in the repository.
+    # This is the exact defect class the gate exists for, and it does NOT make
+    # the clone's build fail on its own -- only the census catches it.
+    [System.IO.File]::WriteAllText((Join-Path $cloneLib 'Untracked.cs'), "public class Untracked { }`n")
+    $rCloneBad = Invoke-Tool -Script 'clean-clone-check.ps1' -ToolArgs @(
+        '-RepoRoot', $cloneRepo, '-Project', 'lib/Thing.csproj', '-SourceSubdir', 'lib', '-CloneParent', $root)
+    $badDelta = Get-ToolField -Out $rCloneBad.Out -Field 'CS_DELTA'
+    $badCloneBuild = Get-ToolField -Out $rCloneBad.Out -Field 'BUILD_EXIT'
+    Add-Case -Id 'CLONE-untracked-source-is-caught' -Expectation 'a source file in the tree and not in the repository fails, even though the clone still builds' `
+        -Ok (($rCloneBad.Exit -eq 1) -and ($badDelta -eq '1') -and ($badCloneBuild -eq '0')) `
+        -Evidence ("exit=" + $rCloneBad.Exit + ' CS_DELTA=' + $badDelta + ' BUILD_EXIT=' + $badCloneBuild +
+                   ' (BUILD_EXIT=0 with CS_DELTA=1 is the whole point: only the census sees it)')
+} else {
+    Add-Skip -Id 'CLONE-*' -Why ('needs git and a usable DOTNET_ROOT; git=' + $haveGit +
+                                  ' dotnet=' + $script:VerifyDotNet.Status)
+}
+
 # --- summary --------------------------------------------------------------
 Write-Output ''
 Write-Output ('SELF TEST: pass={0} fail={1} skip={2}' -f $script:Pass, $script:Fail, $script:Skip)
