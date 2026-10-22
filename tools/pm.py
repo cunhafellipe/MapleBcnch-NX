@@ -1278,7 +1278,13 @@ def cmd_critical(_args) -> int:
     return 0
 
 
-_DOCTOR_START = _dt.datetime.now().timestamp()
+# There is deliberately no "_DOCTOR_START" here any more. It used to be the
+# fallback reference for `mtime-newer-than`, and it was wrong: a reference
+# that is the run's start is green for every write made between two runs,
+# which is exactly the write this invariant exists to catch. A reference that
+# protects nothing must not be named as though it were one -- and it cannot
+# be an extra layer either, because a declared reference is older than the
+# run's start and an older reference is strictly the weaker check.
 
 
 def _newest_mtime(root: str):
@@ -1460,12 +1466,22 @@ def cmd_doctor(_args) -> int:
             #     made by the SUITES, which run in the gate, long after the
             #     doctor has finished. That reference protects nothing.
             #
-            # The run's start is still compared, as an EXTRA layer that also
-            # catches a write made DURING this run, and every run prints which
-            # reference it used -- but it is never presented as a substitute.
+            # There is NO second, stronger reference to fall back on, and this
+            # is arithmetic rather than taste. A declared reference is a fixed
+            # past timestamp, so it is always OLDER than this run's start; and
+            # "newest <= declared" implies "newest <= run start", so an older
+            # reference can only ever be WEAKER -- it can never catch a write
+            # that the newer one would miss. The run's start therefore appears
+            # NOWHERE in the comparison when a reference IS declared: there is
+            # exactly one reference, and it is the declared one.
+            #
             # With no declared `mtime:` the row is NOT CHECKED and counts, under
             # the same rule as an unimplemented kind: an incomplete declaration
-            # means the guard does not exist.
+            # means the guard does not exist. That branch does not measure
+            # anything at all. It prints ONE verdict, and that verdict is the
+            # LAST line of the row, so a reader who takes the row's last
+            # verdict cannot read a green one off a row that was never
+            # measured.
             #
             # This checker only ever stats the tree. It never writes to the
             # path it measures: the whole point of the invariant is that
@@ -1486,17 +1502,29 @@ def cmd_doctor(_args) -> int:
                     continue
                 mref_src = f"the declared mtime: {inv['mtime']}"
             else:
-                mref = _DOCTOR_START
-                mref_src = ("NOT DECLARED -- EXTRA LAYER ONLY: this run's own"
-                            " start. It catches a write made during this run and"
-                            " NOT one made between two runs, which is when the"
-                            " suites write.")
-                print(f"  {inv.get('id', '?')}: NOT CHECKED -- no declared"
-                      " `mtime:` reference in the SPEC")
+                # No declared reference. The only reference available is this
+                # run's own start, and it cannot work -- see the note above --
+                # so this row is NOT measured. It prints ONE line, and that
+                # line IS the verdict and IS the row's last line: a reader who
+                # takes "the row's last verdict" cannot read a green one off a
+                # row that was never measured.
+                #
+                # The guidance is printed ABOVE the verdict, behind a blank
+                # line, so it cannot be read as belonging to the previous
+                # row, and so that the row itself stays a single line.
+                print()
                 print("      This guard does not exist without a declared"
                       " reference: the run's own start cannot see a write made"
-                      " between two runs, which is exactly when the suites run.")
+                      " between two runs, which is exactly when the suites run,"
+                      " and a declared reference is older than the run's start,"
+                      " so it cannot be stronger than one either.")
+                print("      To make this row checkable, declare `mtime:` in"
+                      " SPEC.yaml -- the value the doctor printed as `newest=`"
+                      " on the last green run, or later.")
+                print(f"  {inv.get('id', '?')}: NOT CHECKED -- no declared"
+                      " `mtime:` reference in the SPEC")
                 bad += 1
+                continue
             if not os.path.exists(mpath):
                 print(f"  {inv.get('id', '?')}: MISSING {mpath}")
                 bad += 1
