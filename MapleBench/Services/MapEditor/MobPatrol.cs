@@ -187,8 +187,36 @@ public sealed class MobPatrol
     /// </remarks>
     private readonly bool _canTouchAttack;
 
-    /// <summary>The archive's <c>info/PADamage</c>; see <see cref="MobDamage"/>.</summary>
+    /// <summary>
+    /// The archive's <c>info/PADamage</c>: the contact-damage roll's UPPER bound.
+    /// </summary>
+    /// <remarks>
+    /// <c>Mob.cpp:60</c> reads it once into <c>watk</c>. It is kept apart from
+    /// <see cref="MobDamage"/> because it is a number ABOUT the mob, while
+    /// <see cref="MobDamage"/> is a number a hit dealt.
+    /// </remarks>
     private readonly int _touchDamage;
+
+    /// <summary>
+    /// The damage the last contact hit dealt, cached so that two reads in the
+    /// same frame cannot disagree.
+    /// </summary>
+    /// <remarks>
+    /// <c>Mob.cpp:1856</c> draws the number once per hit. A property that drew
+    /// again on every read would hand the caller one value and the next reader
+    /// another.
+    /// </remarks>
+    private int _lastContactDamage;
+
+    /// <summary>
+    /// This mob's own generator for the contact-damage roll.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <c>_rng</c> on purpose: the patrol's own stream decides where
+    /// a mob walks, and a contact hit must not move it. Seeded from the same
+    /// seed, so a session still replays exactly.
+    /// </remarks>
+    private readonly Random _damageRng;
 
     /// <summary>
     /// The archive's <c>info/firstAttack</c>: may this mob acquire the player
@@ -379,6 +407,9 @@ public sealed class MobPatrol
     {
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _rng = new Random(seed);
+        // A second stream for the contact-damage roll, so that a hit cannot
+        // change where the mob walks. Same seed in, same session out.
+        _damageRng = new Random(unchecked(seed * 31 + 17));
         // NOT `moveSpeed <= 0 ? DefaultMoveSpeed : moveSpeed`. Mob.cs:168 assigns 0
         // on purpose, and coercing it back to 2 was the whole defect.
         _moveSpeed = moveSpeed;
@@ -1444,10 +1475,10 @@ public sealed class MobPatrol
     /// </para>
     /// <code>
     /// if (!touchdamage) return MobAttack();
-    /// int32_t power   = watk + status_value(WATK);
-    /// int32_t maxattack = power * attack_multiplier(false);
-    /// int32_t minattack = maxattack * 0.8f;
-    /// int32_t attack  = randomizer.next_int(minattack, maxattack);
+    /// int32_t power     = watk + status_value(WATK);
+    /// int32_t maxattack = static_cast&lt;int32_t&gt;(power * attack_multiplier(false));
+    /// int32_t minattack = static_cast&lt;int32_t&gt;(maxattack * 0.8f);
+    /// int32_t attack    = randomizer.next_int(minattack, maxattack);
     /// </code>
     /// <para>
     /// The caller decides <i>whether</i> this happens — <c>Stage.cpp:809</c> asks
@@ -1465,9 +1496,21 @@ public sealed class MobPatrol
     /// named here rather than buried.
     /// </para>
     /// <para>
-    /// The 0.8×–1.0× roll is not applied either, for the same reason the stat is
-    /// not added: this port has no stat sheet, and <c>info/PADamage</c> alone is
-    /// the honest reading of a formula whose first term is one.
+    /// The ROLL is applied, because the roll needs no stat sheet: it uses only the
+    /// archive's own number. What is not applied is the stat term
+    /// (<c>status_value(WATK)</c>) and the multiplier
+    /// (<c>attack_multiplier(false)</c>), and those are the DECLARED differences
+    /// this port already declared: with no stat sheet they are 0 and 1.0, so
+    /// <c>power</c> is the archive's <c>watk</c> and the roll runs over
+    /// <c>[floor(0.8x watk), watk - 1]</c>.
+    /// </para>
+    /// <para>
+    /// The upper bound is EXCLUSIVE. <c>Randomizer.h:69-80</c>:
+    /// <c>if (from &gt;= to) return from;</c> and then
+    /// <c>std::uniform_int_distribution&lt;T&gt; range(from, to - 1);</c> &#8212; so
+    /// the reference never rolls its own upper bound. A mob with
+    /// <c>PADamage = 32</c> hits for 25..31, and a mob with <c>PADamage = 0</c>
+    /// hits for 0, because <c>next_int(0, 0)</c> returns <c>from</c>.
     /// </para>
     /// </remarks>
     public int ContactDamage()
@@ -1491,27 +1534,71 @@ public sealed class MobPatrol
 
         AttackCooldownLeft = AttackCooldown;
         HitsLandedOnPlayer++;
-        return MobDamage;
+        // ONE draw per hit, cached: two reads of MobDamage in the same frame
+        // must not disagree, and a caller that re-drew would hand one reader
+        // one number and the next reader another.
+        _lastContactDamage = RollContactDamage();
+        return _lastContactDamage;
     }
 
     /// <summary>
-    /// Damage one contact hit deals, from the archive's own <c>info/PADamage</c>.
+    /// The damage one contact hit deals, rolled the way the reference rolls it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Mob.cpp:1853-1856</c>:
+    /// </para>
+    /// <code>
+    /// int32_t power     = watk + status_value(WATK);
+    /// int32_t maxattack = static_cast&lt;int32_t&gt;(power * attack_multiplier(false));
+    /// int32_t minattack = static_cast&lt;int32_t&gt;(maxattack * 0.8f);
+    /// int32_t attack    = randomizer.next_int(minattack, maxattack);
+    /// </code>
+    /// <para>
+    /// The two DECLARED differences are the ones this port already declared: with
+    /// no stat sheet, <c>status_value(WATK)</c> is 0 and
+    /// <c>attack_multiplier(false)</c> is 1.0. So <c>power</c> is the archive's
+    /// own <c>watk</c> and <c>maxattack</c> is the same number.
+    /// </para>
+    /// <para>
+    /// <c>Randomizer.h:69-80</c> draws the roll:
+    /// <c>if (from &gt;= to) return from;</c> and then
+    /// <c>std::uniform_int_distribution&lt;T&gt; range(from, to - 1);</c>. The upper
+    /// bound is therefore EXCLUSIVE, and a mob whose <c>PADamage</c> is 0 hits
+    /// for 0 rather than for the 1 this port used to invent.
+    /// </para>
+    /// </remarks>
+    private int RollContactDamage()
+    {
+        int maxAttack = _touchDamage;
+        int minAttack = (int)(maxAttack * 0.8f);
+        if (minAttack >= maxAttack)
+            return minAttack;
+        return _damageRng.Next(minAttack, maxAttack);
+    }
+
+    /// <summary>
+    /// The damage the LAST contact hit dealt.
     /// </summary>
     /// <remarks>
     /// Was <c>MaxHp / 8</c>, which is in neither the reference nor the archive.
     /// On the mobs this simulator is pointed at that produced 43 and 37 where the
     /// archive says <c>PADamage = 90</c> for both
     /// (<c>f2/2220100.img</c>, <c>f2/2110200.img</c>, measured).
-    ///
     /// <para>
-    /// The client builds the same number at Mob.cpp:1853-1856
-    /// (<c>watk + status_value(WATK)</c>, rolled between 0.8x and 1.0x of the
-    /// result). This port has no stat model, so it does not roll and does not add
-    /// a stat: the archive's <c>watk</c> on its own is the honest reading of a
-    /// formula whose first term is a stat sheet this simulator does not have.
+    /// Then it was the archive's <c>info/PADamage</c> itself, unchanged, on every
+    /// hit. It is now the value the reference's roll produced for the last hit
+    /// &#8212; see <see cref="RollContactDamage"/>. It is 0 until this mob's first
+    /// contact hit lands, because there is no hit to report yet.
     /// </para>
     /// </remarks>
-    public int MobDamage => _touchDamage;
+    public int MobDamage => _lastContactDamage;
+
+    /// <summary>
+    /// The archive's own <c>info/PADamage</c> for this mob: the roll's upper
+    /// bound, and the number <see cref="MobDamage"/> is rolled from.
+    /// </summary>
+    public int ArchiveTouchDamage => _touchDamage;
 
     /// <summary>
     /// Its hit points, out of <see cref="MaxHp"/>.

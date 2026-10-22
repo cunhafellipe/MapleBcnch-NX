@@ -291,6 +291,15 @@ Run 'attack-frame-timing' { python "$S\attack-frame-timing.py" }
 # Mob.nx open, which the documented loop does.
 Run 'attack-damage' { python "$S\attack-damage.py" }
 
+# The MOB's own attack -- the touch attack, not the character's swing. The
+# reference has no single number here: Mob.cpp:1853-1856 draws one hit from
+# [floor(0.8 * PADamage), PADamage - 1] (Randomizer.h:72-75 makes the upper
+# bound exclusive), so the judge reads PADamage from the ARCHIVE and checks
+# every hit the port lands against that range, and checks that the hits are
+# not all one number when the range holds more than one. A build that freezes
+# the number cannot pass it.
+Run 'contact-damage' { python "$S\contact-damage.py" }
+
 # W-089. The 66-skill SHAPE sweep, resident.
 #
 # W-087 found that 22 of the 66 castable skills dealt no damage, and the reason

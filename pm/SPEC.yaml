@@ -308,6 +308,33 @@ suites:
       2,100 張 mob img、1,677 個 attack 節點、1,180 隻有攻擊的怪、port 發佈的每一個
       槽位都逐槽比對，沒有抽樣；port 未發佈的槽位只計數不判（那是 attack-frame-timing
       的斷言）。
+  - id: contact-damage
+    file: tools/verify/suites/contact-damage.py
+    runner: python
+    verdict: "BAD="
+    red_marker: [">>> RED", "BAD="]
+    asserts: true
+    areas: [simulate, mob]
+    note: >
+      怪物自己的接觸傷害（不是角色揮擊）。抄進程式碼的參照規則：Mob.cpp:1850
+      （沒有 bodyAttack 就沒有接觸攻擊）、Mob.cpp:1853-1856（power = watk +
+      status_value(WATK)；maxattack = int32(power * attack_multiplier(false))；
+      minattack = int32(maxattack * 0.8f)；attack = next_int(minattack, maxattack)）、
+      Randomizer.h:72-73（from >= to 就回傳 from）、Randomizer.h:75（上界 exclusive，
+      所以是 to-1）、Mob.cpp:60（watk = info["PADamage"]）、node.cpp:155-157
+      （節點不存在就是 0）、Mob.cpp:69（bodyAttack 是 get_bool）。
+      兩條是 port 已宣告的差異、不在此判：status_value(WATK) = 0、
+      attack_multiplier(false) = 1.0，所以參照的範圍是
+      [floor(0.8*PADamage), PADamage-1]，PADamage=0 時是單一值 0。
+      封存的數值從 archive 端讀（/api/inspect 的 info/PADamage 與 info/bodyAttack，
+      字串節點用 stoll 的規則），所以 port 讀錯節點就不能靠同意自己過關。
+      斷言三條：A1 每一擊都落在參照的範圍內；A2 範圍有兩個以上數字時，擊數不是
+      全都相同（否則凍成常數的 build 會過）；A3 PADamage=0 的怪每一擊都是 0。
+      命中是怎麼認的：playerDamage 在 0 傷害時和「沒被碰到」長得一樣，所以判官
+      另外讀 session 的觸碰紀錄（/api/simulate/debug/mob-swing），用「紀錄裡的
+      位置是這隻怪」加上 cd=0 認出那一幀。覆蓋面：全體 2,100 張 mob img 的
+      bodyAttack 普查（scanned 與 truncated 都印），再按規則挑四隻：PADamage=0、
+      最窄且不會偶發全同的範圍、中位數、1000 以下最寬的範圍，每隻 8 擊。
   - id: skillshape
     file: tools/verify/suites/skillshape-verify.mjs
     runner: node

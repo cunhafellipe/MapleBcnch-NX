@@ -1844,9 +1844,21 @@ public sealed class CombatService
 
                         // `watk` in the client is the mob's own physical attack; with
                         // no stat model in this port that IS the archive's number.
+                        //
+                        // Mob.cpp:60 `watk = info["PADamage"];` -- and an ABSENT node
+                        // is 0, not 1: vendor/NoLifeNx/nlnx/node.cpp:155-157
+                        // `if (!m_data) return def;` with def = 0. The old
+                        // `Math.Max(1, pd)` turned the archive's own 0 into a 1, so
+                        // every mob whose PADamage is 0 hit for 1 point. The
+                        // reference hits for 0: Mob.cpp:1856 rolls
+                        // `next_int(minattack, maxattack)` with both at 0, and
+                        // Randomizer.h:72-73 `if (from >= to) return from;` returns
+                        // 0 there. Measured on the open Mob.nx: 25 of the mobs that
+                        // carry `info/bodyAttack` carry `info/PADamage = 0`, and
+                        // every one of them was hitting the character for 1.
                         return TryReadIntChild(imageNode, "info", "PADamage", out int pd)
-                            ? (true, Math.Max(1, pd))
-                            : (true, 1);
+                            ? (true, pd)
+                            : (true, 0);
                     }
                 }
             }
