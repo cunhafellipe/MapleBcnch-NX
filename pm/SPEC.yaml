@@ -249,6 +249,21 @@ suites:
     verdict: "VERDICT: position-accuracy"
     asserts: true
     areas: [simulate]
+  - id: attack-frame-timing
+    file: tools/verify/suites/attack-frame-timing.py
+    runner: python
+    verdict: "VERDICT: attack-frame-timing"
+    asserts: true
+    areas: [simulate, mob]
+    added: ADR-0005-2
+    note: >
+      ADR-0005 第二條驗收標準「機制準確」的第一支判官，攻擊幀的時序。
+      參照規則抄進程式碼並標來源行號（Animation.cpp:64-67 的 100 ms fallback、
+      Animation.cpp:177-193 的幀集合、Mob.cpp:151-153 的 duration 與 attackAfter、
+      Mob.cpp:48-57 的 info/link 借圖），封存的數值從 archive 端讀，port 讀錯節點
+      就不能靠同意自己過關。斷言：槽位集合、duration、命中時刻、投射物自己的幀延遲，
+      加上兩組寫下來的已知答案。覆蓋面是全體：2,100 張 mob img、1,677 個 attack 節點、
+      參照承認的 2,023 個槽位，沒有抽樣。
   - id: skillshape
     file: tools/verify/suites/skillshape-verify.mjs
     runner: node

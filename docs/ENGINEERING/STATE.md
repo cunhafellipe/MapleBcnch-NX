@@ -684,3 +684,41 @@ lead 曾裁決「analyst-map 的 task-33 是錯的，成因是註解用過去式
 **⇒ 記在這裡是因為「過期檢視」與「修正還沒落地」現象相同、收據不同，
 而我當時把它們混成一件講了。**
 **⇒ 規則：裁決「這是快照還是活的」之前，先指名物件與日期。**
+
+---------------------------------------------------------------------
+5.5 閘現在是**刻意紅的** —— 紅的原因已定位，不是閘壞了
+---------------------------------------------------------------------
+[MEASURED - 2026-10-22，verifier-nx task-72]
+
+**ADR-0005 第二條判準（「機制準確」）的第一支判官已進閘：
+`tools/verify/suites/attack-frame-timing.py`（`pm/SPEC.yaml` 有條目、`gate.ps1` 有一行 `Run`）。**
+
+**⇒ 閘在 port 修好之前是紅的。這是刻意的。**
+**⇒ 裁決沿用先前那條：**「**修 port，不留紅閘**」——
+**⇒ 一支會抓出真缺陷的判官不該被拿掉來讓閘變綠；
+閘綠的唯一正當途徑是 port 修好。**
+
+**⇒ 紅的原因就是兩個真缺陷（不是判官壞掉）：**
+```
+工作樹 5702 : VERDICT: attack-frame-timing 5/9 assertions, 4 failed   exit 1
+工作樹 5591 : VERDICT: attack-frame-timing 5/9 assertions, 4 failed   exit 1
+修好的 5703 : VERDICT: attack-frame-timing 9/9 assertions, 0 failed   exit 0
+              (port 發佈 2,023 槽位 = 參照承認的 2,023)
+```
+**⇒ 反證用的是工作樹**之外**的副本（`C:\mbtest2\t72-fixed`）與**同一支判官檔**，
+⇒ 所以判官不是恆紅，紅的原因就是那兩處，而且只有那兩處。**
+
+- **A1：356 個槽位參照有、port 沒有。** port 沒實作參照的 `info`/`link` 借圖規則
+  （`Mob.cpp:48-57`）。Mob.nx 裡 439 隻 mob 的 info 有 link，其中 237 隻**完全沒有自己的
+  attack 節點** ⇒ 參照給它們被借圖那隻的攻擊，port 給零個。
+  （例：3400000 的 info/link 指向 9410005 ⇒ 參照 attack1 = 1800 ms，port 什麼都沒有。）
+- **A2：85 個槽位 duration 不符。** `CombatService.cs:1552-1563` 的 `ActionDelaysMs`
+  只做 `ReadInt(frame,"delay") ?? 0`，**沒套 100 ms fallback**（`Animation.cpp:64-67`）。
+  2400049/attack3 的 20 個幀沒一個有 delay 節點 ⇒ 參照 2000 ms，port 說 **0 ms**。
+  **⇒ 同一個檔的球路徑 `:1631` 有套那個 fallback ⇒ 檔內兩條路徑自相矛盾。**
+
+**⇒ 覆蓋面是全體，不是抽樣：** 2,100 張 mob img、1,677 個 attack 節點、38,960 個幀、
+參照承認 2,023 個槽位、port 發佈 1,667 個。
+
+**⇒ 修的單是 task-73（implementer-nx）。⇒ 在它落地之前，閘紅是預期狀態。**
+**⇒ 下一個人看到閘紅，請先確認紅的是 `attack-frame-timing` 還是別的。**

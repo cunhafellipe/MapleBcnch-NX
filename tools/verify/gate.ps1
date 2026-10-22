@@ -134,6 +134,13 @@ Run 'skill-e2e'    { python "$S\skill-e2e.py" }
 # changes its physics does not pass by agreeing with itself.
 Run 'position-accuracy' { python "$S\position-accuracy.py" }
 
+# ADR-0005 criterion 2, "mechanism accuracy": the attack's frames and their
+# timing, against the reference's own rules (Animation.cpp:64-67, Mob.cpp:151-153,
+# Mob.cpp:48-57). It reads the mob data from the ARCHIVE and applies the
+# reference's formulas to it, so a port that reads the wrong node cannot pass
+# by agreeing with itself. It needs Mob.nx open, which the documented loop does.
+Run 'attack-frame-timing' { python "$S\attack-frame-timing.py" }
+
 # W-089. The 66-skill SHAPE sweep, resident.
 #
 # W-087 found that 22 of the 66 castable skills dealt no damage, and the reason

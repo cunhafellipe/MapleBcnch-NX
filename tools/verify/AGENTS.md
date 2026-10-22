@@ -25,6 +25,7 @@ and the eighth and ninth here.
 | 13 | A measurement script defined `function Measure { ... }` and called `Measure`. PowerShell resolves **Alias > Function > Cmdlet**, and `measure` is a built-in alias for `Measure-Object`, so the alias ran and **the function never did**. | `Measure-Object` also produces numbers, so an argument-shaped call would have printed a plausible set of numbers and passed. The call that did happen failed with *"a positional parameter cannot be found"* — an error that points at the **arguments** rather than at the shadowing, so the obvious "fix" is to change the call, not the name. | **Give every helper a name that cannot collide with an alias, and prove the helper ran.** See rule 10. |
 | 14 | `self-test.ps1` read a child's exit code from `$LASTEXITCODE`. Which copy of that automatic variable a native call updates depends on how the script was entered: measured, the `-File` form updates the function-scope copy (LOCAL=1 GLOBAL=1) and the `-Command` form updates only the global one (LOCAL=0 GLOBAL=1). The function-scope read returned 0, so **15 of the 27 cases that ran — every one of them a case that expects a NON-ZERO exit — reported FAIL** while each tool's own stdout proved it had done the right thing. (The tree now carries 28 cases, after the `HARNESS-child-exit-codes-were-observed` case was added.) | Silent, and one-directional: **a genuinely broken tool would have been judged PASS.** | **Read a child's exit code from `ProcessStartInfo.ExitCode`, never from `$LASTEXITCODE`.** And assert that the harness observed a non-zero child exit code, so "read it and got 0" cannot look like "never read it". See rule 11. |
 | 15 | A citation extractor matched `Name.ext` without requiring the extension to END at a non-identifier character, so the C++ member access `phobj.hspeed = phobj.vx = 0;` was read as a citation of `phobj.h`, and `status.hp: 0` as a citation of `status.h`. Both were reported as `FILE_MISSING`. | The tool reported **2 reference files that do not exist and never needed to exist**. The output was a plausible, well-formed gap list, so a reviewer would have gone looking for two holes in the authoritative reference — and the real answer, "0 missing", was nowhere in the report. A false positive here manufactures work. | **A pattern that matches text must end at a BOUNDARY, not inside a word.** Require the match to be followed by a non-identifier character (`(?![A-Za-z0-9_])`). And when a category comes out empty, write `0` and say what was checked — never leave a reader with a list of things that are not there. See rule 12. |
+| 16 | `gate.ps1`'s `Alive` printed a "backend unreachable" message **and** returned `$false` from its `catch`. A PowerShell function returns everything it wrote, so it returned a **two-element array** (the message, then `False`); `-not` on a non-empty array is `$false`, so `if (-not (Alive $name))` **never fired**. | The message was on screen; the counter never knew it. With the backend down, every suite printed `>>> RED (backend unreachable)` and the gate still ended `RED SUITES: 0` and exit 0. A gate that cannot see a red suite is worse than no gate, because it reports green. | **A function that RETURNS A VALUE must not also WRITE to the success stream.** See rule 13. |
 
 Two of these were **the same bug twice**: #5 had already produced a dedicated
 tool, and the tool was not used.
@@ -197,6 +198,41 @@ tool, and the tool was not used.
     letter threw away 35 genuine lower-case citations, and the total still
     looked reasonable. **Measure every category against a known answer before
     believing a tightened pattern.**
+
+13. **A function that RETURNS A VALUE must not also WRITE to the success
+    stream.** PowerShell returns everything a function wrote, so a function
+    that prints *and* returns returns an **array**, not the value. `-not` on a
+    non-empty array is `$false`, so a guard written that way can never fire.
+
+    Measured 2026-10-22 on `gate.ps1`'s `Alive`:
+
+    ```
+    backend UP   -> objects=1  type=Boolean  value=True
+    backend DOWN -> objects=2  type=Object[]
+                     elements = [   >>> RED (backend unreachable: ...)] [False]
+    if (-not (AliveDown ...)) -> False
+    the guard never fires     -> YES
+    ```
+
+    Emit the message from the caller, or stash it in a script variable.
+    **In this tree the family has exactly one site** — 17 `.ps1` files, 56
+    function definitions, 47 distinct names, 15 boolean call sites; every
+    other candidate was measured at one object of the right type, and there
+    are no alias collisions.
+
+    **And the scanner that proved it was wrong five times before it was
+    right.** It counted `if` conditions as writes; counted `$x++`
+    (`TokenKind` is `PostfixPlusPlus`, not `PlusPlus`); counted
+    `[void]$x.Append()` (`TypeName` is bare `void`, not `System.Void`); and
+    **never descended into `try`/`catch` bodies at all** — so its first
+    full-tree run printed "no instance of the family" while the one real
+    instance sat inside a `catch` block. Only a positive control caught it:
+    pointing the same harness at the known-bad `Alive` and seeing
+    `objects=2` and the guard dead.
+
+    **An empty result from a static scan is not a finding.** "No signal" and
+    "clean" must never share a report — the same species as incident 12 and
+    as a gate reading a MISSING suite file as GREEN.
 
 ---
 
