@@ -98,11 +98,19 @@ public sealed class NpcChatService
             {
                 string state = node.Name;
 
-                // Npc.cpp:123 — `special` keeps an action OUT of the random pool,
-                // so an NPC that has one says less often. Recorded rather than
-                // applied: the pool arithmetic lives in the store, which is where
-                // the seeded random is.
-                bool special = ReadInt(node, "special") == 1;
+                // Npc.cpp:123 — the random pool is `special == 0`, so an NPC that marks
+                // an action keeps it OUT of the pool (the reference's own example
+                // is 9010022's stand_old, special=1; measured present in Npc.nx).
+                // Hence `!= 0`, NOT `== 1`, and the `?? 0` is not decoration:
+                // ReadInt returns `int?` and yields null for a node with no
+                // `special` child, and in C# `null != 0` is TRUE -- so writing
+                // `!= 0` straight onto ReadInt's result marks every UNMARKED
+                // node special and empties the pool (measured: `states=[]` for
+                // all six npcchat-verify cases, against the reference's pool of
+                // the non-info actions). The reference's `operator[]` creates a
+                // zero-valued property for a missing `special`, so missing == 0
+                // == in the pool.
+                bool special = (ReadInt(node, "special") ?? 0) != 0;
                 if (state != "info") dto.Actions.Add(state);
                 if (!special && state != "info") dto.States.Add(state);
 
@@ -288,9 +296,9 @@ public sealed class NpcChatDto
     /// <summary>
     /// Every animation node on the image, <c>info</c> excluded. Reported
     /// separately from <see cref="States"/> because the two differ: a node whose
-    /// <c>special</c> is 1 is an animation but not part of the random pool
-    /// (Npc.cpp:123-124), and collapsing them would make the pool look complete
-    /// when it is not.
+    /// <c>special</c> is not 0 is an animation but not part of the random pool
+    /// (Npc.cpp:123-124 tests <c>== 0</c> for the pool), and collapsing them
+    /// would make the pool look complete when it is not.
     /// </summary>
     public List<string> Actions { get; } = new();
 
