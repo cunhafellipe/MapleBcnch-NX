@@ -66,6 +66,14 @@ public sealed class PlayerStatus
     /// <c>CharStats.cpp:371</c> <c>add_projectilerange</c> widens it from a passive.
     /// </para>
     /// <para>
+    /// <b>The version note that line needs.</b> The 300 is not a v83 number: that
+    /// file's own comment at :54-56 says the 300 comes from v95
+    /// (CSkillInfo::GetShootSkillRange, 0x709650) and that "other weapons keep
+    /// the previous 250 fallback". This port uses <b>250</b> — the fallback, not
+    /// the v95 number — so the reach below is the pre-v95 value and the citation
+    /// must not be read as saying the v83 client reached 300.
+    /// </para>
+    /// <para>
     /// This is what the skill-hit rewrite rests on: the reach belongs to the
     /// CHARACTER, not to the skill. A skill's own <c>range</c> node is a NUMBER
     /// (<c>SkillData.cpp:77</c>, divided by 100) that scales the near edge -- not a

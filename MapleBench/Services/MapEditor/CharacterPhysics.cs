@@ -355,7 +355,7 @@ public sealed class CharacterPhysics
         // The client does the same: the Up/Down branches run before the walk
         // branches and set InLadder, and the walk is skipped (MapleCharacter.cs:541).
         //
-        // The reach test is the client's own ±10 box (LadderRopes.cs:19) — see
+        // The reach test is the client's own ±10 box (LadderRopes.cs:20) — see
         // FindLadderForClimb. It used to be widened to 40 to catch ladders the
         // character stopped 18px short of, but that shortfall was this file
         // missing DriftWhileFalling, not a property of the data.
@@ -1044,7 +1044,7 @@ public sealed class CharacterPhysics
     /// The ladder to climb, using the client's box.
     /// </summary>
     /// <remarks>
-    /// LadderRopes.cs:19: <c>P.X &gt; L.X - 10 &amp;&amp; P.X &lt; L.X + 10 &amp;&amp; P.Y &lt; L.Y2 + 12
+    /// LadderRopes.cs:20: <c>P.X &gt; L.X - 10 &amp;&amp; P.X &lt; L.X + 10 &amp;&amp; P.Y &lt; L.Y2 + 12
     /// &amp;&amp; P.Y &gt; L.Y1 - 12</c>.
     ///
     /// This used to widen X to 40 and take the nearest ladder by distance. The

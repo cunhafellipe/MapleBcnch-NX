@@ -13,8 +13,18 @@ using Microsoft.Extensions.Logging.Abstractions;
 // which has no counterpart in the authoritative reference: clean-client
 // (C:\MUWORK\GAME\MPSH\clean-client\src) contains zero `.cs` files. Where a
 // MapleNecrocer citation disagrees with clean-client, clean-client wins -- see
-// pm/PARITY.md, "The C++ wins". These were not re-audited for content; some
-// record a port's deliberate divergence.
+// pm/PARITY.md, "The C++ wins". Some citations record a port's deliberate
+// divergence, and those say so in the text beside them.
+//
+// AUDITED 2026-10-22, line by line, against the sources themselves. This file
+// holds 175 distinct (file, line) citation sites: 118 into clean-client, 52
+// into MapleNecrocer, 5 into this repository.
+//
+// ALL 52 MapleNecrocer citations are THE PORT CITING ITSELF. They are correct
+// as references to the port's own code, and NOT ONE of them is evidence about
+// what the v83 client does: a self-citation cannot be evidence about a
+// different program. Read a MapleNecrocer citation as "this is where the port
+// does it", never as "this is what the client does".
 
 namespace MapleBench.Services.Simulate;
 
@@ -412,10 +422,12 @@ public sealed class MapSimMobFrame
 	/// Frames left on the balloon. 0 means nothing is being said.
 	/// </summary>
 	/// <remarks>
-	/// COUNTED IN FRAMES, never wall-clock: the reference's
-	/// <c>CHAT_DURATION = 3000</c> is milliseconds against a 16.67ms step
-	 /// (<c>Npc.h:136</c>), and a replay that used the wall clock would differ by
-	/// the client's frame rate. 3000ms is 180 frames at 60Hz.
+	/// COUNTED IN FRAMES, never wall-clock. The 3000 ms is the PORT's own
+	/// deliberately shortened value: the reference's balloon stays 5 seconds and
+	/// then fades over another, so the line below it says 3000 is "deliberately
+	/// shorter than the original" (Npc.h:133-135). 3000 ms is milliseconds
+	/// against a 16.67 ms step, so a replay that used the wall clock would
+	/// differ by the client's frame rate. 3000 ms is 180 frames at 60 Hz.
 	/// </remarks>
 	public int SpeechFrames { get; set; }
 
@@ -1429,7 +1441,7 @@ public sealed class MapSimSessionStore
 	/// </summary>
 	/// <remarks>
 	/// The climb box is <c>L.X ± 10</c> and the rope's whole height ± 12
-	/// (<c>LadderRopes.cs:19</c>). Measured on f4/Map/Map1/100000004.img, every
+	/// (<c>LadderRopes.cs:20</c>). Measured on f4/Map/Map1/100000004.img, every
 	/// ladder hangs in the air (y −533..−271, −1343..−1082) while the ground is
 	/// y −25, so standing on the ground puts the character hundreds of pixels
 	/// below every rope and <c>FindLadder</c> correctly refuses. That is why "it
@@ -1779,7 +1791,7 @@ public sealed class MapSimSessionStore
 		//
 		// and smaller y is higher on a map (bounds top=-1345, bottom=180).
 		// CharacterPhysics applies `_y += climb * ClimbSpeedPerStep`
-		// (CharacterPhysics.cs:1029), so Up has to arrive as climb = -1 or the
+		// (CharacterPhysics.cs:1145), so Up has to arrive as climb = -1 or the
 		// ladder is ridden the wrong way.
 		//
 		// This line had it backwards (`Up ? 1`), which is also what a stale XML

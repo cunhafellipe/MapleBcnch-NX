@@ -31,7 +31,9 @@ namespace MapleBench.Services.Simulate;
 /// 60 ticks in.</item>
 /// <item><c>Npc.cpp:276-284</c> — a line goes out only when
 /// <c>chat_delay &lt;= 0</c>, no balloon is up, and no quest marker is showing.</item>
-/// <item><c>Npc.h:136</c> — <c>CHAT_DURATION = 3000</c> ms on screen.</item>
+/// <item><c>Npc.h:133-135</c> — the reference's balloon stays 5 seconds and
+/// then fades over another, and the <c>CHAT_DURATION = 3000</c> on the line
+/// below is THIS PORT's deliberately shortened value, not the reference's.</item>
 /// <item><c>ChatBalloon.cpp:61-82</c> + <c>Npc.h:127</c> — the balloon is
 /// <c>UI.nx["ChatBalloon.img"]["npc"]</c>: a 9-slice (<c>n ne e se s sw w nw c</c>),
 /// an <c>arrow</c>, and a <c>clr</c> the text is tinted with.</item>
@@ -64,7 +66,8 @@ public sealed class NpcChatService
     /// <summary>The reference's delay spread: Npc.h:132.</summary>
     public const int ChatDelaySpreadMs = 6000;
 
-    /// <summary>How long a balloon stays up: Npc.h:136.</summary>
+    /// <summary>How long a balloon stays up: this port's own 3000 ms, which the
+    /// source calls "deliberately shorter than the original" (Npc.h:133-135).</summary>
     public const int ChatDurationMs = 3000;
 
     /// <summary>The balloon every NPC uses: Npc.h:127.</summary>
