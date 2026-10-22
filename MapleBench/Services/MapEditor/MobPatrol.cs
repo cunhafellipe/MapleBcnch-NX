@@ -1272,11 +1272,16 @@ public sealed class MobPatrol
     /// OWN-DESIGN, and declared because it is a difference from the reference:
     /// <c>MobAttack.cpp:36</c> advances <c>data.second.ball</c> EVERY tick
     /// whether or not the attack is playing, so the reference's ball phase is
-    /// effectively free-running. This port starts the ball at frame 0 when the
-    /// entry begins and runs it on the ball's own per-frame delays, which is
-    /// deterministic and reads the same every replay. The consequence is
-    /// bounded: which frame of a 2-3 frame ball is showing, never whether the
-    /// shot is there at all.
+    /// effectively free-running and its cycle is not aligned to the shot. This
+    /// port starts a cycle when the entry's delay expires and runs it on the
+    /// ball's own per-frame delays, which is deterministic and reads the same
+    /// every replay. The WRAP, though, is the reference's and not ours:
+    /// <c>Animation.cpp:316-320</c> sends the last frame back to frame 0, so
+    /// both sides are a sawtooth with a period of sum(delays). What is left is
+    /// the phase's ORIGIN: the reference's is wherever the mob's own lifetime
+    /// left it, ours is frame 0 at the shot. The consequence is bounded: which
+    /// frame of a 2-3 frame ball is showing, never whether the shot is there at
+    /// all.
     /// </para>
     /// </remarks>
     private static int BallFrameIndex(AttackEntry e, bool flying)
@@ -1304,6 +1309,25 @@ public sealed class MobPatrol
         // runs through here as well. The branch that used to sit below could
         // never be reached, and its comment claimed the opposite.
         IReadOnlyList<int> delays = e.Spec.BallFrameDelays;
+
+        // WRAP, because the reference wraps. `Animation.cpp:316-320`: on the last
+        // frame the reference sets `nextframe = 0`, so its phase is a sawtooth with
+        // a period of sum(delays) and it never sits still. Walking the delays
+        // without this reduction stops at the last frame the moment the shot has
+        // been in the air longer than one cycle.
+        // MEASURED 2026-10-22 on 4220000, a 2-frame ball declaring 60 ms per
+        // frame (a 120 ms cycle) with the shot in the air 50..147 ms: before,
+        // every observation past 120 ms published frame 1; after, they publish
+        // frame 0 and the cycle continues. (How many observations there are
+        // varies between runs - 16 or 18 - because the fight's length does.)
+        // The list has at most 20 entries in the whole mob catalog, so the sum
+        // below is bounded and cheap.
+        double period = 0;
+        foreach (int delay in delays)
+            period += delay;
+        if (period > 0)
+            since %= period;
+
         double acc = 0;
         int index = 0;
         for (int i = 0; i < delays.Count; i++)
