@@ -40,6 +40,22 @@ function check(name, got, want) {
   else { fail++; console.log(`  FAIL  ${name}\n          got  ${JSON.stringify(got)}\n          want ${JSON.stringify(want)}`); }
 }
 
+// The archive id is handed out in the order the archives were opened, so 'f1'
+// is Character.nx on one instance and something else on another. Resolve it by
+// NAME, and tell the ways it can fail apart -- the archives could not be
+// listed, the archive is absent, or the archive is listed but carries no id.
+// Each prints the red marker the gate reads and stops. The shape is the one
+// 0645f62 put in tools/verify/suites/skillshape-verify.mjs.
+async function archiveId(name) {
+  let files;
+  try { files = await (await fetch(`${BASE}/api/files`)).json(); }
+  catch (exc) { console.log(`>>> RED: could not list the open archives on this instance: ${exc.message ?? exc}`); process.exit(1); }
+  const listed = new Map((files ?? []).filter((f) => f && typeof f === 'object').map((f) => [f.name, f.id]));
+  if (!listed.has(name)) { console.log(`>>> RED: ${name} is not open on this instance, so there is nothing to judge`); process.exit(1); }
+  if (!listed.get(name)) { console.log(`>>> RED: ${name} is listed by this instance but carries no id`); process.exit(1); }
+  return listed.get(name);
+}
+
 const { actionFor } = await mod('avatar.js');
 const { LiveWalk } = await mod('livewalk.js');
 const { WalkViewer } = await mod('walkview.js');
@@ -197,7 +213,7 @@ check('a skill with no stance is not a pose',
 // The archive really does carry brandish1/brandish2 for 1121008 -- measured via
 // /api/simulate/look/stances, not assumed. If the name were wrong the pose would
 // resolve to nothing and silently draw nothing.
-const stances = await (await fetch(`${BASE}/api/simulate/look/stances?fileId=f1`)).json();
+const stances = await (await fetch(`${BASE}/api/simulate/look/stances?fileId=${await archiveId('Character.nx')}`)).json();
 check('brandish1 is a real pose in the open archive',
       typeof stances.stances?.brandish1?.frameCount === 'number' && stances.stances.brandish1.frameCount > 0, true);
 

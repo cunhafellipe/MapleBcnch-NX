@@ -3,7 +3,20 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 
 export const BASE = process.env.MB_BASE ?? 'http://127.0.0.1:5591';
-export const MAP = 'f4/Map/Map1/100000004.img';
+
+// The archive id is handed out in the order the archives were opened, so 'f4'
+// is Map.nx on one instance and something else on another. Resolve it by NAME.
+// The shape is the one 0645f62 put in tools/verify/suites/skillshape-verify.mjs.
+async function archiveId(name) {
+  let files;
+  try { files = await (await fetch(`${BASE}/api/files`)).json(); }
+  catch (exc) { console.log(`>>> RED: could not list the open archives on this instance: ${exc.message ?? exc}`); process.exit(1); }
+  const listed = new Map((files ?? []).filter((f) => f && typeof f === 'object').map((f) => [f.name, f.id]));
+  if (!listed.has(name)) { console.log(`>>> RED: ${name} is not open on this instance, so there is nothing to judge`); process.exit(1); }
+  if (!listed.get(name)) { console.log(`>>> RED: ${name} is listed by this instance but carries no id`); process.exit(1); }
+  return listed.get(name);
+}
+export const MAP = `${await archiveId('Map.nx')}/Map/Map1/100000004.img`;
 export const MOB = '9400101';
 export const START_HP = 1000;   // ADR-0006: every mob has 1000 hp
 export const PLAYER_DMG = 100;  // ADR-0006: every player hit deals 100

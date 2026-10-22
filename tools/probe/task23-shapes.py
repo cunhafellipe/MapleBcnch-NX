@@ -7,12 +7,28 @@ empty body for the same path (TASK23 trap #1: the children endpoint does not
 reflect the real node structure). This walks the same path the rest of the
 codebase walks it and prints what is actually there.
 
-Usage: python task23-shapes.py f2/9409000.img [depth]
+Usage: python task23-shapes.py [path] [depth]
+
+`path` defaults to 9409000.img inside Mob.nx, resolved BY NAME -- the archive
+id is handed out in the order the archives were opened, so it is not the same
+id on every instance.
 """
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
+
+# The archive id is handed out in the order the archives were opened, so 'f2'
+# is Mob.nx on one instance and something else on another. Resolve it by NAME,
+# with the helper 0645f62 put in tools/verify/suites/archivelib.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                os.pardir, 'verify', 'suites'))
+try:
+    from archivelib import archive_id
+except ImportError:
+    print(">>> RED: archivelib.py is missing next to this suite")
+    raise SystemExit(1)
 
 BASE = 'http://127.0.0.1:5100'
 
@@ -45,6 +61,6 @@ def walk(path, depth, indent=''):
 
 
 if __name__ == '__main__':
-    root = sys.argv[1] if len(sys.argv) > 1 else 'f2/9409000.img'
+    root = sys.argv[1] if len(sys.argv) > 1 else f'{archive_id("Mob.nx", BASE)}/9409000.img'
     depth = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     walk(root, depth)
