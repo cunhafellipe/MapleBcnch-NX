@@ -186,6 +186,94 @@ if ($doctorRed) {
 # "0 failed" in "passed=5 failed=0" (flagged two more). A gate that cries wolf is
 # worse than no gate, so this one only ever looks for these strings.
 $RED = @('>>> RED', 'NO damage number')
+# A CRASH is not the same failure as a DEAD BACKEND, and the two must not share
+# a reason: a red for a reason that is not true is not a measurement.
+#
+# MEASURED 2026-10-23, against real stderr captured on this machine from a
+# python process, a node process and a refused urlopen. The previous one-line test
+#   'URLError|Connection refused|WinError 10061|Traceback \(most recent call last\)'
+# matched the python traceback, and matched NOTHING AT ALL in the node trace.
+# Node prints
+#   file:///C:/.../x.mjs:2
+#     at file:///C:/.../x.mjs:2:3
+#   TypeError: Cannot read properties of null (reading 'y')
+# none of which contains any of those four words -- so $bad stayed empty, the
+# gate printed "ok", and a suite that died measured nothing and was scored as a
+# pass. It also matched the python traceback when the backend was perfectly
+# alive, and reported "could not reach the backend": red for a reason that was
+# measurably false.
+#
+# Each shape below is ONE string a crash prints, matched separately, so the red
+# reason can name which one fired. Every shape says what it MATCHES and what it
+# does NOT match, because a shape that fires on a healthy suite is a wrong
+# measurement, not a warning -- and the "does NOT match" half is the half that
+# has to be true, because a shape that only says what it catches cannot be
+# reviewed.
+#
+#   python traceback        MATCHES "Traceback (most recent call last):", an
+#                                  unhandled python exception.
+#                           NOT    a node stack, a PowerShell error record, or
+#                                  a healthy suite that merely prints the word.
+#   node stack frame        MATCHES a line that is exactly "    at <x>:<n>:<n>".
+#                           NOT    a frame written as "at fn (...)" -- the
+#                                  frame has to END with two colon-separated
+#                                  numbers. A crash that has such a frame may
+#                                  still carry another frame that does match.
+#   node module header      MATCHES a line "<word> : file:///...", which is how
+#                                  the FIRST line of a node crash arrives.
+#                           NOT    a node that wrote to stderr before it
+#                                  crashed: then the header line carries no
+#                                  "<word> :" in front of it.
+#   node error line         MATCHES a line starting with a JavaScript error
+#                                  class name -- TypeError, ReferenceError,
+#                                  SyntaxError, RangeError, EvalError, URIError.
+#                           NOT    node's bare "Error: ..." (no class name),
+#                                  and NOT a suite's own data line such as
+#                                  "Error: 0 layers rejected". The class name
+#                                  used to be OPTIONAL, so the shape degenerated
+#                                  to a bare "Error: " and called a suite that
+#                                  had just printed "VERDICT passed 4/4" red,
+#                                  for a reason that was not true. A bare
+#                                  "Error: " node crash is still caught by
+#                                  "node stack frame".
+#   powershell error record MATCHES a rendered error record whose
+#                                  comma-separated id contains
+#                                  "Microsoft.PowerShell.Commands.".
+#                           NOT    native stderr, whose id is
+#                                  "NativeCommandError" and carries no
+#                                  namespace. The rendered line begins with
+#                                  four spaces, a "+" and a space, so the old
+#                                  "^\s*FullyQualifiedErrorId" anchor could
+#                                  never match it; and the namespace is not
+#                                  guaranteed to be the FIRST element of the id
+#                                  list ("PathNotFound,Microsoft.PowerShell.
+#                                  Commands.GetContentCommand").
+#
+# MEASURED 2026-10-23, the trap that last shape has to avoid: Windows PowerShell
+# 5.1 renders the stderr of EVERY native command as a PowerShell error record,
+# so a crashing python prints
+#     At C:\...\gate.ps1:225 char:9
+#         + CategoryInfo          : NotSpecified: (Traceback...) [], RemoteException
+#         + FullyQualifiedErrorId : NativeCommandError
+# A shape built on "CategoryInfo", or on "At ... char:", therefore fires on every
+# native stderr line in the tree -- healthy or not -- and would turn ordinary
+# logging red. The discriminator is the error id, and both sides were measured:
+#   native stderr -> FullyQualifiedErrorId : NativeCommandError
+#   Write-Error   -> FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException
+# so only the second is a shape here. That is the whole reason the old test was
+# four narrow words rather than "did it crash": under 5.1, "did it crash" is not
+# answerable from stderr, because stderr is always a PowerShell error record.
+# The three lines that DECIDE red are further down and are not touched by this.
+$script:CrashShapes = [ordered]@{
+  'python traceback' = 'Traceback \(most recent call last\):'
+  'node stack frame' = '(?m)^\s+at\s+\S+:\d+:\d+\s*$'
+  'node module header' = '(?m)^\S+\s*:\s*file:///'
+  'node error line' = '(?m)^(?:Type|Reference|Syntax|Range|Eval|URI)Error:\s'
+  'powershell error record' = '(?m)^\s*\+?\s*FullyQualifiedErrorId\s*:[^\r\n]*Microsoft\.PowerShell\.Commands\.'
+}
+# The connection words are kept exactly as they were, in their own list, because
+# they answer a different question: the backend, not the suite, is what failed.
+$script:BackendShapes = @('URLError', 'Connection refused', 'WinError 10061')
 # Overridable so the gate can be pointed at another instance, but the default is
 # the port the suites have always used.
 $Base = if ($env:GATE_BASE) { $env:GATE_BASE } else { 'http://127.0.0.1:5591' }
@@ -222,10 +310,47 @@ function Run($name, $block) {
     $script:fail++; $script:redSuites += $name
     return
   }
-  $text = (& $block 2>&1 | Out-String -Width 200)
-  # a traceback in the middle of a suite is a failed suite, whatever it printed
-  if ($text -match 'URLError|Connection refused|WinError 10061|Traceback \(most recent call last\)') {
-    "   >>> RED (the suite could not reach the backend)"; $script:fail++; $script:redSuites += $name
+  # A suite that raises a TERMINATING error must not be able to kill the gate.
+  #
+  # MEASURED 2026-10-23: with nothing here, an injected suite that throws ended
+  # the whole gate. It printed its own "=== name ===" header and then died:
+  # stdout was 3 lines, "RED SUITES" was never printed AT ALL, the other probe
+  # suites never ran, and the exit code was 1 -- from PowerShell aborting, not
+  # from this gate deciding. A reader cannot tell those two apart, and a gate
+  # that dies leaves no verdict, which in this output is indistinguishable from
+  # all green.
+  $where = (Get-Location).Path
+  $text = ''
+  $died = ''
+  try {
+    $text = (& $block 2>&1 | Out-String -Width 200)
+  } catch {
+    $died = $_.Exception.GetType().FullName + ': ' + $_.Exception.Message
+    # MEASURED 2026-10-23: two suites here are written
+    # "Push-Location $Root; node ...; Pop-Location". An exception between the
+    # Push and the Pop leaves the location moved, so every suite after it would
+    # run in the wrong directory. Put it back before carrying on.
+    try { Set-Location -LiteralPath $where } catch { }
+  }
+  if ($died -ne '') {
+    "   >>> RED (the suite died: $died) -- $name"; $script:fail++; $script:redSuites += $name
+    return
+  }
+  # A crash in the middle of a suite is a failed suite, whatever it printed --
+  # but the reason has to say WHICH failure, because a dead backend and a dead
+  # suite are different things and only one of them is the suite's own fault.
+  $backendHit = @($script:BackendShapes | Where-Object { $text.Contains($_) })
+  $crashHit = @()
+  foreach ($shape in $script:CrashShapes.Keys) {
+    if ($text -match $script:CrashShapes[$shape]) { $crashHit += $shape }
+  }
+  if ($backendHit.Count -gt 0 -or $crashHit.Count -gt 0) {
+    if ($backendHit.Count -gt 0) {
+      $why = 'the suite could not reach the backend: ' + ($backendHit -join ', ')
+    } else {
+      $why = 'the suite died: ' + ($crashHit -join ', ')
+    }
+    "   >>> RED ($why)"; $script:fail++; $script:redSuites += $name
     ($text -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) |
       ForEach-Object { "      $_" }
     return
