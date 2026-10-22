@@ -622,14 +622,27 @@ async function read(page, castPath, skill = SKILL) {
       poses: window.__bv.poses.slice(),
       anyRects: rects.length,
       stats: window.__bv.stats,
-      scale: live.view?.scale ?? 1,
+      // The camera's ZOOM and the SCALE it became, published so a reader can see
+      // in which view the offsets below were measured.
+      //
+      // `live.view.scale` does not exist. The view carries `this.zoom`
+      // (`walkview.js:470`) and the computed `this.viewBox` (`:473`), and
+      // `viewBox.scale` is the number the blit uses -- `const view = { ...world,
+      // scale, ... }` (`:2307`) with `scale = Math.max(0.05, (this.zoom ?? 1))`
+      // (`:2250`). MEASURED 2026-10-23: `live.view?.scale ?? 1` read 1 at every
+      // zoom, which is how a wrong `* s` could stay invisible for so long.
+      zoom: live.view?.zoom ?? null,
+      viewScale: live.view?.viewBox?.scale ?? null,
       // The camera and the character, so a recorded draw argument (a SCREEN
       // coordinate, px(x) = (x - minX) * s) can be turned back into an offset
       // from the character and compared with the archive's own origin.
       charX: (live.view?.ticks?.at(-1) ?? {}).x ?? 0,
       charY: (live.view?.ticks?.at(-1) ?? {}).y ?? 0,
-      minX: live.view?.minX ?? 0,
-      minY: live.view?.minY ?? 0,
+      // The camera's origin, from the viewBox that carries it (`view.minX` is
+      // set on the computed box, `walkview.js:2312-2313`) -- the view object
+      // itself has no `minX`, so this used to publish 0 whatever the camera did.
+      minX: live.view?.viewBox?.minX ?? null,
+      minY: live.view?.viewBox?.minY ?? null,
       dir: (live.view?.ticks?.at(-1) ?? {}).dir ?? 1,
       art: artInfo,
       struck: (await mobs()).find(m => m.mobId === mobId),
@@ -746,9 +759,28 @@ const offsetOf = (d) => (d.rect
 // which is the same width the rectangle's own `right - left` is, so it is a
 // WORLD quantity like the origin. A mirrored draw whose rectangle published no
 // width has nothing to reason about, and is reported rather than guessed.
-const wantFor = (o, mirrored, s, iw) => {
+// NO SCALE FACTOR, and that is the point of the change.
+//
+// The offset this compares against is a WORLD offset. `lastEffectRect` is
+// published "in WORLD coordinates" (`walkview.js:3635-3637`) and the blit
+// applies the scale to the SIZE only -- `drawImage(img, px(left), py(top),
+// iw * s, ih * s)` (`walkview.js:3674`) -- so the rectangle does not move when
+// the camera zooms. The archive's `-origin` is a world offset too, so the two
+// are comparable as they stand.
+//
+// MEASURED 2026-10-23 on a private instance (Henesys 100000004, skill
+// 1121008): at zoom 1 the renderer published drawn (-36, -23), and at zoom 2
+// the SAME (-36, -23). A judge that multiplies the expectation by the scale
+// asks for (-72, -46) at zoom 2 and red on a renderer that is right.
+//
+// The `* s` was ALSO dead code: the scale it multiplied was read from
+// `live.view?.scale`, a field the view does not have -- the view carries
+// `this.zoom` and the computed `this.viewBox` (`walkview.js:470`, `:473`),
+// and `viewBox.scale` is the number the blit uses. So it read 1 at every
+// zoom, and the two defects hid each other.
+const wantFor = (o, mirrored, iw) => {
   if (mirrored && !Number.isFinite(iw)) return null;
-  return [r10((mirrored ? o.x - iw : -o.x) * s), r10(-o.y * s)];
+  return [r10(mirrored ? o.x - iw : -o.x), r10(-o.y)];
 };
 // The BLIT decides, not the rectangle. They agree, but only the blit exists on a
 // build that has no rectangle publications at all, and they are two readings of
@@ -761,7 +793,7 @@ const mirrorAgrees = (d) => (d.rect && d.rect.mirrored !== undefined
 
 /** The whole of B1's per-frame rule, as one verdict. Returns the detail either
  *  way so a failing shape says WHICH frame was wrong and against what. */
-function checkPerFrameOrigin(entries, origins, scale, label) {
+function checkPerFrameOrigin(entries, origins, label) {
   if (!entries.length || !origins?.length) {
     return { ok: false, why: `no draws (${entries.length}) or no origins (${origins?.length ?? 0})`, seen: 0 };
   }
@@ -774,7 +806,7 @@ function checkPerFrameOrigin(entries, origins, scale, label) {
     if (!mirrorAgrees(d)) stray.push(`frame ${d.rect.frame}: blit says mirrored=${d.mirrored}, rectangle says ${d.rect.mirrored}`);
     const o = origins[d.rect.frame];
     if (!o) { stray.push(`frame ${d.rect.frame} is not in the archive`); continue; }
-    const w = wantFor(o, isMirrored(d), scale, d.rect.iw);
+    const w = wantFor(o, isMirrored(d), d.rect.iw);
     // The mirror flag travels WITH the failure text: a wrong offset on a
     // mirrored frame and a wrong offset on an unmirrored one are different
     // findings, and the red line has to say which one this is.
@@ -960,7 +992,7 @@ try {
   // In the CHARACTER's frame, not the canvas's.
   //
   // `drawSkillEffectPass` blits `drawImage(img, px(left), py(top), iw*s, ih*s)`
-  // where `px(x) = (x - view.minX) * s` (walkview.js:2898). So a recorded
+  // where `px(x) = (x - view.minX) * s` (walkview.js:2902-2907). So a recorded
   // argument is a SCREEN coordinate and the archive's `-origin` is a WORLD offset;
   // comparing them directly only ever works when the camera's left edge happens
   // to sit on the character, which it does not.
@@ -972,7 +1004,6 @@ try {
   // world point with a different argument space. MEASURED: the old expectation
   // asks for -30 and the draw reports 90.5, both describing the same pixel.
   if (out.skillRects.length && out.fxMeta?.origins?.length) {
-    const s = out.scale;
     const origins = out.fxMeta.origins;
     const near = (a, b) => Math.abs(a - b) <= 1.5;
     // recorded draw -> offset from the character, in WORLD units. `lastEffectRect`
@@ -983,26 +1014,29 @@ try {
       : [r.a[0] - (r.cx - r.ox) * r.s, r.a[1] - (r.cy - r.oy) * r.s];
     const mirrored = isMirrored;
 
-    // DrawArgument.h:143-156: the rectangle is `pos - origin`, scaled. The anchor
-    // is the character; each frame's own origin lands on it.
+    // DrawArgument.h:143-156: the rectangle is `pos - origin`. The anchor
+    // is the character; each frame's own origin lands on it. NO scale factor:
+    // the rectangle is a world rectangle (`walkview.js:3635-3637`) and the
+    // scale is applied to the drawn SIZE (`iw * s`), not to the position.
     const firstDraw = out.skillRects[0];
     const r0 = rel(firstDraw);
     const m0 = mirrored(firstDraw);
     // The image width, from the rectangle the renderer published for THIS draw.
     const iw0 = firstDraw.rect?.iw;
-    const w0 = wantFor(origins[0], m0, s, iw0);
-    say(!!w0 && near(r0[0], w0[0]) && near(r0[1], -origins[0].y * s),
+    const w0 = wantFor(origins[0], m0, iw0);
+    say(!!w0 && near(r0[0], w0[0]) && near(r0[1], -origins[0].y),
         'the first frame sits where the archive says it sits',
-        `drawn (${r0[0]}, ${r0[1]}) mirrored=${m0}, iw=${iw0}, vs anchor-origin at scale ${s} = ` +
-        `${w0 ? `(${w0[0]}, ${-origins[0].y * s})` : '(unknown: no image width was published)'}`);
+        `drawn (${r0[0]}, ${r0[1]}) mirrored=${m0}, iw=${iw0}, vs anchor-origin = ` +
+        `${w0 ? `(${w0[0]}, ${-origins[0].y})` : '(unknown: no image width was published)'} ` +
+        `(world units; zoom ${out.zoom}, viewBox.scale ${out.viewScale})`);
 
     // W-083: EVERY frame, not the first one. The archive gives each frame its own
     // origin -- 1121008 measures 30,23 then 49,81 then 52,81 ... -- so a viewer
     // that applied one origin to all of them would look right on frame 0 and
     // drift on every frame after it. A recorded draw is correct when its offset
-    // equals ITS OWN frame's origin, scaled; anything else is a frame that was
+    // equals ITS OWN frame's origin; anything else is a frame that was
     // drawn against the wrong offset.
-    const pf = checkPerFrameOrigin(out.skillRects, origins, s, SKILL);
+    const pf = checkPerFrameOrigin(out.skillRects, origins, SKILL);
     say(pf.ok, 'every frame of the effect uses its OWN origin, not one repeated', pf.why);
 
     // and the animation actually ADVANCES, which is what "played once and then
@@ -1151,7 +1185,6 @@ try {
         // and `/skill/<id>/hit` is the struck mob's; both live under the same id.
         const mine = o.skillRects.filter(r =>
           decodeURIComponent(r.src).includes(`/skill/${p.skillId}/`) && !r.rect?.mobId);
-        const scale = o.scale;
         const wrong = [];
         const coverage = [];
         for (const fx of pfx) {
@@ -1159,7 +1192,7 @@ try {
           const seenFrames = [...new Set(draws.map(d => d.rect?.frame))].sort((a, b) => a - b);
           coverage.push(`${fx.node} ${seenFrames.length}/${fx.frames}`);
           if (!draws.length) { wrong.push(`${fx.node}: never drawn`); continue; }
-          const pf = checkPerFrameOrigin(draws, fx.origins, scale, fx.node);
+          const pf = checkPerFrameOrigin(draws, fx.origins, fx.node);
           if (!pf.ok) wrong.push(`${fx.node}: ${pf.why}`);
         }
         mirrorSeen.add(mine.length ? (isMirrored(mine[0]) ? 'left' : 'right') : 'none');
