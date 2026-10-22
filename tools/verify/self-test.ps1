@@ -30,10 +30,22 @@ Initialize-Verification -Tool 'self-test' -Checked @(
     'including reproductions of the five recorded tool failures'
 )
 
-$LASTEXITCODE = 0
 $script:Pass = 0
 $script:Fail = 0
 $script:Skip = 0
+# Rule 10 sentinel: how many child exit codes this run actually OBSERVED.
+# A harness that reads 0 for everything and one that reads the right code
+# produce the same case list, so the count is printed and asserted below.
+#
+# $LASTEXITCODE is no longer used to read a child's exit code anywhere in
+# this file. It is an AUTOMATIC variable, and WHICH copy of it a native
+# call updates depends on how this script was entered: MEASURED, the
+# -File form updates the function-scope copy (LOCAL=1 where the child
+# exited 1) and the -Command form updates only the global copy
+# (LOCAL=0, GLOBAL=1). The real code comes from ProcessStartInfo.ExitCode
+# - see Invoke-Tool.
+$script:ChildExitCaptured = 0
+$script:ChildExitNonZero = 0
 
 function Add-Case {
     param([string]$Id, [string]$Expectation, [bool]$Ok, [string]$Evidence)
@@ -54,16 +66,51 @@ function Add-Skip {
 }
 
 # Run a tool as a child process so the real exit code is observed.
+#
+# THE EXIT CODE COMES FROM ProcessStartInfo.ExitCode, NEVER FROM
+# $LASTEXITCODE.
+#
+# $LASTEXITCODE is an AUTOMATIC variable, and WHICH copy a native call
+# updates depends on how the script was entered. The old code read
+# `$LASTEXITCODE` inside Invoke-Tool after `& $hostExe`. MEASURED on
+# 2026-10-22, recording both copies immediately after the call:
+#   -File form    : LOCAL=1 GLOBAL=1   (the child exited 1)
+#   -Command form : LOCAL=0 GLOBAL=1   (the child exited 1)
+# So in the -Command form the function-scope copy stayed 0 and the read
+# returned that. EVERY case that expects a non-zero exit then read 0 and
+# reported FAIL while the tool's own stdout proved it had done the right
+# thing: 15 of 27 cases, all in the same direction, so a genuinely broken
+# tool would have been judged PASS. It was SILENT - nothing said "I did
+# not read an exit code".
+#
+# Invoke-CheckedProcess (lib/Common.ps1) already builds the child's
+# environment explicitly - R2: an apphost does not inherit DOTNET_ROOT,
+# and a child that dies in a second measures zero - and it returns the
+# real ExitCode. Start-Process is NOT used: Common.ps1 says so, and
+# Invoke-CheckedProcess is the helper that replaced it.
+#
+# The child's StdOut carries the tool's fields; StdErr is empty for these
+# tools and is appended anyway so that nothing is dropped.
 function Invoke-Tool {
     param([string]$Script, [string[]]$ToolArgs = @())
     $path = Join-Path $PSScriptRoot $Script
     if (-not [System.IO.File]::Exists($path)) { throw ('tool not found: ' + $path) }
     $hostExe = (Get-Process -Id $PID).Path
     $all = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $path) + $ToolArgs
-    $global:LASTEXITCODE = 0
-    $out = & $hostExe @all 2>&1
-    $code = $LASTEXITCODE
-    return @{ Exit = $code; Out = (($out | ForEach-Object { [string]$_ }) -join "`n") }
+
+    $r = Invoke-CheckedProcess -FilePath $hostExe -ArgumentList $all -TimeoutSeconds 600
+    if ($r.LaunchError -ne '') { throw ('could not launch ' + $Script + ': ' + $r.LaunchError) }
+    if ($r.TimedOut) { throw ($Script + ' timed out') }
+
+    $script:ChildExitCaptured++
+    $code = [int]$r.ExitCode
+    if ($code -ne 0) { $script:ChildExitNonZero++ }
+
+    $out = ([string]$r.StdOut)
+    $err = ([string]$r.StdErr)
+    if ($err.Trim() -ne '') { $out = $out + "`n" + $err }
+
+    return @{ Exit = $code; Out = $out }
 }
 
 function Get-ToolField {
@@ -438,12 +485,29 @@ if ($haveGit -and $script:VerifyDotNet.Status -eq 'OK') {
                                   ' dotnet=' + $script:VerifyDotNet.Status)
 }
 
+# Rule 10 sentinel: prove the harness observed the children's REAL exit
+# codes, not a constant zero.
+#
+# Without this, "the exit code was read and it was 0" and "the exit code
+# was never read" are the same thing on the page: every case that expects
+# a non-zero exit fails in both. Counting the children whose exit code was
+# NON-ZERO is what separates them - if the exit-code pipeline were still
+# broken, this count would be 0 and the case below would say so instead of
+# letting fifteen red cases stand in for the proof.
+Add-Case -Id 'HARNESS-child-exit-codes-were-observed' `
+    -Expectation 'the harness read the real exit codes of its children, non-zero ones included' `
+    -Ok (($script:ChildExitCaptured -gt 0) -and ($script:ChildExitNonZero -gt 0)) `
+    -Evidence ('children=' + $script:ChildExitCaptured + ' non-zero=' + $script:ChildExitNonZero +
+               ' (a non-zero count is what proves the codes were read, not defaulted)')
+
 # --- summary --------------------------------------------------------------
 Write-Output ''
 Write-Output ('SELF TEST: pass={0} fail={1} skip={2}' -f $script:Pass, $script:Fail, $script:Skip)
 Set-Field 'CASES_PASS' ([string]$script:Pass)
 Set-Field 'CASES_FAIL' ([string]$script:Fail)
 Set-Field 'CASES_SKIP' ([string]$script:Skip)
+Set-Field 'CHILD_EXIT_CAPTURED' ([string]$script:ChildExitCaptured)
+Set-Field 'CHILD_EXIT_NONZERO' ([string]$script:ChildExitNonZero)
 Set-Field 'SUMMARY' ('pass=' + $script:Pass + ' fail=' + $script:Fail + ' skip=' + $script:Skip)
 
 if (-not $KeepFixtures) {
