@@ -38,7 +38,13 @@ $base = "http://127.0.0.1:$Port"
 # ran at all. Resolve BY NAME instead, with the helper that already says which
 # of its four ways it failed.
 if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
-. "$PSScriptRoot\archivelib.ps1"
+try { . "$PSScriptRoot\archivelib.ps1" }
+catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception.Message)"; exit 1 }
+# Test-Path only catches MISSING. A helper that is present but does not parse
+# leaves Get-ArchiveId undefined, so both $mapId and $mobId below are $null and
+# every calibration read returns '<absent>' -- and this suite then fails on the
+# MOB, which is exactly the false claim the block below exists to prevent.
+if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
 # Mob.nx was never checked at all. With Map.nx open and Mob.nx not, $mobFile.id
 # was null, every calibration read came back '<absent>', and this suite then
 # failed on "9500302 has no bodyAttack" -- a false claim about the mob, produced

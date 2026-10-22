@@ -11,7 +11,13 @@ $base = "http://127.0.0.1:$Port"
 # calibration read asked for "/2220000.img/info/firstAttack" and unwound on the
 # 404. Resolve BY NAME instead.
 if (-not (Test-Path "$PSScriptRoot\archivelib.ps1")) { ">>> RED: archivelib.ps1 is missing next to this suite"; exit 1 }
-. "$PSScriptRoot\archivelib.ps1"
+try { . "$PSScriptRoot\archivelib.ps1" }
+catch { ">>> RED: archivelib.ps1 next to this suite did not load: $($_.Exception.Message)"; exit 1 }
+# Test-Path only catches MISSING. A helper that is present but does not parse
+# leaves Get-ArchiveId undefined, and this suite then reads /2220000.img/info/
+# firstAttack off a $null mapId -- the 404 unwind the block above was written
+# to stop -- and reports a calibration result about a map it never loaded.
+if (-not (Get-Command Get-ArchiveId -ErrorAction SilentlyContinue)) { ">>> RED: archivelib.ps1 did not define Get-ArchiveId, so there is no resolver and nothing to measure against"; exit 1 }
 $mapId = Get-ArchiveId -Base $base -Name 'Map.nx'
 $mobId = Get-ArchiveId -Base $base -Name 'Mob.nx'
 $map = "$mapId/Map/Map1/100000004.img"
