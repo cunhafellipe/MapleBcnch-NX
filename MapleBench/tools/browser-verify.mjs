@@ -88,9 +88,45 @@ const heading = (s) => console.log(`\n== ${s} ==`);
 
 const api = async (path) => (await fetch(BASE + path)).json();
 
+/** The session id of an open archive, BY NAME.
+ *
+ *  The ids are handed out in the order the archives were opened, so `f1` is
+ *  Character.nx on the instance that happened to open it first and something
+ *  else everywhere else. A judge that hard-codes one measures a different
+ *  archive than the one it means to -- and on the instance whose ids came out
+ *  in another order it measures the WRONG thing while looking like it measured
+ *  a difference. MEASURED 2026-10-22: on the 5100 instance `Skill.nx` is `f4`.
+ *
+ *  An archive that is not open is a failure that says so: the red marker the
+ *  gate reads, and a non-zero exit -- never a measurement against a wrong or
+ *  missing target. (tools/verify/AGENTS.md rule 16.)
+ */
+const archiveIdByName = async (name) => {
+  let files;
+  try {
+    files = await api('/api/files');
+  } catch (exc) {
+    console.log(`>>> RED: browser-verify -- could not list the open archives on this instance: ${exc}`);
+    process.exit(1);
+  }
+  const hit = (files ?? []).find(f => f && f.name === name);
+  if (!hit) {
+    console.log(`>>> RED: browser-verify -- ${name} is not open on this instance, so there is nothing to judge`);
+    console.log(`    open: ${(files ?? []).map(f => f?.name).filter(Boolean).join(', ') || '(none)'}`);
+    process.exit(1);
+  }
+  if (!hit.id) {
+    console.log(`>>> RED: browser-verify -- ${name} is listed by this instance but carries no id`);
+    process.exit(1);
+  }
+  return hit.id;
+};
+
 /** One call in the page: open the simulator, walk to the map, arm the hook. */
 async function setUp(page) {
-  return page.evaluate(async ({ mapRe, skill, key, mob }) => {
+  // The character archive, resolved BY NAME before anything is measured.
+  const charId = await archiveIdByName('Character.nx');
+  return page.evaluate(async ({ mapRe, skill, key, mob, charId }) => {
     const app = window.app;
     await app.sections.open('simulator');
     const sim = await app.ensureSimulator();
@@ -141,12 +177,20 @@ async function setUp(page) {
     let measuring = false;
     const seenPose = new Set();
     // A character-part path. The composed body, its equipment and its hair are all
-// under `f1/` -- MEASURED: `f1/00002000.img/stand1/0/body`, `f1/00012000.img/
-// stand1/0/head`, `f1/Hair/00030000.img/stand1/0/hair`, `f1/Coat/01040000.img/
-// walk1/0/mail` -- while mobs are `f5/<id>.img/...`, map art is `f4/...` and
-// every skill sprite is `f8/...`. The archive folder is the discriminator, and it
-// is exact: nothing a map or a skill draws lives under `f1`.
-const BODY_PART = /^f1\//;
+    // under the CHARACTER archive -- MEASURED on the instance where the character
+    // archive was `f1`: `f1/00002000.img/stand1/0/body`, `f1/00012000.img/
+    // stand1/0/head`, `f1/Hair/00030000.img/stand1/0/hair`, `f1/Coat/01040000.img/
+    // walk1/0/mail` -- while mobs are `<mob archive>/<id>.img/...`, map art is
+    // `<map archive>/...` and every skill sprite is `<skill archive>/...`. The
+    // archive folder is the discriminator, and it is exact: nothing a map or a
+    // skill draws lives under the character archive.
+    //
+    // The id is RESOLVED BY NAME (`archiveIdByName`, above) and handed in, because
+    // the ids are handed out in the order the archives were opened: `f1` is the
+    // character archive only on an instance that opened it first. MEASURED
+    // 2026-10-22: on the 5100 instance `Skill.nx` is `f4`, so a hard-coded `f1`
+    // there calls the SKILL art the character's body.
+    const BODY_PART = new RegExp('^' + charId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/');
     // What the hook SAW, as opposed to what it kept. A count of zero in the
     // column a reader expects is otherwise indistinguishable from a hook that
     // stopped firing, and "the effect never reached the canvas" is the exact
@@ -398,7 +442,7 @@ const BODY_PART = /^f1\//;
       pos: () => { const t = live.view?.ticks?.at(-1) || {}; return { x: t.x ?? 0, y: t.y ?? 0, dir: t.dir ?? 1 }; },
     };
     return { sessionId: sid, keys: Object.fromEntries(live.skillKeys) };
-  }, { mapRe: MAP.source, skill: SKILL, key: KEY.toUpperCase(), mob: MOB });
+  }, { mapRe: MAP.source, skill: SKILL, key: KEY.toUpperCase(), mob: MOB, charId });
 }
 
 /**
@@ -674,8 +718,23 @@ async function castAndWatch(page, nudge = () => walkIntoRange(page), opts = {}) 
  *
  *  DrawArgument.h:131-157 with `xscale = flip ? -1 : +1`:
  *    facing right (xscale +1)  left = charX - origin.x
- *    facing left  (xscale -1)  left = charX + origin.x
+ *    facing left  (xscale -1)  left = charX + origin.x - w
  *  ...and `top = charY - origin.y` on both.
+ *
+ *  The `- w` is the image's own width, and it is the whole point of the
+ *  mirrored branch: mirroring a sprite whose anchor sits inside it puts the
+ *  FAR edge at `origin.x` and the near edge one image-width back. The
+ *  product draws it that way (`walkview.js:3630-3631`,
+ *  `left = mirrored ? anchorX + org.x - iw : anchorX - org.x`) and the
+ *  reference agrees (`MapleNecrocer Client/Skill.cs:397-406`, verbatim:
+ *  `case true: Offset.X = origin.X - ImageWidth; break;`).
+ *
+ *  This judge used to ask for `+ origin.x` -- the RIGHT edge -- and compare it
+ *  with `rect.left`, the LEFT edge: a whole image width apart, and only on the
+ *  mirrored rounds. MEASURED 2026-10-22 over 21 rounds: the judge's error was
+ *  `-66.0` with `iw = 66`, on 10 of 15 rounds, and every one of those 10 was a
+ *  round where the caster faced right (`dir = +1`). The judge was WRONG about
+ *  whether a round was mirrored -- it was right -- and wrong about the offset.
  *
  *  Asserting the unmirrored half unconditionally reported a perfectly correct
  *  mirrored frame as `drawn (30, -23) vs (-30, -23)`, which is the same pixel. */
@@ -683,7 +742,14 @@ const r10 = (x) => Math.round(x * 10) / 10;
 const offsetOf = (d) => (d.rect
   ? [d.rect.left - d.rect.charX, d.rect.top - d.rect.charY]
   : [NaN, NaN]);
-const wantFor = (o, mirrored, s) => [r10((mirrored ? o.x : -o.x) * s), r10(-o.y * s)];
+// The image width comes from the rectangle the renderer published (`rect.iw`),
+// which is the same width the rectangle's own `right - left` is, so it is a
+// WORLD quantity like the origin. A mirrored draw whose rectangle published no
+// width has nothing to reason about, and is reported rather than guessed.
+const wantFor = (o, mirrored, s, iw) => {
+  if (mirrored && !Number.isFinite(iw)) return null;
+  return [r10((mirrored ? o.x - iw : -o.x) * s), r10(-o.y * s)];
+};
 // The BLIT decides, not the rectangle. They agree, but only the blit exists on a
 // build that has no rectangle publications at all, and they are two readings of
 // one fact: `a[0] === 0` is the `translate(px(right),0); scale(-1,1)` branch and
@@ -708,8 +774,12 @@ function checkPerFrameOrigin(entries, origins, scale, label) {
     if (!mirrorAgrees(d)) stray.push(`frame ${d.rect.frame}: blit says mirrored=${d.mirrored}, rectangle says ${d.rect.mirrored}`);
     const o = origins[d.rect.frame];
     if (!o) { stray.push(`frame ${d.rect.frame} is not in the archive`); continue; }
-    const w = wantFor(o, isMirrored(d), scale);
-    if (q[0] !== w[0] || q[1] !== w[1]) stray.push(`frame ${d.rect.frame}: drawn (${q}) vs (${w})`);
+    const w = wantFor(o, isMirrored(d), scale, d.rect.iw);
+    // The mirror flag travels WITH the failure text: a wrong offset on a
+    // mirrored frame and a wrong offset on an unmirrored one are different
+    // findings, and the red line has to say which one this is.
+    if (!w) { stray.push(`frame ${d.rect.frame}: mirrored, but the rectangle published no image width, so the offset cannot be checked`); continue; }
+    if (q[0] !== w[0] || q[1] !== w[1]) stray.push(`frame ${d.rect.frame}: drawn (${q}) mirrored=${isMirrored(d)} vs (${w})`);
   }
   return {
     ok: stray.length === 0, stray, seen: seen.size,
@@ -803,6 +873,23 @@ try {
       sprites: (t.skillEffects || []).length,
       frames: fx?.frames ?? 0, z: fx?.z ?? 0, speed: fx?.speed ?? 0,
       delays: fx?.delays ?? [], origins: fx?.origins ?? [], imagePath: fx?.imagePath ?? null,
+      // The ORIENTATION, kept with the cast.
+      //
+      // `dir` is the caster's facing at the moment of the cast (+1 = right), and
+      // it is what decides whether the effect is drawn mirrored: the renderer
+      // flips the caster's own cast sprite when the caster faces right
+      // (`walkview.js:3602`, `mirrored = fx.flipped ?? (cur.dir > 0)`), and the
+      // reference says the same (`DrawArgument.h:34-40`, `xscale = flip ? -1 : +1`).
+      // `flipped` is the SERVER's own flag for the effect, so the two can be
+      // compared instead of one being assumed.
+      //
+      // This was thrown away: the tick read after the pose was replaced wholesale
+      // by a three-field object, so a red run could not say which way the caster
+      // was facing -- and "the offset is wrong" and "the offset is wrong ONLY when
+      // the caster faces right" are different findings. A judge that cannot
+      // diagnose itself is the failure mode this tree keeps hitting.
+      dir: t.dir ?? null,
+      flipped: fx?.flipped ?? null,
     };
   });
   // W-083: then watch the WHOLE animation, not a frame of it. The hook stays
@@ -822,8 +909,12 @@ try {
     ? { z: castSnap.z, frames: castSnap.frames, speed: castSnap.speed,
         delays: castSnap.delays, origins: castSnap.origins, imagePath: castSnap.imagePath }
     : null;
-  out.tick = { action: castSnap.action, skillStance: castSnap.stance,
-               skillEffects: new Array(castSnap.sprites) };
+  // The tick of the CAST, not of the frame after it -- and the tick SPREAD, not
+  // a replacement, so the fields this line used to throw away survive. `dir` is
+  // the caster's facing DURING the cast, which is the tick that was replaced
+  // (the tick read here is the frame after the pose ended).
+  out.tick = { ...out.tick, action: castSnap.action, skillStance: castSnap.stance,
+               skillEffects: new Array(castSnap.sprites), dir: castSnap.dir };
   // Only this run's entries. `/api/clientlog` is append-only and survives a
   // redeploy, so an error from a build that was fixed twenty minutes ago is still
   // in it and used to fail this assertion. MEASURED: the run after the
@@ -848,6 +939,19 @@ try {
       out.tick.skillStance);
   say(out.anyRects > 0, 'the viewer painted', `${out.anyRects} drawImage calls`);
   console.log('  hook:   ' + JSON.stringify(out.stats));
+  // The ORIENTATION, printed on every run -- green or red.
+  //
+  // `dir` is the caster's facing at the cast (+1 = right) and `flipped` is the
+  // server's own flag for the effect; the effect is drawn mirrored when the
+  // caster faces right, and the mirrored branch is the one whose offset carries
+  // the image width. Printing it means a red line says WHICH case it is
+  // ("mirrored=true, dir=1") instead of leaving the reader to guess from the
+  // numbers, and it is what makes the intermittent red explainable: the rounds
+  // that fail are the rounds the caster faced right.
+  console.log(`  facing: dir=${out.cast?.dir ?? '?'} (the caster's facing at the cast; ` +
+    `right = +1) ; the server's own flip flag = ${out.cast?.flipped ?? '?'} ; ` +
+    `the blit's own flip = ${out.skillRects?.[0]?.mirrored ?? '?'} ; ` +
+    `the image width the rectangle published = ${out.skillRects?.[0]?.rect?.iw ?? '?'}`);
   if (process.env.BV_TRACE) {
     console.log('  trace:  ' + JSON.stringify(out.trace));
   }
@@ -881,12 +985,16 @@ try {
 
     // DrawArgument.h:143-156: the rectangle is `pos - origin`, scaled. The anchor
     // is the character; each frame's own origin lands on it.
-    const r0 = rel(out.skillRects[0]);
-    const m0 = mirrored(out.skillRects[0]);
-    say(near(r0[0], wantFor(origins[0], m0, s)[0]) && near(r0[1], -origins[0].y * s),
+    const firstDraw = out.skillRects[0];
+    const r0 = rel(firstDraw);
+    const m0 = mirrored(firstDraw);
+    // The image width, from the rectangle the renderer published for THIS draw.
+    const iw0 = firstDraw.rect?.iw;
+    const w0 = wantFor(origins[0], m0, s, iw0);
+    say(!!w0 && near(r0[0], w0[0]) && near(r0[1], -origins[0].y * s),
         'the first frame sits where the archive says it sits',
-        `drawn (${r0[0]}, ${r0[1]}) mirrored=${m0}, vs anchor-origin at scale ${s} = ` +
-        `(${wantFor(origins[0], m0, s)[0]}, ${-origins[0].y * s})`);
+        `drawn (${r0[0]}, ${r0[1]}) mirrored=${m0}, iw=${iw0}, vs anchor-origin at scale ${s} = ` +
+        `${w0 ? `(${w0[0]}, ${-origins[0].y * s})` : '(unknown: no image width was published)'}`);
 
     // W-083: EVERY frame, not the first one. The archive gives each frame its own
     // origin -- 1121008 measures 30,23 then 49,81 then 52,81 ... -- so a viewer
