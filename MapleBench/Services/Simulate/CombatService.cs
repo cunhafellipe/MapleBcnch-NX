@@ -1577,6 +1577,22 @@ public sealed class CombatService
     }
 
     /// <summary>Sum of a mob action's per-frame delays, in ms.</summary>
+    /// <remarks>
+    /// <c>Animation.cpp:58-67</c>: <c>delay = src["delay"]; if (delay == 0)
+    /// delay = 100;</c> -- the 100 is the FALLBACK, so a frame with no delay
+    /// node contributes 100 and a frame that declares 0 contributes 100 as
+    /// well. This is the rule <see cref="BallFrameDelays"/> already applies to
+    /// the ball's frames, and they are the same rule on purpose: the mob
+    /// action's length and the projectile art's tempo both come from that one
+    /// constructor, so a port that applies it to one and not the other is
+    /// reading the archive two different ways in one file.
+    /// <para>
+    /// MEASURED 2026-10-22 with attack-frame-timing.py over the real Mob.nx:
+    /// 85 slots disagreed on duration, the first being 2400049/attack2 at
+    /// 1,800 ms against the reference's 2,300 ms, and 2400049/attack3 -- whose
+    /// 20 frames declare no delay at all -- reporting 0 ms against 2,000 ms.
+    /// </para>
+    /// </remarks>
     private int ActionDelaysMs(WzObject action)
     {
         int total = 0;
@@ -1584,7 +1600,8 @@ public sealed class CombatService
         {
             if (!int.TryParse(frame.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 continue;
-            total += ReadInt(frame, "delay") ?? 0;
+            int delay = ReadInt(frame, "delay") ?? 0;
+            total += delay == 0 ? 100 : delay;
         }
         return total;
     }
