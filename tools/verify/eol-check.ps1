@@ -27,7 +27,8 @@ $ErrorActionPreference = 'Stop'
 Initialize-Verification -Tool 'eol-check' -Checked @(
     'CRLF / bare-LF / bare-CR counts taken from the raw byte array of the working file',
     'the same census on the HEAD blob, read as raw bytes through git cat-file',
-    'git diff --numstat to detect a whole-file rewrite (line-ending inflation)'
+    'git diff HEAD --numstat to detect a whole-file rewrite (line-ending inflation)',
+    'a byte-level comparison of the working copy against the HEAD blob: same text with different bytes, and a working copy whose bare-LF endings were normalised away'
 )
 
 function Get-EolStats {
@@ -100,6 +101,7 @@ if (-not $NoHeadCompare) {
 $summary = @()
 $failed = $false
 $inconclusive = $false
+$firstFailReason = ''
 
 foreach ($p in $Path) {
     if (-not [System.IO.File]::Exists($p)) {
@@ -145,7 +147,15 @@ foreach ($p in $Path) {
     $h = Get-EolStats -Bytes $blob.StdOutBytes
 
     # Whole-file rewrite detection: git's own line accounting.
-    $numstat = Invoke-CheckedProcess -FilePath $gitCmd.Source -ArgumentList @('-C', $RepoRoot, 'diff', '--numstat', '--', $rel)
+    #
+    # The baseline is HEAD, not the index. Every other measurement here is
+    # against HEAD - the blob is read with `git cat-file HEAD:<rel>` - and a
+    # bare `git diff` compares the WORKING TREE with the INDEX. On a file
+    # whose changes are already staged that diff is empty, and the empty
+    # output was read as "byte identical to HEAD": added and deleted came
+    # out 0/0, the ratio came out 0, and the ratio test could not fire.
+    # Measured 2026-10-22, staged, a real 46/18 change: 0/0, ratio 0, PASS.
+    $numstat = Invoke-CheckedProcess -FilePath $gitCmd.Source -ArgumentList @('-C', $RepoRoot, 'diff', 'HEAD', '--numstat', '--', $rel)
     $added = -1; $deleted = -1; $numstatState = 'ok'
     if ($numstat.ExitCode -ne 0) {
         $numstatState = 'failed'
@@ -153,7 +163,7 @@ foreach ($p in $Path) {
     } else {
         $nsLine = (([string]$numstat.StdOut) -split "`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1)
         if (-not $nsLine) {
-            # Empty numstat means the file is byte identical to HEAD.
+            # Empty numstat against HEAD means git sees no change from HEAD.
             $added = 0; $deleted = 0; $numstatState = 'unchanged'
         } else {
             $cols = $nsLine -split "`t"
@@ -188,8 +198,16 @@ foreach ($p in $Path) {
         $eolRewrite = $false
     }
 
-    $inflated = $eolRewrite -or ($ratio -ge 0 -and $changed -gt 0 -and $ratio -gt $MaxChangedLineRatio)
+    # Three reasons to fail, each with its own message, because a FAIL here
+    # does not always mean line-ending damage (rule 6).
+    #   ratioInflated - git says many lines changed: the ratio heuristic.
+    #   normalised    - HEAD carried bare-LF endings, the working copy has
+    #                   none left and is CRLF. Decided on the BYTES, so it
+    #                   does not depend on the diff algorithm or the index.
+    #   eolRewrite    - the text is identical and the bytes are not.
+    $ratioInflated = ($ratio -ge 0 -and $changed -gt 0 -and $ratio -gt $MaxChangedLineRatio)
     $normalised = ($h.BareLF -gt 0 -and $w.BareLF -eq 0 -and $w.CRLF -gt 0)
+    $failReason = ''
 
     Add-Detail ('  HEAD : crlf={0} bare_lf={1} bare_cr={2} lines={3} bytes={4}' -f $h.CRLF, $h.BareLF, $h.BareCR, $h.Lines, $h.Bytes)
     Add-Detail ('  DELTA: crlf={0} bare_lf={1} lines={2} numstat_added={3} numstat_deleted={4} changed_ratio={5} numstat={6}' -f `
@@ -199,16 +217,32 @@ foreach ($p in $Path) {
     if ($eolRewrite) {
         Add-Detail '  INFLATED: the text is unchanged once line endings are normalised, but the bytes are different: the whole file was rewritten with different endings'
         $failed = $true
-    } elseif ($inflated) {
-        Add-Detail ('  INFLATED: {0} of {1} lines changed ({2}%) for an edit that should be small; use a byte level splice' -f $changed, $headLines, [int]($ratio * 100))
+        $failReason = 'eol-rewrite'
+    } elseif ($normalised) {
+        Add-Detail ('  INFLATED: the working copy has no bare-LF endings left while HEAD had {0}; the file was rewritten wholesale and its endings were normalised, so the diff is inflated. Use a byte level splice.' -f $h.BareLF)
         $failed = $true
+        $failReason = 'endings-normalised'
+    } elseif ($ratioInflated) {
+        Add-Detail ('  INFLATED (changed-line-ratio heuristic, not proof of line-ending damage): {0} of {1} lines changed ({2}%) for an edit that should be small; use a byte level splice' -f $changed, $headLines, [int]($ratio * 100))
+        $failed = $true
+        $failReason = 'ratio'
     }
-    $summary += ('{0}: work crlf={1} bare_lf={2} | head crlf={3} bare_lf={4} | text_equal={5} eol_rewrite={6} changed_ratio={7}' -f `
-        $name, $w.CRLF, $w.BareLF, $h.CRLF, $h.BareLF, $textEqual, $eolRewrite, $ratio)
+    if ($failReason -ne '' -and $firstFailReason -eq '') { $firstFailReason = $failReason }
+    $summary += ('{0}: work crlf={1} bare_lf={2} | head crlf={3} bare_lf={4} | text_equal={5} eol_rewrite={6} normalised={7} changed_ratio={8} fail_reason={9}' -f `
+        $name, $w.CRLF, $w.BareLF, $h.CRLF, $h.BareLF, $textEqual, $eolRewrite, $normalised, $ratio, $failReason)
 }
 
 Set-Field 'SUMMARY' ($summary -join ' | ')
 
-if ($failed) { Complete-Verification -Result 'FAIL' -Message 'a file was rewritten wholesale; the diff is line-ending inflation' }
+if ($failed) {
+    # Rule 6: a FAIL here does not always mean line-ending damage. Name the
+    # reason, so nobody has to infer it from the detail block.
+    $failMessage = switch ($firstFailReason) {
+        'endings-normalised' { 'a file was rewritten wholesale; its line endings were normalised, so the diff is inflated' }
+        'ratio'              { 'a file changed more lines than the edit should; this is the changed-line-ratio heuristic, not proof of line-ending damage' }
+        default              { 'a file was rewritten wholesale; the diff is line-ending inflation' }
+    }
+    Complete-Verification -Result 'FAIL' -Message $failMessage
+}
 if ($inconclusive) { Complete-Verification -Result 'INCONCLUSIVE' -Trust 'MEDIUM' -Message 'some checks could not decide; the reported counts are real, the comparison is incomplete' }
 Complete-Verification -Result 'PASS' -Message 'newline census taken from raw bytes and compared to HEAD'
