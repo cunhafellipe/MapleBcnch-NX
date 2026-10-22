@@ -5,12 +5,16 @@
 
 ---
 
-## 目前狀態（2026-10-20）
+## 目前狀態（2026-10-22）
 
-`HEAD = a180e72`　建置 0 警告 0 錯誤（實測）
+`HEAD = 9182783`　建置 0 警告 0 錯誤（實測，2026-10-22）
 
-> **工作區並不乾淨。** 實測有 **3,343 個未追蹤檔**（git 預設收合顯示 285 筆，會讓人以為只有 285）。
-> 「乾淨」這句是我在沒有用工具量的情況下寫的 —— 那正是失效 3 的後果。
+> **工作區是乾淨的。** 實測 **1 個未追蹤檔**（`tools/verify/suites/position-accuracy.py`，
+> **刻意先不收** —— 那支判官現在是紅的；裁決是「修 port，不是讓 gate 從此每天紅」，
+> 等 `FootholdPhysics.cs` 的 `standing` 選取規則修好、判官轉綠再收）。
+> 先前這裡寫的「3,343 個未追蹤檔」是 2026-10-20 的量測，**它已經過期** ——
+> 那些檔案在 2026-10-22 全部進了版控（`795e30d` / `3c7b307` / `b8eab8c` / `4dc120c`）。
+> **⇒ 這一段自己就是本文件要記的那個失效型態：文件裡的宣稱沒有帶日期與收據。**
 > 量測指令：`tools/verify/git-status-report.ps1`
 
 | 提交 | 內容 |
@@ -293,3 +297,220 @@ TOTAL PROCESS DEATHS: 0
 2. **建置輸出**（0 警告 0 錯誤，或明確說失敗）
 3. **沒做但發現的問題**（只列，不動手）
 4. **用過哪些工具、哪裡可能不可靠**
+
+---
+
+# 2026-10-22 合併稿
+
+STATE.md 合併稿 —— 2026-10-22。證據等級：`[MEASURED]` 我跑過並貼了輸出；`[QUOTED]` 我開了來源並引用原文；`[FROM-LEAD]` 來自 lead，未經我驗證。
+
+STATUS: a DRAFT for `docs/ENGINEERING/STATE.md`. Nothing in the repo was
+touched. Read-only sources: docs/ENGINEERING/STATE.md, the product code, the
+work items, and my own measurements from 2026-10-21/22.
+
+Evidence levels used below: [MEASURED] = I ran it and pasted the output.
+[QUOTED] = I opened the source and quote it. [FROM-LEAD] = the lead's word,
+not verified by me.
+
+=====================================================================
+1. task-37: is MapDocument.Footholds a snapshot or a live structure?
+=====================================================================
+
+THE RESOLUTION IS "BOTH, AND THEY ARE DIFFERENT OBJECTS" - and the answer
+changed with the code, so it needs a date.
+
+[QUOTED] MapleBench/Services/MapModel/MapDocument.cs:290-296 (today's text):
+
+    <b>THE CONTRACT, IN THE PRESENT TENSE.</b> <see cref="Nodes"/> is the
+    document. The typed views are projections of it, and they are projections
+    as of the moment this constructor last ran: after a <see cref="Load"/>,
+    <see cref="Footholds"/> and its siblings describe the tree as it stood
+    AT THAT MOMENT, and they do NOT follow any later edit. A consumer that
+    must see the structure as it stands now has to come through here; a
+    consumer that is content with the structure as loaded may read the typed
+    views directly.
+
+[MEASURED] The property is a SNAPSHOT. The EDITOR'S ENDPOINTS are LIVE, and
+they were live in two different measurements on two different days:
+
+  2026-08-20 (docs/ENGINEERING/STATE.md:212-231, "claim 2 passed"):
+    after deleting one foothold, /api/mapedit/doc reported 12 (live) and
+    Validate reported 4 broken chains.
+
+  2026-10-21 (my own task-16 measurement, map f1/Map/Map1/100000000.img):
+    after deleting one foothold, /api/mapedit/doc reported 337 (live) and
+    Validate reported footholds=338, brokenChains=0, ok=true (STALE).
+    A close+reopen of the same map then made Validate report 337 and
+    brokenChains=4.
+
+So on 2026-10-21 Validate still read the snapshot while the doc read the
+live tree; the fix that made Validate read the live tree is the commit
+`c0c3f22 fix(map): match the reference foothold-below rules and expose the
+result`.
+
+=> The contradiction task-37 recorded is real, and it is TWO mistakes in one:
+   1. the property and the endpoint were treated as the same thing;
+   2. the comment was in the PAST TENSE when the behaviour had already
+      changed, so a reader who opened the file on a later day read a claim
+      that was no longer true. The comment is now in the present tense and
+      says explicitly that the typed views do not follow later edits.
+   ANALYST-MAP was not wrong about the PROPERTY; REVIEWER-NX was not wrong
+   about the ENDPOINT. What is wrong is answering "snapshot or live" without
+   naming which one, and without naming the date.
+
+=> The rule this yields: a question about "is it live or a snapshot" is
+   only answerable about a NAMED OBJECT and a NAMED DATE. "MapDocument.
+   Footholds" and "the map editor's Validate" are different objects, and
+   the second one changed behaviour inside the same week.
+
+=====================================================================
+2. The failure mode "a stale working-directory view"
+=====================================================================
+
+[FROM-LEAD] On 2026-10-21, analyst-map's task-9 read
+MapleBench/Services/Simulate/SimClockService.cs and got the PRE-FIX content,
+while the file on disk had been fixed 12 hours earlier (mtime 2026-10-20
+20:32) and commit `16c19e5` had carried the fix since 2026-10-20 21:09.
+All 22 of its line numbers were therefore off.
+
+WHY IT IS A FAILURE MODE AND NOT A MISTAKE: the stale text was not
+obviously stale. It read as a complete, plausible, well-formatted file, and
+a reviewer with no timestamp in hand cannot tell it from the current one.
+Nothing in the output said "this is an old copy".
+
+=> THE RULE: a line number in a report is a CLAIM ABOUT A MOMENT IN TIME.
+   The file's own history is the receipt. Use:
+       git log --oneline -5 -- <file>
+       git diff HEAD --stat -- <file>
+   Both are read-only and both are cheap. Quote the commit id with the line
+   number, or the line number is an assertion with no evidence behind it.
+
+=> Second half of the rule, from the same incident: a report that quotes
+   code must also say WHEN it read it, and a report that spans several
+   files must check that they were read at the same moment. A report that
+   mixes a file read today with a file read yesterday can be internally
+   inconsistent without any of it being obviously wrong.
+
+=====================================================================
+3. The family "the code contradicts its own adjacent comment" - 10 instances
+=====================================================================
+
+WHAT MAKES IT A FAMILY: the comment is not a TODO, it is an assertion about
+what the code does, written next to the code, and it is FALSE. The reader
+who trusts the comment is wrong in a way that no test catches, because the
+test suite was written by the same reader.
+
+VERIFIED INSTANCES (I opened the source):
+
+ #4  SimClockService.cs:76-81
+     The comment says "One bad pass is logged and the loop carries on, so a
+     single session that cannot be stepped does not freeze every other body
+     on the server." The `catch` is OUTSIDE the `while` (lines 65-83), so
+     the loop does not carry on: the first exception ends ExecuteAsync and
+     the clock is dead for the life of the process. Recorded in
+     docs/ENGINEERING/STATE.md:278-279 as "the 4th instance of this class".
+     [QUOTED - I read the file; the STATE.md line quotes it]
+
+ #9  MapleBench/Services/MapEditor/FootholdPhysics.cs:526-533 vs :557
+     The comment says the grounded branch mirrors
+     FootholdTree::get_fhid_underneath, whose rule is
+     `ground >= y && ground < best_y` - keep the LOWEST. The code is
+     `bool better = falling ? sy < bestSurface : sy > bestSurface;` - the
+     grounded branch keeps the HIGHEST. The comment quotes the reference
+     rule and then implements its opposite.
+     [MEASURED - my own judge measured 67 of 82 probe points disagreeing,
+     and 53 of 76 cases where the character stands exactly on a foothold's
+     own surface and the port names a different one; the reference names
+     the right one 76 of 76. The commit that claims to match the
+     reference is `c0c3f22 fix(map): match the reference foothold-below
+     rules and expose the result`.]
+
+ #10 MobPatrol.cs, two publish paths. [FROM-LEAD - not verified by me]
+
+INSTANCES 1, 2, 3, 5, 6, 7, 8: **NOT FOUND IN THE REPOSITORY.** A search
+over pm/work/, JOURNAL/ and docs/ for this class returns exactly two hits
+(docs/ENGINEERING/STATE.md:278-279 and JOURNAL/2026-10-16-1855-*.md:21).
+The list of ten lives in the agents' own reports and in the lead's notes, so
+it cannot be rebuilt from the tree. The lead has to supply it, or the entry
+has to say "seven instances are not yet written down anywhere".
+
+=> THE RULE this family yields: a comment that states what the code DOES
+   (rather than what it SHOULD do) is a test that has not been written.
+   Two ways to kill the class:
+     - the check that the comment asserts becomes a real assertion in a
+       suite (that is what tools/verify/suites/position-accuracy.py now
+       does for #9: it applies the reference's formula, not the port's);
+     - or the comment is deleted.
+
+=====================================================================
+4. "git commit commits the whole index" - it has happened twice now
+=====================================================================
+
+[MEASURED] Commit `3c7b307 feat(verify): move the gate and its suites into
+version control` says it moves the gate and its suites. It carried
+**198 files changed, 27,119 insertions(+), 57 deletions(-)** - including
+JOURNAL/, docs/, tools/probe/, tools/visual-check/ and .gitignore, which
+another agent had staged.
+
+The cause is not a mistake in the command: `git commit` commits whatever is
+in the index, and `git add <path>` ADDS to the index, it does not replace
+it. So an agent that stages its own paths and then commits will sweep in
+whatever else is already staged.
+
+=> THE RULE: before `git commit`, run `git diff --cached --name-only` and
+   read it. If it contains files that are not yours, either unstage them
+   (`git restore --staged <path>`) or ask before you commit them.
+
+=> SECOND RULE, the same incident: the commit MESSAGE is a promise about
+   what the commit contains. A message that describes 30 files and carries
+   198 is a message that will be read as a description of the 30. Write the
+   message for the whole commit, or split the commit.
+
+=====================================================================
+5. Coverage of the 34 fields of GET /api/simulate/character
+=====================================================================
+
+[MEASURED] The endpoint answers with 34 top-level fields. A census by NAME
+(word-boundary match, because a match must end at a boundary and not
+inside a word) over the committed verification devices:
+
+  named by a GATE suite (tools/verify/suites/)            11
+      path, direction, climb, reason, startX, startY, ticks, seconds,
+      onGround, distance, bounds
+  named only by a PROBE (tools/probe/, MapleBench/tools/)  16
+      jumpEvery, dropAtStep, reachedPortal, ladders, footholds, reachedEdge,
+      fellOut, chainEndedShort, stuck, finalX, finalY, percentOfMap, track,
+      stepSeconds, acceleration, maxWalkSpeed
+  named by NOTHING committed                                7
+      portalTargetMap, portalTargetName, startedOnLadder, ladderX,
+      mapWidth, jumpSpeed, maxFallSpeed
+
+A probe is committed but is not a gate suite: it does not run in the gate
+and gates nothing. So the honest reading is: 7 fields have no judge at
+all, and 16 more are covered only by a probe.
+
+**TO BE MARKED AS PENDING RE-VERIFICATION, with the caveat attached:**
+this is a NAME-level census, not an assertion-level one. A field name
+occurring in a file is not proof that the file asserts on it. Every count
+above is an UPPER BOUND on real coverage, never a lower bound.
+
+The producing script is docs/ENGINEERING/fieldcoverage.py
+(committed 2026-10-22 as docs/ENGINEERING/fieldcoverage.py).
+
+Also true and worth recording here: the position-accuracy judge reads NONE
+of these 34 - it never calls that endpoint. It covers the position CORE
+those fields are built from (the foothold under the feet, the covering set,
+the surface, the layer) on /api/simulate/probe and /api/simulate/geometry.
+The character's own position fields (startX, startY, finalX, finalY,
+onGround) are named by gate suites but are not asserted against the
+reference's formulas by any of them.
+
+=====================================================================
+6. What this file does NOT contain
+=====================================================================
+
+- Instances 1, 2, 3, 5, 6, 7, 8 of the comment-vs-code family (see 3).
+- Any change to docs/ENGINEERING/STATE.md. The lead merges it.
+- The board's task-47 ownerName: **I could not change it.** The call
+  returned "only the Team Lead can reassign tasks", so the lead has to do
+  it another way.
