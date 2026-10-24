@@ -160,17 +160,53 @@ which ignored the 22 renamed) was caught by the checker, not by the lead.
 
 ## Still open
 
+- **`knockback-verify` is still context-sensitive: the gate's verdict depends
+  on which suites ran before it.** MEASURED 2026-10-25 01:44, on HEAD
+  1713ad0 against an instance built from that tree:
+  - inside the gate: `=== knockback === >>> RED (BAD=1) / >>> the control
+    moved 2.100px, so 'it moved' would prove nothing`, and the gate ended
+    `RED SUITES: 1 / RED_SUITE=knockback / GATE_EXIT=1`;
+  - standalone, the SAME tree and the SAME instance, six consecutive runs:
+    every one `exit=0`, `BAD=0`, `impulses seen in 45 frames: 1`.
+  The suite's control (:114, :118, :121) requires an unhit mob not to move
+  -- the same false premise as first-attack-verify's stage 1, because the
+  plain mob PATROLS its foothold chain by design
+  (`MapleBench/Api/SimulatorEndpoints.cs:222-227`). W-064 already turned
+  the lie into an honest refusal; what is left is that the refusal still
+  makes the gate red, and only in the gate's context. Card W9-KB.
+- **The gate now prints which binary it is judging** (card W8-STALE). The
+  five numbers rule 17 asks for, each with its source:
+  ```
+  GATE_INSTANCE=http://127.0.0.1:5602
+  GATE_INSTANCE_PORT=5602
+  GATE_INSTANCE_PID=64972
+  GATE_INSTANCE_PID_SOURCE=Get-NetTCPConnection -State Listen -LocalPort 5602 -> OwningProcess
+  GATE_INSTANCE_START=2026-10-24 23:24:30
+  GATE_INSTANCE_START_SOURCE=Win32_Process.CreationDate for ProcessId=64972
+  GATE_INSTANCE_BINARY=C:\Users\e7896\AppData\Local\Temp\mb-build\MapleBenchX.dll
+  GATE_INSTANCE_BINARY_SOURCE=the loaded module MapleBenchX.dll of ProcessId=64972
+  GATE_INSTANCE_BINARY_BUILT=2026-10-24 21:32:20
+  GATE_COMMITS_AFTER_BINARY=5
+  GATE_PRODUCT_COMMITS_AFTER_BINARY=0
+  ```
+  The last line is the one that matters: the five commits after that
+  binary's build are all documentation and verification tooling, and NO
+  product commit is missing from the instance -- which is exactly the
+  distinction rule 17 asks for and which the gate could not previously make.
+  It also explains how this session produced a RED that was not the tree's
+  fault: the same gate, pointed at the owner's old instance on 5591 (dll
+  built 15:46 against a tree with 5 later commits), reported
+  `RED_SUITE=empty-archive` with `status=403 ... Access to the path ... is
+  denied` -- green against a fresh instance, red against the stale one.
 - `tools/verify/eol-check.ps1`: a checker measured that HEAD's and the
   index's blobs of `MapleBench/tools/soak.py` are CRLF while the working
   tree is LF, and that the two numstat runs are EQUAL. If that holds,
   `tools/verify/AGENTS.md` rule 6's "only a difference between the two
   numstat runs is real churn" is incomplete, because a `text=auto eol=lf`
-  attribute hides the change from the diff. Card W5-EOL.
+  attribute hides the change from the diff. Card W5-EOL, re-dispatched
+  twice; the first attempt ran out of room.
 - The census's output SHAPE changed (two backend lines and a new refusal
   classification). No consumer of the old wording was looked for.
-- `pm/SPEC.yaml` still declares `flaky: true` nowhere; it was removed from
-  `first-attack-verify` with the measurement that removed it named in the
-  note.
 - No suite was re-verified on a second instance, a second map, or a second
   player position.
 

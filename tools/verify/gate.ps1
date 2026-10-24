@@ -374,6 +374,271 @@ $Port = ([uri]$Base).Port
 # read $env:GATE_BASE themselves and refuse to run when it is unset.
 $env:GATE_BASE = $Base
 
+# --------------------------------------------------------------------------- #
+# THE INSTANCE THE GATE IS POINTED AT, AND HOW FRESH IT IS.
+#
+# rule 17: "A judge pointed at an instance running a STALE binary is not a
+# measurement of the tree."  The gate used to print NOTHING about which binary
+# the instance was running, so a RED that came from an old instance read
+# exactly like a RED that came from the tree, and the reader had no way to
+# tell which one they were looking at.
+#
+# THE FIVE NUMBERS rule 17 asks for, and where each one comes from:
+#   the pid                 Get-NetTCPConnection -State Listen -LocalPort <port>
+#                           -> OwningProcess.  BY PORT, never by process NAME:
+#                           name lookup returns the wrong process (rule 17).
+#   the port it owns        the same query
+#   its start time          Win32_Process.CreationDate for that pid
+#   the binary's build time the LastWriteTime of the DLL that pid has LOADED
+#   the commit count        commits in this tree whose COMMITTER date (%cI) is
+#                           newer than that build time
+#
+# Every number is printed WITH ITS SOURCE, because a number without its source
+# is a claim.
+#
+# THIS BLOCK PRINTS.  It does not change the verdict: the decision lines
+# further down are not touched, and the exit code is not touched.  Whether a
+# stale instance should be RED is the owner's decision -- this makes it
+# VISIBLE.
+#
+# The function RETURNS its lines instead of printing them: a function that
+# both prints and returns returns an ARRAY (rule 13), and the caller here
+# wants one string.
+function Get-GateInstanceReport {
+  param([string]$BaseUrl, [int]$PortNumber)
+  # A git query that cannot answer must say so.  git's fatal errors go to
+  # stderr, and a swallowed stderr turns a git FAILURE into a count of ZERO
+  # -- and a comparison that read zero lines is not a comparison (rule 19).
+  # MEASURED 2026-10-25: an earlier version of this block built its
+  # '--since=<stamp>' argument with a '+' INSIDE an array literal, and
+  # PowerShell split it into TWO arguments.  git then failed with
+  # "fatal: bad revision '2026-10-24T15:46:31+08:00'", the stderr was
+  # swallowed, and the product-commit count read 0 -- a FALSE ZERO that said
+  # the instance was fresh when one product commit was missing from it.
+  function Get-GateGitLines([string[]]$GitArgs) {
+    $all = @(& git @GitArgs 2>&1)
+    $fatal = ''
+    $lines = @()
+    foreach ($item in $all) {
+      if ($item -is [System.Management.Automation.ErrorRecord]) {
+        $text = $item.Exception.Message
+        if ($text -match 'fatal:') { $fatal += (' ' + $text) }
+      } else {
+        $lines += $item
+      }
+    }
+    return @{ Lines = $lines; Fatal = $fatal.Trim() }
+  }
+
+  $out = @()
+  $out += ('GATE_INSTANCE={0}' -f $BaseUrl)
+  $out += ('GATE_INSTANCE_PORT={0}' -f $PortNumber)
+
+  $procId = 0
+  $pidSource = ''
+  if ($PortNumber -gt 0) {
+    try {
+      $conns = @(Get-NetTCPConnection -State Listen -LocalPort $PortNumber -ErrorAction Stop)
+      if ($conns.Count -ge 1) {
+        $procId = [int]$conns[0].OwningProcess
+        $pidSource = 'Get-NetTCPConnection -State Listen -LocalPort {0} -> OwningProcess' -f $PortNumber
+      } else {
+        $pidSource = 'Get-NetTCPConnection -State Listen -LocalPort {0} -> no listener' -f $PortNumber
+      }
+    } catch {
+      $pidSource = 'Get-NetTCPConnection failed: ' + $_.Exception.Message
+    }
+  } else {
+    $pidSource = 'the URL carries no port'
+  }
+  if ($procId -gt 0) {
+    $out += ('GATE_INSTANCE_PID={0}' -f $procId)
+  } else {
+    $out += 'GATE_INSTANCE_PID=unknown'
+  }
+  $out += ('GATE_INSTANCE_PID_SOURCE={0}' -f $pidSource)
+
+  # The start time of THAT process.
+  $startText = 'unknown'
+  $startSource = 'no pid'
+  if ($procId -gt 0) {
+    try {
+      $wp = Get-CimInstance Win32_Process -Filter ('ProcessId={0}' -f $procId) -ErrorAction Stop
+      if ($wp -and $wp.CreationDate) {
+        $startText = ([datetime]$wp.CreationDate).ToString('yyyy-MM-dd HH:mm:ss')
+        $startSource = 'Win32_Process.CreationDate for ProcessId={0}' -f $procId
+      } else {
+        $startSource = 'Win32_Process carried no CreationDate for ProcessId={0}' -f $procId
+      }
+    } catch {
+      $startSource = 'Win32_Process failed: ' + $_.Exception.Message
+    }
+  }
+  $out += ('GATE_INSTANCE_START={0}' -f $startText)
+  $out += ('GATE_INSTANCE_START_SOURCE={0}' -f $startSource)
+
+  # The binary.  The COMMAND LINE may hold a RELATIVE path ("MapleBenchX.dll"),
+  # so the loaded module is the source that resolves to a real file.
+  $dllPath = ''
+  $dllSource = 'no pid'
+  $cmdLine = ''
+  if ($procId -gt 0) {
+    try {
+      $wp2 = Get-CimInstance Win32_Process -Filter ('ProcessId={0}' -f $procId) -ErrorAction Stop
+      if ($wp2 -and $wp2.CommandLine) { $cmdLine = $wp2.CommandLine }
+    } catch { }
+    try {
+      $proc = Get-Process -Id $procId -ErrorAction Stop
+      foreach ($mod in @($proc.Modules)) {
+        if ($mod.ModuleName -like 'MapleBenchX*') {
+          $dllPath = $mod.FileName
+          $dllSource = 'the loaded module {0} of ProcessId={1}' -f $mod.ModuleName, $procId
+          break
+        }
+      }
+      if ($dllPath -eq '') { $dllSource = 'no MapleBenchX module is loaded by ProcessId={0}' -f $procId }
+    } catch {
+      $dllSource = 'the module list could not be read: ' + $_.Exception.Message
+    }
+  }
+  if ($dllPath -ne '') {
+    $out += ('GATE_INSTANCE_BINARY={0}' -f $dllPath)
+  } else {
+    $out += 'GATE_INSTANCE_BINARY=unknown'
+  }
+  $out += ('GATE_INSTANCE_BINARY_SOURCE={0}' -f $dllSource)
+  if ($cmdLine -ne '') {
+    $out += ('GATE_INSTANCE_COMMAND_LINE={0}' -f $cmdLine)
+  }
+
+  # The binary's build time: the LastWriteTime of that file.
+  $builtText = 'unknown'
+  $builtSource = 'the binary path is unknown'
+  if ($dllPath -ne '' -and (Test-Path -LiteralPath $dllPath -PathType Leaf)) {
+    try {
+      $built = (Get-Item -LiteralPath $dllPath -ErrorAction Stop).LastWriteTime
+      $builtText = $built.ToString('yyyy-MM-dd HH:mm:ss')
+      $builtSource = 'the LastWriteTime of {0}' -f $dllPath
+    } catch {
+      $builtSource = 'the build time could not be read: ' + $_.Exception.Message
+    }
+  }
+  $out += ('GATE_INSTANCE_BINARY_BUILT={0}' -f $builtText)
+  $out += ('GATE_INSTANCE_BINARY_BUILT_SOURCE={0}' -f $builtSource)
+
+  # The tree, and the commit count between the binary and the tree.
+  $headSha = 'unknown'
+  $headDate = 'unknown'
+  $newer = -1
+  try {
+    $headLine = @(& git -C $Root log -1 --format='%H|%cI' 2>$null)[0]
+    if ($headLine -match '^([0-9a-fA-F]{40})\|(.+)$') {
+      $headSha = $Matches[1]
+      $headDate = $Matches[2]
+    }
+  } catch { }
+  $out += ('GATE_TREE_HEAD={0}' -f $headSha)
+  $out += ('GATE_TREE_HEAD_COMMITTED={0}' -f $headDate)
+  $out += 'GATE_TREE_HEAD_SOURCE=git -C $Root log -1 --format=%H|%cI'
+
+  $builtLocal = $null
+  if ($builtText -ne 'unknown') {
+    try { $builtLocal = [datetime]::Parse($builtText) } catch { $builtLocal = $null }
+  }
+  $gitFatal = ''
+
+  # Every commit newer than the build.
+  $newer = -1
+  if ($builtLocal -ne $null -and $headDate -ne 'unknown') {
+    $q = Get-GateGitLines @('-C', $Root, 'log', '--format=%cI')
+    if ($q.Fatal -eq '') {
+      $count = 0
+      foreach ($stamp in $q.Lines) {
+        try { if ([datetime]::Parse($stamp) -gt $builtLocal) { $count++ } } catch { }
+      }
+      $newer = $count
+    } else {
+      $gitFatal = $q.Fatal
+    }
+  }
+  if ($newer -ge 0) {
+    $out += ('GATE_COMMITS_AFTER_BINARY={0}' -f $newer)
+  } else {
+    $out += 'GATE_COMMITS_AFTER_BINARY=unknown'
+  }
+  $out += 'GATE_COMMITS_AFTER_BINARY_SOURCE=commits in this tree whose COMMITTER date (%cI) is newer than the binary''s build time' + $(if ($gitFatal -ne '') { ' [git said: ' + $gitFatal + ']' } else { '' })
+
+  # The PRODUCT commits: the ones that can change the binary AT ALL.  The
+  # binary is MapleBenchX.dll, built from MapleBench/ and dependencies/MapleLib/
+  # (MapleBenchX.csproj's ProjectReference).  A commit that only touches a
+  # document or the verify tooling cannot make that binary stale, and counting
+  # it would make every instance look stale a few minutes after a docs commit
+  # -- a false alarm that trains the reader to ignore the notice.
+  $productPaths = @('MapleBench', 'dependencies/MapleLib')
+  $productNewer = -1
+  $newestProduct = ''
+  if ($builtLocal -ne $null) {
+    # The stamp is built in its OWN statement: an expression with a '+'
+    # inside an array literal is split into two arguments by PowerShell.
+    $sinceArg = '--since=' + $builtLocal.ToString('yyyy-MM-ddTHH:mm:sszzz')
+    $q2 = Get-GateGitLines (@('-C', $Root, 'log', '--format=%H|%cI|%s', $sinceArg, '--') + $productPaths)
+    if ($q2.Fatal -eq '') {
+      $count = 0
+      foreach ($line in $q2.Lines) {
+        try {
+          $fields = $line -split '\|', 3
+          if ($fields.Count -ge 3 -and [datetime]::Parse($fields[1]) -gt $builtLocal) {
+            $count++
+            if ($newestProduct -eq '') {
+              $newestProduct = ('{0} {1}' -f $fields[0].Substring(0, 7), $fields[2])
+            }
+          }
+        } catch { }
+      }
+      $productNewer = $count
+    } else {
+      $gitFatal = ($gitFatal + ' ' + $q2.Fatal).Trim()
+    }
+  }
+  if ($productNewer -ge 0) {
+    $out += ('GATE_PRODUCT_COMMITS_AFTER_BINARY={0}' -f $productNewer)
+  } else {
+    $out += 'GATE_PRODUCT_COMMITS_AFTER_BINARY=unknown'
+  }
+  $out += 'GATE_PRODUCT_COMMITS_AFTER_BINARY_SOURCE=commits touching MapleBench/ or dependencies/MapleLib/ (the sources MapleBenchX.dll is built from) whose COMMITTER date (%cI) is newer than the binary''s build time' + $(if ($gitFatal -ne '') { ' [git said: ' + $gitFatal + ']' } else { '' })
+  if ($newestProduct -ne '') {
+    $out += ('GATE_NEWEST_PRODUCT_COMMIT={0}' -f $newestProduct)
+  } else {
+    $out += 'GATE_NEWEST_PRODUCT_COMMIT=none'
+  }
+
+  # Stale: the binary was NOT built from the product code the tree holds now.
+  $stale = 'unknown'
+  if ($productNewer -ge 0) {
+    if ($productNewer -gt 0) { $stale = 'yes' } else { $stale = 'no' }
+  }
+  $out += ('GATE_INSTANCE_STALE={0}' -f $stale)
+  $out += 'GATE_INSTANCE_STALE_SOURCE=the PRODUCT commit count above: the binary is stale when the tree holds product commits it was not built from'
+  return ($out -join "`n")
+}
+
+# The notice itself.  It is NOT a '>>> RED' line: the decision lines further
+# down judge each SUITE's output, and this line is about the INSTANCE.  A
+# '>>> RED' here would be a verdict the exit code does not carry -- the very
+# split the gate exists to avoid (rule 14: a verdict read from two places).
+# Whether a stale instance should make the gate RED is the owner's decision.
+$instanceReport = Get-GateInstanceReport -BaseUrl $Base -PortNumber $Port
+Write-Output $instanceReport
+if ($instanceReport -match '(?m)^GATE_INSTANCE_STALE=yes$') {
+  $staleCount = ([regex]::Match($instanceReport, '(?m)^GATE_PRODUCT_COMMITS_AFTER_BINARY=(\d+)\s*$')).Groups[1].Value
+  $staleBuilt = ([regex]::Match($instanceReport, '(?m)^GATE_INSTANCE_BINARY_BUILT=(.+)$')).Groups[1].Value.Trim()
+  $staleNewest = ([regex]::Match($instanceReport, '(?m)^GATE_NEWEST_PRODUCT_COMMIT=(.+)$')).Groups[1].Value.Trim()
+  Write-Output (">>> STALE (the instance at {0} is running a binary built {1}, and {2} PRODUCT commit(s) landed in this tree after that build -- the newest is {3}; the verdicts below are about THAT INSTANCE, not necessarily about this tree) -- instance {0}" -f $Base, $staleBuilt, $staleCount, $staleNewest)
+  Write-Output 'GATE_INSTANCE_STALE_NOTICE=the instance is older than the tree'
+} else {
+  Write-Output 'GATE_INSTANCE_STALE_NOTICE=none'
+}
+
 # ...and "the suite printed no red marker" is NOT the same as "the suite passed".
 #
 # MEASURED 2026-10-17: the backend died of OutOfMemoryException partway through a
