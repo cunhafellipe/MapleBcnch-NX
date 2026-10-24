@@ -160,21 +160,48 @@ which ignored the 22 renamed) was caught by the checker, not by the lead.
 
 ## Still open
 
-- **`knockback-verify` is still context-sensitive: the gate's verdict depends
-  on which suites ran before it.** MEASURED 2026-10-25 01:44, on HEAD
-  1713ad0 against an instance built from that tree:
-  - inside the gate: `=== knockback === >>> RED (BAD=1) / >>> the control
-    moved 2.100px, so 'it moved' would prove nothing`, and the gate ended
-    `RED SUITES: 1 / RED_SUITE=knockback / GATE_EXIT=1`;
-  - standalone, the SAME tree and the SAME instance, six consecutive runs:
-    every one `exit=0`, `BAD=0`, `impulses seen in 45 frames: 1`.
-  The suite's control (:114, :118, :121) requires an unhit mob not to move
-  -- the same false premise as first-attack-verify's stage 1, because the
-  plain mob PATROLS its foothold chain by design
-  (`MapleBench/Api/SimulatorEndpoints.cs:222-227`). W-064 already turned
-  the lie into an honest refusal; what is left is that the refusal still
-  makes the gate red, and only in the gate's context. Card W9-KB.
-- **The gate now prints which binary it is judging** (card W8-STALE). The
+- **`knockback-verify`'s control is now the channel the assertion uses**
+  (card W9-KB, commit 413cc65). The old control required an unhit mob not to
+  move -- the same false premise as first-attack-verify's stage 1 -- AND it
+  measured `fr["mobs"][idx]`'s x, while the assertion reads the frame's own
+  `knockbackPx` (`knockback-verify.py:141`, and the file's own header at
+  :127-129 already said "read from the frame's own knockbackPx, NOT from the
+  mob's x"). The drift distribution over 27 phases is not zero-or-not: **22
+  phases ZERO, 1 PATROL (2.099 px -- one patrol step at MaxWalkSpeed
+  2.5 px/frame, which is the 2.100 px the gate reported), 4 INDEX-SHIFT**
+  (the frame's mob list changed shape and the index named a different
+  animal). The old control would go red in **5 of 27** phases (18.5%); the
+  new one in **0**. It now scans every mob's `max |knockbackPx|` and carries
+  a positive control arm that must fire: the same channel reads **+2.167 px**
+  on a mob that WAS hit. The knockback assertion itself is untouched.
+  **Still open inside this item:** the recoil loop still identifies its mob by
+  index, so the INDEX-SHIFT mode is not fixed -- giving the eleven instances
+  of mob id 2220100 a stable identity is a bigger change than this card.
+- **`eol-check.ps1` was reporting a false green** (card W5-EOL, commit
+  413cc65). MEASURED on a controlled fixture (a scratch git repo outside
+  this one: the HEAD blob has 400 bare-LF endings, the working copy has the
+  same text with every 7th line's ending turned CRLF -- 58 CRLF among 342
+  bare-LF -- and one line edited; `.gitattributes` says `* text=auto eol=lf`):
+  ```
+  git diff HEAD --numstat           -> 1  1
+  git diff HEAD --ignore-all-space  -> 1  1     <- EQUAL
+  HEAD blob    : 3092 bytes  CR= 0  LF=400
+  WORKING copy : 3157 bytes  CR=58  LF=400       <- the endings DID change
+  ```
+  The attribute makes git CLEAN the working copy's CRLF back to LF before
+  diffing, so the CR difference never reaches the diff. The detector that
+  shipped before 2026-10-25 answered that file with `RESULT: PASS` and exit
+  0. It now decides on the bytes (a KIND test) and answers
+  `fail_reason=endings-normalised`. **And `tools/verify/AGENTS.md` rule 6's
+  second half -- "Only a difference between the two numstat runs is real
+  churn" -- was INCOMPLETE and has been corrected with the fixture above.**
+- **The maker's "+44/-1" for `MapleBench/tools/soak.py` is REFUTED**: that
+  file has exactly two commits in its history -- added 428/0, rewritten
+  137/11 -- and no base produces 44/1. The checker's 137/11 is the numstat
+  of the rewrite commit. The tree has moved since: `soak.py` is now committed
+  with the LF form, so `git diff HEAD --numstat -- MapleBench/tools/soak.py`
+  is empty and HEAD, INDEX and the working copy are all 22 261 B, CR=0.
+- The gate now prints which binary it is judging (card W8-STALE). The
   five numbers rule 17 asks for, each with its source:
   ```
   GATE_INSTANCE=http://127.0.0.1:5602
