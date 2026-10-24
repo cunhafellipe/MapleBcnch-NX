@@ -21,11 +21,24 @@ Two things came out of it, both mechanical rather than advisory:
 - `deploy.ps1` now **stops every other MapleBench before starting**, because
   three instances at ~8 GB each starved the machine and `Map.nx` (678 MB, ~13.5
   GB to convert) refused to open **anywhere** with "Not enough memory".
-- `%LOCALAPPDATA%\hermes\cache\scratch\which-server.ps1` prints every instance,
-  its port, its age and whether it is stale. **Run it before trusting anything
-  you see in a browser.**
+- `tools/verify/deploy.ps1` now **prints every MapleBench process and the port
+  it listens on**, and it compares the **listening socket's pid** with the pid
+  it started. A stale server answers `/api/about` identically, so the pid is
+  the only thing that tells them apart. **Read that block before trusting
+  anything you see in a browser.**
+▸ *2026-10-24* The instance census moved into `tools/verify/deploy.ps1`; the
+  standalone `which-server.ps1` died with the pruned cache and is not coming
+  back. The rule it encoded is now a line of the deploy output: `LISTENERS`.
 ▸ The rule: **`http://127.0.0.1:5100` is the editor.** 5591 is the gate's port and
   runs the same binary; there is no third server.
+▸ *2026-10-24, measured* An instance that runs ELEVATED cannot be stopped by
+  an unelevated tool ("Access is denied"), and its command line and loaded
+  modules cannot be read either. `deploy.ps1` reports it as `STOP_FAILED` with
+  the reason and still prints its listening port, because the honest answer
+  ("there is an instance I cannot stop, and here is the port it holds") is
+  more useful than a silent one. It does not fail the chain: the guard that
+  matters is the listener-pid check, which compares the pid on the gate's port
+  with the pid the deploy started.
 
 ---
 
@@ -191,3 +204,132 @@ body three frames to the right — away from the mob it had just approached — 
 cast then missed: "1000 -> 1000". Fix the measurement, not the position.
 ▸ Same trap as making a test pass by relaxing it: if a precondition changes what
 the test is about, the precondition is the defect.
+
+**T-25 — The gate's red channel read a sentence, not a verdict.**
+▸ *2026-10-24* `sim-health` was RED inside the gate and GREEN when run on its own,
+on the same instance, and the gate said `BAD=2` while the suite's own last line said
+`BAD=0`. The suite's output explains itself, and the explanation mentions the
+number: "the shipped judge still reported BAD=2 once (not attributed to this
+block)". The channel was `$text -match 'BAD=[1-9]'` over the WHOLE output, so a
+sentence about a past run was read as this run's verdict. A suite that PASSED was
+red for having written about a number — and the gate printed `BAD=n`, a letter,
+because the number was never filled in.
+▸ The suites' convention is a STANDALONE line (`print(f"\nBAD={bad}")`). The
+channel now narrows to the lines that stand alone before it tests, so prose with
+a number in it is not a verdict. Nothing is weakened: a standalone `BAD=1` still
+reddens, and the `>>> RED` channel still reads the whole output.
+▸ And the gate now prints the failing suite's OWN evidence — the `>>>` markers it
+emitted and its verdict line. Before that it printed the red line and nothing
+else, so the only thing a reader could learn was THAT it failed, not WHICH
+assertion failed.
+
+**T-26 — A child PowerShell inherits the caller's module path.**
+▸ *2026-10-24* The gate chain was green when a shell started it and BROKEN when
+`pm.py` started it, on the same machine and the same `build-gate.ps1`. The
+difference was the environment, not the code: python does not rebuild
+`PSModulePath`, so Windows PowerShell 5.1 inherited the path of the PowerShell 7
+that started `pm.py`. PowerShell 7's `Microsoft.PowerShell.Utility` (7.0.0.0) was
+then the first match in that path, it does not export `Get-FileHash`, and the
+build gate died with "The term 'Get-FileHash' is not recognized as the name of a
+cmdlet" — on a line with nothing to do with the build. Every other cmdlet of that
+module was still there (`Select-Object`, `ConvertTo-Json`), so nothing in the
+failure pointed at the environment.
+▸ `Initialize-PowerShellModulePath` (tools/verify/lib/Common.ps1) pins
+`$env:PSModulePath` to THIS PowerShell's own directories, and it is called at the
+top of every script — a module is autoloaded when the command is first USED, so
+pinning it there also repairs the script's own later cmdlet calls.
+▸ And the md5 no longer depends on a cmdlet at all: `Get-RawMd5OfBytes` /
+`Get-RawMd5OfPath` use `System.Security.Cryptography.MD5`. The normalised rule
+(R-17) already did; the build-diff rule now does too.
+
+**T-27 — The doctor's shape contract is a contract, and a comment can break it.**
+▸ *2026-10-24* `pm.py`'s doctor reads the gate's red channels out of `gate.ps1`
+by finding the pattern test that ADDS to `$bad` — so the shape of that line IS
+the contract between the two tools. Rewriting it (the zero-check on a line of its
+own) broke the contract and the doctor reported **20 suites** whose declared
+marker the gate does not read — with the gate working perfectly. The doctor took
+the FIRST match in the file, so a COMMENT that spelled the shape out was picked
+up in preference to the code, and the marker it extracted became `<PATTERN>`
+instead of `BAD=`.
+▸ When one tool reads another tool's source, the pattern it matches is part of
+that tool's contract. Change the pattern and the reader is changed too, and a
+comment in the file is part of the source.
+
+**T-28 — The artifact is compared against sources it does not contain.**
+▸ *2026-10-24* The build gate refused to build with "the built dll is OLDER
+than the newest product source" — because someone had edited
+`MapleMcp/Program.cs`, a doc-comment change in the MCP server's instructions.
+`MapleBenchX.csproj` has exactly ONE ProjectReference, to `MapleLib`:
+`MapleBenchX.dll` cannot contain that change. The dll was not stale; the
+comparison was against a source the artifact does not contain, so a change to a
+different assembly reddened the build of this one.
+▸ A minute later the same refusal came from `MapleBench/tools/soak.py` — a
+python helper, not compiled into anything. The file list was built with
+`Get-ChildItem -LiteralPath <dir> -Recurse -File -Include '*.cs'`, and
+`-Include` is INERT when the path is given with `-LiteralPath`: it filters the
+leaf only when the path carries a wildcard. So "the newest product source" was
+the newest file of ANY kind under those roots. The extension has to be tested
+in the filter itself.
+▸ Compare an artifact with the sources it is BUILT from, and say what those
+sources are where the comparison is made (`Get-NewestProductSourceTime`). A
+file that cannot end up in the artifact cannot make the artifact stale.
+
+**T-29 — A pipe the server inherits never reaches EOF.**
+▸ *2026-10-24* `deploy.ps1` starts the server with `Start-Process` and a
+redirected stdout. A child inherits EVERY inheritable handle of its parent, not
+just the three standard ones, so the server kept the CALLER's pipe write end
+open and the reader waited for an EOF that never came. `python tools/pm.py gate |
+Tee-Object log.txt` hung for ever, with the gate already finished and no visible
+progress.
+▸ Every step's output goes to a FILE and is tailed; a file has no EOF to wait
+for. `pm.py gate` does the same for the whole chain: it writes the child's
+output to a file and prints it as the file grows.
+
+**T-30 — A step's log is written in the machine's code page, not UTF-8.**
+▸ *2026-10-24* The chain's logs came back as mojibake: the CJK repository path
+as `wz???` and the SDK's Chinese build summary as unreadable bytes. A step
+started with `Start-Process` and a redirected stdout has NO console, so
+`[Console]::OutputEncoding` cannot be set on it and its output lands in the file
+in the machine's ANSI code page (950 here). Reading that as UTF-8 is what turned
+it into replacement characters.
+▸ Decode strictly as UTF-8 first and fall back to the machine's code page.
+The decision is made on the WHOLE file, so a chunk boundary cannot split a
+character and change the answer half way.
+
+**T-31 — MapleLib writes its scratch file into the working directory, named after the output alone.**
+▸ *2026-10-24* `WzFile.SaveToDisk(path, …)` derives a scratch name from the
+OUTPUT FILE NAME ONLY (`Path.GetFileNameWithoutExtension(path) + ".TEMP"`) and
+writes it into the **current working directory**, not next to the output
+(`dependencies/MapleLib/WzLib/WzFile.cs:591`). It deletes it afterwards
+(`:658-662`), but between those two points the name belongs to whoever is
+writing a file with that name. Two containers with the same name created at the
+same time truncate each other's scratch, and the resulting file is corrupt in a
+way that looks like a writer bug.
+▸ The app already guards this for saves (`WzSaveService.cs:1050-1055`) and the
+empty-container creator does the same: the scratch name carries a GUID stem, so
+two creations cannot collide. The working directory of the server is
+`%TEMP%\MapleBench\<pid>` (Program.cs), so the scratch never lands in a client's
+folder either.
+
+**T-32 — An empty .wz reads back at EVERY game version.**
+▸ *2026-10-24* A classic WZ stores a version hash derived from the game
+version, and `WzFile.ParseWzFile` checks it (`WzFile.cs:524-528`). An EMPTY
+archive has nothing under that hash, so it parses at game version -1, 0, 95, 112
+and 230 alike — measured, all five `Success`. "It opened" is therefore NOT
+evidence that the version hash in the container is the one you meant, and a
+container that opens with the wrong game version will be re-written under a
+different hash the next time it is saved.
+▸ The create answer carries the `gameVersion` it was written with, and that is
+the number to open it back with. A container that will hold real data needs the
+game version pinned, not left at -1.
+
+**T-33 — A suite declared in the registry but not wired into the gate is a red doctor, not a silent no-op.**
+▸ *2026-10-24* `pm/SPEC.yaml` declared a new suite and `tools/verify/gate.ps1`
+did not run it. The doctor's registry check (`tools/pm.py:1665-1672`) compares
+the registry against the `Run '<id>'` lines in the gate, and answered
+`DRIFT empty-archive registry=True gate=False` — so the doctor exited 1, the
+gate refused to run ANY suite ("the doctor is not green -- no suite was run"),
+and the whole chain stopped. The new suite itself was green when run by hand.
+▸ Declaring a suite in the registry is half the work. The other half is the
+`Run '<id>'` line in the gate, and until that line exists the doctor reads the
+declaration as a promise the gate does not keep.

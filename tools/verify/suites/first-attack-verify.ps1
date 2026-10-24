@@ -73,36 +73,149 @@ $pl = try {
 }
 "calibration: $PlainMob firstAttack = '$pl'  (must be absent)"
 ""
-"=== 1. a mob WITHOUT firstAttack must not PURSUE until struck ==="
-# firstAttack is a PURSUIT flag (MobAttack.cpp:81, :119-126): it decides whether
-# the mob WALKS TOWARD you. It is NOT a permission to hit you -- contact damage
-# has its own trigger (Stage.cpp:809: find_colliding + create_touch_attack) and
-# needs nothing but overlap. So the assertion here is about the mob's X MOVING,
-# not about damage, which is why the previous version of this section ("a plain
-# mob deals 0 damage") was testing the wrong property and passing for the wrong
-# reason: the two mobs happened to spawn >100px away and never overlapped.
-$s = Sess 1710 -25
-$a = Step $s.sessionId @{}
+"=== 1. a mob WITHOUT firstAttack must not PURSUE the player ==="
+# --------------------------------------------------------------------------- #
+# THE PROPERTY, stated so that it is a property of the TREE and not of where
+# the random spawn happened to land:
+#
+#   A mob that has decided to engage the player ARRIVES at it and STAYS.
+#   A mob that is patrolling may CROSS the player and walk on, or stand next
+#   to it and never move at all. NEITHER of those is a pursuit.
+#
+#   pursuit  <=>  the mob ENDS the measurement window inside the engagement
+#                 band, AND it is still inside that band over the whole tail
+#                 of the window, AND it got there by CLOSING a material
+#                 fraction of the gap it started with.
+#
+# All three clauses are needed and each kills a different false positive.
+# MEASURED 2026-10-24 over 6 x 400-frame runs; the raw per-frame series are
+# C:\mbtest2\w103\plain-3x400.json and C:\mbtest2\w103\fa-3x400.json, and
+# every number below is read out of them:
+#
+#   the mob that HAS firstAttack (2220000): gap 26 -> 18.80, 70 -> 19.62 and
+#     62 -> 18.82, and it then stands there for the rest of the window. It
+#     ends inside the band, it stays inside it, and it gave up 28% / 72% / 70%
+#     of the gap it started with.
+#
+#   the plain mob (2220100): gap 94 -> 94 (it never moved), 11 -> 11 (it never
+#     moved) and 19 -> 548 (it walked its chain AWAY). Three more runs of the
+#     same shape: 44 -> 358 (it CROSSED the player and walked on), 48 -> 208
+#     and 26 -> 26 (it never moved).
+#
+#   * "ends inside the band" ALONE is wrong: a patrol that parks 11 px from
+#     the player and never moves satisfies it.
+#   * "the gap got smaller" ALONE is wrong: the patrol that CROSSED the
+#     player satisfies it (44 -> 0.1 px) and is not pursuing anything.
+#   * "the mob moved" ALONE is wrong: the patrol that walked 529 px AWAY
+#     satisfies it.
+#
+# THE OLD ASSERTION WAS WRONG IN THREE WAYS, and that wrongness is what made
+# this suite red about one run in three (W-103):
+#   1. it forbade ANY movement, but the plain mob PATROLS its own foothold
+#      chain, which is the product's documented behaviour
+#      (MapleBench/Api/SimulatorEndpoints.cs:222-227: "Mobs and NPCs patrol
+#      their own foothold chain. Seeded, so a map's answer is reproducible.");
+#   2. it said "toward a player it was never told about" while never checking
+#      a DIRECTION;
+#   3. its frame loop BROKE at gap <= 2 px, so it stopped measuring at the
+#      instant the mob arrived -- the one moment that decides the question.
+#      The window now runs to the end and the break is gone.
+#
+# THE DAMAGE CHANNEL IS NOT THE DISCRIMINATOR and it cannot be: the map's own
+# mob is within contact range of the character and hurts it (Stage.cpp:809),
+# so a plain mob that merely walks into the player deals damage. MEASURED:
+# the plain mob that stood 11 px away dealt 463 damage over 400 frames
+# without ever pursuing anything. The discriminator has to be the pursuit.
+# --------------------------------------------------------------------------- #
+$Frames = 400
+# The engagement band, in px. The mob that HAS firstAttack was measured
+# standing at 18.80-19.62 px (see above), so 40 px is about twice that.
+$Engaged = 40.0
+# The fraction of its own starting gap the mob must have given up. The
+# firstAttack mob gave up 28%/72%/70% (0.2768 measured, the nearest); the
+# plain mob gave up 0%, 0% and -2784%. A margin of 2.7x on the nearest
+# measurement, and the plain mob's best case is exactly 0.
+$CloseFrac = 0.10
+# The tail of the window the mob must hold the band for.
+$TailFrames = 100
+# The spawn is a random draw within 100 px of the character
+# (SimulatorEndpoints.cs:451-455) and the endpoint takes no position, so a
+# spawn that lands INSIDE the band cannot show "it closed the gap" -- the
+# mob has nothing left to close. That draw is thrown away and drawn again.
+$MinSpawnGap = 40.0
+$MaxSpawnTries = 8
+
+# THE ONE PREDICATE. Stage 1 requires it to be FALSE for the mob without
+# firstAttack and stage 2 requires it to be TRUE for the mob that has it --
+# the same function, the same numbers, opposite expectations. That is what
+# makes it a check and not a tautology: if stage 2 ever stops firing, the
+# measurement is measuring nothing.
+function Test-Pursuit {
+    param($M)
+    if ($null -eq $M -or $M.gap0 -le 0) { return $false }
+    $engaged = ($M.gapN -le $Engaged) -and ($M.tailMax -le $Engaged)
+    $closed = (($M.gap0 - $M.gapN) / $M.gap0) -ge $CloseFrac
+    return ($engaged -and $closed)
+}
+
+# One measurement: summon the mob, run the window to the END, and report the
+# gap trajectory. The window is NOT broken early -- that was the old
+# version's third mistake.
+function Measure-Mob {
+    param([string]$MobId, [int]$Frames)
+    for ($try = 1; $try -le $MaxSpawnTries; $try++) {
+        $s = Sess 1710 -25
+        $sum = Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)/summon" -Method Post `
+            -Body (@{ mobId = $MobId; count = 1 } | ConvertTo-Json -Compress)
+        $a = Step $s.sessionId @{}
+        $m0 = @($a.mobs)[$sum.indexes[0]]
+        $gap0 = [Math]::Abs([double]$a.x - [double]$m0.x)
+        if ($gap0 -lt $MinSpawnGap) {
+            Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+            "  (spawn $try of $MobId landed $gap0 px from the player -- too close for 'it closed the gap' to mean anything; drawing again)"
+            continue
+        }
+        $gaps = @()
+        $dmg = 0.0
+        for ($i = 0; $i -lt $Frames; $i++) {
+            $a = Step $s.sessionId @{}
+            $m = @($a.mobs)[$sum.indexes[0]]
+            $gaps += [Math]::Abs([double]$a.x - [double]$m.x)
+            $dmg += [double]$a.playerDamage
+        }
+        $tail = @($gaps | Select-Object -Last $TailFrames)
+        $summary = [pscustomobject]@{
+            mobId   = $MobId
+            tries   = $try
+            gap0    = $gap0
+            gapN    = [double]$gaps[-1]
+            gapMin  = [double](($gaps | Measure-Object -Minimum).Minimum)
+            gapMax  = [double](($gaps | Measure-Object -Maximum).Maximum)
+            tailMax = [double](($tail | Measure-Object -Maximum).Maximum)
+            damage  = $dmg
+        }
+        Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+        return $summary
+    }
+    return $null
+}
+
+$diag = Sess 1710 -25
+$a = Step $diag.sessionId @{}
 $nearest = ($a.mobs | Where-Object { $_.kind -eq 'm' } |
             Sort-Object { [Math]::Abs([double]$_.x - [double]$a.x) } | Select-Object -First 1)
 "  map mobs: $(@($a.mobs | Where-Object { $_.kind -eq 'm' }).Count), nearest is $([Math]::Abs([double]$nearest.x - [double]$a.x)) px away"
 "  (that one IS within contact range, and it will hurt -- that is Stage.cpp:809 and it is correct."
-"   The assertion below is about the mob we SUMMON, and about its X, not about damage.)"
-$sum = Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)/summon" -Method Post `
-  -Body (@{ mobId = $PlainMob; count = 1 } | ConvertTo-Json -Compress)
-"  summoned the plain mob $($sum.spawned) -> index $($sum.indexes -join ',')"
-$a = Step $s.sessionId @{}
-$startX = [double](@($a.mobs)[$($sum.indexes[0])].x)
-$closest = [double]::MaxValue
-for ($i = 0; $i -lt 400; $i++) {
-  $a = Step $s.sessionId @{}
-  $m = @($a.mobs)[$($sum.indexes[0])]
-  $gap = [Math]::Abs([double]$a.x - [double]$m.x)
-  if ($gap -lt $closest) { $closest = $gap }
-  if ($gap -le 2) { break }
+"   The assertion below is about the mob we SUMMON, and about whether it PURSUES, not about damage.)"
+Invoke-Api -Uri "$base/api/simulate/session/$($diag.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+
+$plain = Measure-Mob $PlainMob $Frames
+if ($null -eq $plain) {
+    ">>> RED: no spawn of $PlainMob landed far enough from the player in $MaxSpawnTries draws to measure whether it closed the gap"
+    exit 1
 }
-$m = @($a.mobs)[$($sum.indexes[0])]
-"  plain mob x $startX -> $([double]$m.x)  (closest approach to the player: $closest px)"
+$plainClosed = [Math]::Round((($plain.gap0 - $plain.gapN) / $plain.gap0) * 100, 1)
+"  plain mob: spawn gap $([Math]::Round($plain.gap0,2)) px -> end gap $([Math]::Round($plain.gapN,2)) px, min $([Math]::Round($plain.gapMin,2)) px, tail max $([Math]::Round($plain.tailMax,2)) px, it gave up $plainClosed% of its starting gap, and the player took $([Math]::Round($plain.damage)) damage (contact, not an attack)"
 $stage1Failed = $false
 # The green shape is HELD, not printed. Stage 2 runs after this point and can
 # still fail, and a "PASS:" that is already in the output is a green shape in a
@@ -111,32 +224,35 @@ $stage1Failed = $false
 # one run showed "GREEN? PASS: ..." next to ">>> RED (>>> RED)". MEASURED on
 # the gate, 2026-10-22, before this change.
 $stage1Pass = ''
-if ([Math]::Abs([double]$m.x - $startX) -lt 1) { $stage1Pass = "  PASS: it did not walk toward the player -- no firstAttack, never struck" }
-# Same trap as the ABORT above: a "FAIL" in prose is not a marker. The gate
-# would print "ok" and this failure would be counted as a pass.
-else { $stage1Failed = $true; ">>> RED: it moved $([Math]::Abs([double]$m.x - $startX)) px toward a player it was never told about" }
-Invoke-Api -Uri "$base/api/simulate/session/$($s.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
-# A failing suite must also exit non-zero -- callers read the exit code (rule 14).
-if ($stage1Failed) { exit 1 }
+if (Test-Pursuit $plain) {
+    $stage1Failed = $true
+    ">>> RED: the plain mob $PlainMob PURSUED a player it was never told about: it gave up $plainClosed% of its starting gap and ended $([Math]::Round($plain.gapN,2)) px away, inside the engagement band, and stayed there. A mob without firstAttack must not pursue."
+} else {
+    $stage1Pass = "  PASS: it did not pursue -- no firstAttack, never struck"
+}
 
 "=== 2. a mob WITH firstAttack must PURSUE and hit, unprovoked ==="
-$s2 = Sess 1710 -25
-$sum2 = Invoke-Api -Uri "$base/api/simulate/session/$($s2.sessionId)/summon" -Method Post `
-  -Body (@{ mobId = $FirstAttackMob; count = 1 } | ConvertTo-Json -Compress)
-"  summoned $FirstAttackMob -> spawned=$($sum2.spawned) index=$($sum2.indexes -join ',')"
-$hits = @()
-for ($i = 0; $i -lt 400; $i++) {
-  $a = Step $s2.sessionId @{}
-  if ($a.playerDamage -gt 0) { $hits += "  +$i frames: hit for $($a.playerDamage), hp $($a.status.hp)/$($a.status.maxHp)" }
-  if ($hits.Count -ge 2) { break }
+# The SAME predicate and the SAME numbers, with the OPPOSITE expectation.
+# The damage is printed as corroboration only: the map's own mob is in
+# contact range and hurts the player, so a non-zero damage total does not
+# prove that THIS mob attacked anything.
+$fam = Measure-Mob $FirstAttackMob $Frames
+if ($null -eq $fam) {
+    ">>> RED: no spawn of $FirstAttackMob landed far enough from the player in $MaxSpawnTries draws to measure whether it closed the gap"
+    exit 1
 }
+$famClosed = [Math]::Round((($fam.gap0 - $fam.gapN) / $fam.gap0) * 100, 1)
+"  firstAttack mob: spawn gap $([Math]::Round($fam.gap0,2)) px -> end gap $([Math]::Round($fam.gapN,2)) px, min $([Math]::Round($fam.gapMin,2)) px, tail max $([Math]::Round($fam.tailMax,2)) px, it gave up $famClosed% of its starting gap, and the player took $([Math]::Round($fam.damage)) damage"
 # W-056, the same bug the sibling suite already fixed: the gate reads the
 # literal "NO damage number" and String.Contains does not match on case.
 $stage2Failed = $false
 $stage2Pass = ''
-if ($hits.Count -eq 0) { $stage2Failed = $true; ">>> RED: no damage over 400 frames -- firstAttack did not acquire" }
-else { $hits | ForEach-Object { $_ }; $stage2Pass = "  PASS: it attacked without being struck" }
-Invoke-Api -Uri "$base/api/simulate/session/$($s2.sessionId)" -Method Delete -TimeoutSec 60 | Out-Null
+if (-not (Test-Pursuit $fam)) {
+    $stage2Failed = $true
+    ">>> RED: the mob $FirstAttackMob has firstAttack but did not pursue: it ended $([Math]::Round($fam.gapN,2)) px from the player (tail max $([Math]::Round($fam.tailMax,2)) px) after giving up $famClosed% of its starting gap. firstAttack did not acquire."
+} else {
+    $stage2Pass = "  PASS: it pursued without being struck"
+}
 if ($stage2Failed) { exit 1 }
 
 # Both stages passed and nothing below can fail any more, so only NOW is a green

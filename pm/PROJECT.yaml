@@ -68,7 +68,30 @@ test_port: 5591
 banned_ports: [5480]
 test_map: 'f4/Map/Map1/100000004.img'
 test_spawn: [1710, -25]
-scratch_dir: '%LOCALAPPDATA%\hermes\cache\scratch'
+scratch_dir: '%TEMP%\maplebench-verify'
+scratch_note: >
+  ONLY OUTPUTS live here: the previous build (so a build can be diffed) and the
+  server's log files. Nothing that decides whether the code is correct may live
+  in a directory that prunes itself. The startup chain used to live in
+  %LOCALAPPDATA%\hermes\cache\scratch, and that directory pruned itself on
+  2026-10-21, taking build-gate.ps1, deploy.ps1 and open-archives.py with it
+  (pm/TRAPS.md T-0, tools/pm.py:876). The chain now lives IN the repository,
+  under tools/verify/.
+
+# --------------------------------------------------------------------------
+# the startup chain
+# --------------------------------------------------------------------------
+startup_chain: >
+  The four steps, in order. Each is the precondition of the next, and a step
+  that is skipped does not fail -- it produces a green gate that measured the
+  wrong binary. tools/verify/gate-loop.ps1 runs all four and chooses the
+  instance it deployed.
+startup_chain_steps:
+  - tools/verify/build-gate.ps1
+  - tools/verify/deploy.ps1
+  - tools/verify/open-archives.py
+  - tools/verify/gate.ps1
+startup_chain_entry: tools/verify/gate-loop.ps1
 
 # --------------------------------------------------------------------------
 # the loop

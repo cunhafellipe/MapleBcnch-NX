@@ -35,10 +35,12 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import locale
 import os
 import re
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PM = os.path.join(ROOT, "pm")
@@ -279,6 +281,12 @@ def load_items(strict: bool = False) -> list[dict]:
 # --------------------------------------------------------------------------- #
 SPEC_FILE = os.path.join(PM, "SPEC.yaml")
 
+# pm/PROJECT.yaml — the project's own settings: the test port, the banned
+# ports, and the DECLARED startup chain. It is read with the same flat-block
+# reader as the SPEC (pm.py deliberately does not depend on PyYAML), and the
+# path is here rather than inline so a second copy of it cannot drift.
+PROJECT_FILE = os.path.join(PM, "PROJECT.yaml")
+
 
 def _scalar(raw: str):
     raw = raw.strip()
@@ -349,6 +357,15 @@ def _spec_block(lines: list[str], start: int, indent: int) -> tuple[object, int]
             if nind <= indent:
                 break
             nstr = nxt.strip()
+            if nstr.startswith("#"):
+                # A COMMENT inside the list.  It is skipped: breaking here
+                # truncates the WHOLE list at the comment, so every item
+                # after it is lost.  A comment at or LEFT of this block's own
+                # indent still ends the block -- the `nind <= indent` check
+                # above comes first -- which is how a banner comment closes a
+                # section, and that behaviour is unchanged.
+                j += 1
+                continue
             if nstr.startswith("- "):
                 item = nstr[2:].strip()
                 if ":" in item:
@@ -364,16 +381,36 @@ def _spec_block(lines: list[str], start: int, indent: int) -> tuple[object, int]
                         sind = len(sib) - len(sib.lstrip(" "))
                         if sind <= nind or sib.strip().startswith("- "):
                             break
+                        if sib.strip().startswith("#"):
+                            # A COMMENT inside a list item.  It is not a key, so
+                            # it is skipped -- breaking here silently drops
+                            # every key that comes after it, and then the list
+                            # loop below sees the comment as a line that is not
+                            # a `- ` item and ends the WHOLE list.
+                            # MEASURED (task-167, wave 1 card H): one
+                            # colon-less comment inside the first `areas` item
+                            # took the list from 16 rows down to 1, and the
+                            # item itself from 5 keys down to 3.
+                            j += 1
+                            continue
                         if ":" not in sib.strip():
-                            break
+                            # A CONTINUATION line of a value that was already
+                            # read (a folded scalar's body).  It is skipped,
+                            # not treated as the end of the item.
+                            j += 1
+                            continue
                         sk, _, sv = sib.strip().partition(":")
                         sk = sk.strip()
                         sv = sv.strip()
                         if sv == ">":
                             # A folded scalar. Consume its deeper lines HERE, or
                             # the enclosing list loop sees an indented line that
-                            # is not a `- ` item and ends the list early -- which
-                            # is how `areas` read as 1 instead of 17.
+                            # is not a `- ` item and ends the list early.
+                            #
+                            # The number of areas that used to be quoted here is
+                            # NOT repeated on purpose: it is a count that moves
+                            # when pm/SPEC.yaml moves, and `pm.py coverage`
+                            # prints the live one ("- areas: N   suites: N").
                             folded = []
                             j += 1
                             while j < len(lines) and (
@@ -397,10 +434,10 @@ def _spec_block(lines: list[str], start: int, indent: int) -> tuple[object, int]
     return out, i
 
 
-def load_spec() -> dict:
-    if not os.path.exists(SPEC_FILE):
+def load_spec(path: str = SPEC_FILE) -> dict:
+    if not os.path.exists(path):
         return {}
-    with open(SPEC_FILE, "r", encoding="utf-8-sig") as fh:
+    with open(path, "r", encoding="utf-8-sig") as fh:
         lines = fh.read().splitlines()
     spec, _ = _spec_block(lines, 0, 0)
     return spec
@@ -1287,30 +1324,69 @@ def cmd_critical(_args) -> int:
 # run's start and an older reference is strictly the weaker check.
 
 
-def _newest_mtime(root: str):
-    """Newest file mtime under `root`.
+def _newest_mtime(root: str, exclude=None, since=None):
+    """Newest file mtime under `root`, ignoring the declared exclusions.
 
     os.stat / os.scandir ONLY. This function never opens a file for writing and
     never writes to the tree it measures -- the invariant it feeds guards a
     directory that must not be touched, so the checker must not touch it
     either.
 
-    Returns (newest_epoch_or_None, files_scanned, dirs_unreadable). The counts
-    ship with the answer on purpose (rule 18): "0 files newer" over an
-    unstated denominator is the same shape as a missing field.
+    `exclude` is a list of patterns matched against the path RELATIVE to
+    `root`, with forward slashes. A pattern matches a file when the file's
+    relative path matches it, or when ANY ANCESTOR DIRECTORY of it matches --
+    so naming a directory excludes its whole subtree. Matching is
+    case-insensitive on Windows (fnmatch normalises the case), which is what
+    a path on this machine behaves like.
+
+    WHY EXCLUSIONS EXIST AT ALL: the guarded directory is not only the user's
+    original data. MEASURED 2026-10-24 on C:\\MUWORK\\GAME\\MPSHS: the same
+    folder also holds the game client's own `Settings` file -- the client
+    reads it RELATIVE to its working directory (src/Configuration.cpp:114-115,
+    FILENAME = "Settings"), so the running client rewrites it by design -- and
+    it held 98 screenshot PNGs plus two client logs written by the
+    beidou-client MCP harness. A guard that cannot tell "the user's original
+    data" from "the app's own runtime file" reports the second as the first,
+    and a guard that cries wolf is worse than no guard (pm/GATE.md).
+
+    An exclusion never hides a write silently: the excluded files that are
+    newer than the reference are RETURNED and the doctor prints them by name.
+    Everything that is not excluded still goes red.
+
+    Returns (newest_epoch_or_None, files_scanned, dirs_unreadable,
+    excluded_newer, excluded_count) where excluded_newer is a list of
+    (relative_path, mtime) for excluded files newer than `since` (all
+    excluded files when `since` is None). The counts ship with the answer on
+    purpose (rule 18): "0 files newer" over an unstated denominator is the
+    same shape as a missing field.
     """
+    import fnmatch
+
+    patterns = [p for p in (exclude or []) if p]
+
+    def _excluded(rel_posix, ancestors):
+        for pat in patterns:
+            if fnmatch.fnmatch(rel_posix, pat):
+                return True
+            for anc in ancestors:
+                if fnmatch.fnmatch(anc, pat):
+                    return True
+        return False
+
     newest = None
     scanned = 0
     unreadable = 0
-    stack = [root]
+    excluded_count = 0
+    excluded_newer = []
+    stack = [(root, "")]
     while stack:
-        d = stack.pop()
+        d, rel_d = stack.pop()
         try:
             with os.scandir(d) as it:
                 for e in it:
                     try:
                         if e.is_dir(follow_symlinks=False):
-                            stack.append(e.path)
+                            stack.append((e.path, (rel_d + "/" + e.name) if rel_d else e.name))
                             continue
                         if not e.is_file(follow_symlinks=False):
                             continue
@@ -1318,12 +1394,18 @@ def _newest_mtime(root: str):
                     except OSError:
                         unreadable += 1
                         continue
+                    rel = (rel_d + "/" + e.name) if rel_d else e.name
+                    if patterns and _excluded(rel, rel_d.split("/") if rel_d else []):
+                        excluded_count += 1
+                        if since is None or m > since:
+                            excluded_newer.append((rel, m))
+                        continue
                     scanned += 1
                     if newest is None or m > newest:
                         newest = m
         except OSError:
             unreadable += 1
-    return newest, scanned, unreadable
+    return newest, scanned, unreadable, excluded_newer, excluded_count
 
 
 def _parse_mtime(value):
@@ -1356,12 +1438,31 @@ def _parse_mtime(value):
     return d.timestamp()
 
 
-def cmd_doctor(_args) -> int:
+def cmd_doctor(args) -> int:
     """D5: is the environment and the state trustworthy right now?"""
     import hashlib
     import json
     import urllib.request
     bad = 0
+
+    # The registry to check. The default is the tree's own pm/SPEC.yaml;
+    # --spec points the doctor at ANOTHER file so a malformed registry can be
+    # fed to it without editing the shared one.
+    #
+    # WHAT COMES FROM THE COPY -- MEASURED (task-170), not assumed. The gate's
+    # Run list and the suite FILES still come from THIS tree, but the
+    # invariant DECLARATIONS come from the COPY: a copy of pm/SPEC.yaml whose
+    # `avatar-md5` row carries a wrong expected digest makes the doctor print
+    # "avatar-md5: CHANGED" and exit 1, while a byte-identical copy of the
+    # same file prints "avatar-md5: ok". The digest the doctor compares
+    # against is the one the COPY declares; only the checked FILE is the
+    # tree's. The wording this comment used to carry ("the invariants are
+    # still this tree's") said the opposite and was wrong.
+    spec_path = getattr(args, "spec", None) or SPEC_FILE
+    if spec_path != SPEC_FILE:
+        print(f"  checking the registry at {spec_path}")
+        print("  (the gate and the suite files are still this tree's; the")
+        print("   registry AND the invariant declarations come from the copy)")
 
     print("=== state integrity ===")
     items = load_items(strict=True)
@@ -1379,7 +1480,7 @@ def cmd_doctor(_args) -> int:
 
     print()
     print("=== invariants (pm/SPEC.yaml) ===")
-    spec = load_spec()
+    spec = load_spec(spec_path)
     # D2 -- a missing DECLARATION FILE is a defect, not an empty result.
     #
     # MEASURED 2026-10-23: with pm/SPEC.yaml and tools/verify/gate.ps1 both
@@ -1388,8 +1489,8 @@ def cmd_doctor(_args) -> int:
     # reads an empty registry. The gate reads the exit code and the token, saw
     # a clean bill of health, and ran the suites. "I measured nothing" was
     # reported as "I found nothing".
-    if not os.path.exists(SPEC_FILE):
-        print(f"  MISSING the declaration file: {SPEC_FILE}")
+    if not os.path.exists(spec_path):
+        print(f"  MISSING the declaration file: {spec_path}")
         print("      The doctor cannot check what it cannot read. An absent")
         print("      SPEC leaves every section below empty, so 'no problems")
         print("      found' would be indistinguishable from 'nothing checked'.")
@@ -1529,7 +1630,8 @@ def cmd_doctor(_args) -> int:
                 print(f"  {inv.get('id', '?')}: MISSING {mpath}")
                 bad += 1
                 continue
-            newest, n_files, n_unreadable = _newest_mtime(mpath)
+            newest, n_files, n_unreadable, excluded_newer, n_excluded = _newest_mtime(
+                mpath, exclude=inv.get("exclude"), since=mref)
             if newest is None:
                 print(f"  {inv.get('id', '?')}: UNREADABLE {mpath}"
                       f"  files scanned={n_files} dirs unreadable={n_unreadable}")
@@ -1539,8 +1641,21 @@ def cmd_doctor(_args) -> int:
             print(f"  {inv.get('id', '?')}: {'TOUCHED' if touched else 'ok'}"
                   f"  newest={_dt.datetime.fromtimestamp(newest).isoformat(sep=' ')}"
                   f"  reference={_dt.datetime.fromtimestamp(mref).isoformat(sep=' ')}"
-                  f"  files scanned={n_files} unreadable={n_unreadable}")
+                  f"  files scanned={n_files} unreadable={n_unreadable}"
+                  f"  excluded={n_excluded}")
             print(f"      reference = {mref_src}")
+            # The exclusions are shown, never silent. An excluded file that is
+            # newer than the reference did NOT redden the guard -- the user has
+            # to be able to see that it changed, and see WHAT changed.
+            if excluded_newer:
+                print(f"      excluded from this guard ({len(excluded_newer)} file(s)"
+                      " newer than the reference, by declaration -- not original"
+                      " data, so they do not redden it):")
+                for rel, m in sorted(excluded_newer, key=lambda x: -x[1])[:20]:
+                    print(f"        {rel}"
+                          f"  {_dt.datetime.fromtimestamp(m).isoformat(sep=' ')}")
+                if len(excluded_newer) > 20:
+                    print(f"        ... and {len(excluded_newer) - 20} more")
             if touched:
                 print("      a file under this path is NEWER than the reference"
                       " -- something wrote there after it")
@@ -1578,13 +1693,21 @@ def cmd_doctor(_args) -> int:
         # check (TRAPS T-2: a regex is not a verdict).
         registered = set(re.findall(r"Run\s+'([^']+)'", text))
         for s in spec_rows(spec, "suites"):
-            in_gate = s["id"] in registered
+            # A row with no `id:` is a row with no id, NOT a row whose id is
+            # the string "None".  Reading it with a subscript raised KeyError
+            # and killed the doctor before it could report the row at all --
+            # MEASURED (task-167, wave 1 card H): a registry with one such row
+            # ended the run with a traceback instead of a verdict.  A row with
+            # no id cannot be in the gate's Run list, so it is reported as
+            # not-in-gate, and it is named.
+            sid = s.get("id") or ""
+            in_gate = sid in registered
             should = s.get("in_gate") is not False
             mark = "ok" if in_gate == should else "DRIFT"
             if mark == "DRIFT":
                 bad += 1
-            print(f"  {mark:5s} {s['id']:22s} registry={should}  gate={in_gate}")
-        orphans = sorted(registered - {s["id"] for s in spec_rows(spec, "suites")})
+            print(f"  {mark:5s} {sid or '(no id)':22s} registry={should}  gate={in_gate}")
+        orphans = sorted(registered - {s.get("id") or "" for s in spec_rows(spec, "suites")})
         if orphans:
             print(f"  gate runs suites the registry does not list: {', '.join(orphans)}")
             bad += len(orphans)
@@ -1641,18 +1764,38 @@ def cmd_doctor(_args) -> int:
         for n in sorted(os.listdir(SUITES)):
             if os.path.isfile(os.path.join(SUITES, n)):
                 on_disk.append(n)
-    print(f"  suite files on disk under tools/verify/suites/: {len(on_disk)}"
-          "   (the third denominator -- neither the SPEC list nor the gate's"
-          " Run list can move it)")
     gate_text = ""
     if os.path.exists(GATE):
         gate_text = open(GATE, encoding="utf-8", errors="replace").read()
     red_markers = _gate_red_markers(gate_text)
     suite_rows = spec_rows(spec, "suites")
+    # WHAT THIS COUNT IS (task-170, F4).  It is a DIRECTORY census, not a
+    # suite census: the directory holds the declared suite files PLUS the
+    # answer caches the suites write, and two declared suites live OUTSIDE it.
+    # So the number is neither "the number of suites" nor "the number of
+    # suites plus two" -- the numbers below are computed, and they are
+    # printed with it so the two cannot be read apart.
+    _declared_files = set(str(s.get("file") or "") for s in suite_rows)
+    _declared_files.discard("")
+    _suites_dir = "tools/verify/suites/"
+    _inside = sorted(f for f in _declared_files if f.startswith(_suites_dir))
+    _outside = sorted(f for f in _declared_files if not f.startswith(_suites_dir))
+    _nonsuite = sorted(n for n in on_disk
+                       if _suites_dir + n not in _declared_files)
+    print("  files in tools/verify/suites/: %d"
+          "   (the third denominator -- neither the SPEC list nor the gate's"
+          " Run list can move it)" % len(on_disk))
+    print("  of those %d file(s): declared suite files inside the directory=%d"
+          "  declared suite files OUTSIDE it=%d  files that are not declared"
+          " suites=%d"
+          % (len(on_disk), len(_inside), len(_outside), len(_nonsuite)))
+    print("  declared suite files OUTSIDE the directory: %s" % _outside)
+    print("  files in the directory that are not declared suites: %s"
+          % _nonsuite)
     # The third denominator. The check above compares TWO LISTS -- SPEC's
     # `suites:` against the gate's `Run '...'` entries -- and two empty lists
     # agree with each other, so emptying both makes that comparison find
-    # nothing to disagree about while 37 suite files sit on disk.
+    # nothing to disagree about while the suite files sit on disk.
     #
     # MEASURED 2026-10-23, arm A (first measured by the reviewer, reproduced
     # here as case T16): SPEC's suites commented out AND the gate's Run list
@@ -1717,6 +1860,72 @@ def cmd_doctor(_args) -> int:
         decl_gap += 1 if gaps else 0
         if not problems and not gaps:
             print(f"  ok    {sid:22s} verdict={verdict!r} red_marker={declared}")
+    # --- registry uniqueness ---------------------------------------------
+    # A suite id and a suite file are the two keys this registry is looked up
+    # BY, and both have to be unique. A duplicate key makes every lookup
+    # ambiguous: the gate-vs-registry comparison above is a SET comparison, so
+    # it reads one row and the other row is never seen, and two rows claiming
+    # the same file mean two ids describe one suite.
+    #
+    # MEASURED 2026-10-23 (task-140, arm `dup-ladder` -- the ladder-all row
+    # duplicated verbatim, id AND file): the doctor exited 0, printed
+    # DOCTOR_SUITES_PROBLEMS=0, and the gate stayed green. The duplicate was
+    # invisible to every check the doctor ran.
+    #
+    # The row COUNT cannot see it either: adding a row moves the count in the
+    # healthy shape and in the broken shape alike, so a count is not a
+    # duplicate detector. These two checks count the duplicates themselves,
+    # over the registry's own rows.
+    #
+    # The two keys are compared BY EXACT EQUALITY, never by containment.
+    # "fighter.json" is a SUBSTRING of "ballfighter.json", so a containment
+    # test would call two different files one file and manufacture a
+    # duplicate-file finding out of two unrelated suites. A match on text has
+    # to end at a BOUNDARY (rule 12); here the boundary is the whole declared
+    # path string, so two rows name the same file only when the strings are
+    # equal.
+    dup_ids = 0
+    dup_files = 0
+    by_id = {}
+    by_file = {}
+    for s in suite_rows:
+        # The SAME sentinel rule as the file key below: a row that declares no
+        # `id:` is a row with no id, NOT a row that declares the id "None".
+        # Two such rows duplicate no id -- the declaration family reports each
+        # of them on its own -- so counting them here would be a finding
+        # against nothing, and it would print a name ("None") that says
+        # nothing about what is actually duplicated.
+        by_id.setdefault(str(s.get("id") or ""), []).append(s)
+        # A row that declares no `file:` is a row with no file, NOT a row that
+        # declares the file "None".  MEASURED 2026-10-23 (task-170, finding
+        # B7): two such rows were reported as `DUPLICATE SUITE FILE None` and
+        # the problem count went UP by one for a pair of rows that duplicate no
+        # file at all.  The key is "" and the comparison below skips it.
+        by_file.setdefault(str(s.get("file") or ""), []).append(s)
+    for sid, rows in by_id.items():
+        if sid == "":
+            # No id declared: there is nothing to compare.  Counting this as
+            # a duplicated id is a finding against nothing.
+            continue
+        if len(rows) > 1:
+            files = ", ".join(sorted({str(r.get("file") or "(no file)")
+                                      for r in rows}))
+            print(f"  ERROR {sid:22s} DUPLICATE SUITE ID  {len(rows)} rows"
+                  f" declare this id: {files}")
+            dup_ids += 1
+    for f, rows in by_file.items():
+        if f == "":
+            # No file declared: there is nothing to compare.  Counting this as
+            # a duplicated file is a finding against nothing.
+            continue
+        if len(rows) > 1:
+            ids = ", ".join(sorted({str(r.get("id")) for r in rows}))
+            print(f"  ERROR {'(file)':22s} DUPLICATE SUITE FILE  {f}"
+                  f"  is declared by {len(rows)} ids: {ids}")
+            dup_files += 1
+    print(f"  registry uniqueness: {dup_ids} duplicated id(s),"
+          f" {dup_files} duplicated file(s)")
+    bad += dup_ids + dup_files
     # A red_marker that contains a comma is cut in two by the SPEC parser,
     # and neither half is the marker the suite prints. Sometimes both halves
     # happen to be markers the gate reads, so the declaration LOOKS complete
@@ -1724,7 +1933,7 @@ def cmd_doctor(_args) -> int:
     # declaration is refused here, because the parser is not being changed.
     raw_spec = ""
     try:
-        raw_spec = open(SPEC_FILE, encoding="utf-8-sig").read()
+        raw_spec = open(spec_path, encoding="utf-8-sig").read()
     except Exception:
         raw_spec = ""
     for sid, val in _red_marker_commas(raw_spec):
@@ -1737,6 +1946,23 @@ def cmd_doctor(_args) -> int:
     # code?" -- and reads this token. A MISSING token means the doctor could
     # not be measured, which is not the same as finding nothing.
     #
+    # WHAT IT COUNTS CHANGED on 2026-10-23 (task-140). It used to be
+    # `decl_err + decl_gap` -- the DECLARATION family only -- and it was
+    # printed before the rest of the doctor had finished counting, so the
+    # token and the exit code could disagree about the same run.
+    #
+    # MEASURED 2026-10-23, one tree, one mechanism (`doctor --spec <copy>`),
+    # against the doctor as it was before this change:
+    #
+    #   arm `a3b`       registry=True id the gate does not run ->
+    #                    exit 1, DOCTOR_SUITES_PROBLEMS=0. A red doctor
+    #                    whose token said 0.
+    #   arm `dup-file`   two ids, one file -> exit 0, token 0.
+    #   arm `dup-ladder` one row duplicated verbatim -> exit 0, token 0.
+    #
+    # It is now the doctor's TOTAL problem count, printed at the END of the
+    # run, so token > 0 if and only if the doctor exits non-zero.
+    #
     # It is printed at COLUMN 0, on a line of its own, because the gate has
     # to be able to tell this line from any other line of the doctor's
     # output. MEASURED 2026-10-22: the doctor prints each suite's declared
@@ -1745,7 +1971,9 @@ def cmd_doctor(_args) -> int:
     # text earlier in the output than the token itself, and a loose match
     # read the forged 0. At column 0, on its own line, nothing else in the
     # doctor's output can be that shape.
-    print(f"DOCTOR_SUITES_PROBLEMS={decl_err + decl_gap}")
+    #
+    # The token itself is printed at the END of this run, after every
+    # `bad +=`. The block above the final summary says what it counts.
     # D3 -- the token needs a DENOMINATOR, and it cannot go on that line.
     #
     # `DOCTOR_SUITES_PROBLEMS=0` alone cannot be read: 0 problems out of 34
@@ -1764,7 +1992,8 @@ def cmd_doctor(_args) -> int:
     # A new token name also cannot be forged the way the old one could: the
     # forge that worked was a SPEC verdict string printed on its own line, and
     # every line the doctor prints besides these two carries leading spaces.
-    print(f"DOCTOR_SUITES_DECLARED={len(suite_rows)}")
+    #
+    # The denominator is printed at the END of this run, next to the token.
     bad += decl_err + decl_gap
 
     print()
@@ -1808,8 +2037,12 @@ def cmd_doctor(_args) -> int:
             print("  Start it: build-gate.ps1 (stops the old one) -> deploy.ps1 -> "
                   "open-archives.py")
     else:
-        # Not a problem, and not a reason to refuse to run: the doctor still
-        # reports the declarations it can check without an instance.
+        # REFUSAL (task-170: the doctor used to print this and then EXIT 0).
+        # A doctor that could not reach an instance says so and exits
+        # non-zero, the way attackdrop-verify.py's refusal does: an exit 0
+        # here was a claim that the tree had been checked against an
+        # instance, and it had not.  The declarations it CAN check are still
+        # printed above, and the problem count is still printed below.
         print("  no instance probed: GATE_BASE is not set.")
         print("  There is deliberately no default port.  The gate refuses to choose")
         print("  an instance for the same reason (tools/verify/gate.ps1), and the")
@@ -1817,6 +2050,7 @@ def cmd_doctor(_args) -> int:
         print("  so the doctor no longer reaches for one either.")
         print("  Set it to the instance under test, for example:")
         print("    $env:GATE_BASE = 'http://127.0.0.1:<port>'")
+        bad += 1
 
     one_shot = [s for s in spec_rows(spec, "suites") if s.get("one_shot")]
     if one_shot:
@@ -1826,7 +2060,69 @@ def cmd_doctor(_args) -> int:
             print(f"  {s['id']}: run on a FRESH server only "
                   f"(build-gate.ps1 -> deploy.ps1 -> open-archives.py -> {s['file']})")
 
+    # The two machine-readable tokens, printed LAST -- after every `bad +=`,
+    # so they describe the run that just finished and cannot disagree with
+    # the exit code the same run returns.
+    #
+    # DOCTOR_SUITES_PROBLEMS is the TOTAL problem count. It used to be the
+    # declaration family only (`decl_err + decl_gap`), and a red doctor could
+    # print 0: MEASURED 2026-10-23, arm `a3b` (a registry=True id the gate
+    # does not run) exited 1 and printed DOCTOR_SUITES_PROBLEMS=0. The gate
+    # reads the exit code first and the token second, so a token that cannot
+    # see the whole problem set is a token that can miss a red doctor.
+    #
+    # DOCTOR_SUITES_DECLARED is the denominator: the number of rows the
+    # registry declares. It stays a separate token on its own line, because
+    # gate.ps1 reads it with `(?m)^DOCTOR_SUITES_DECLARED=(\d+)\s*$` -- the
+    # number has to be the last thing on its line, so it cannot carry a
+    # second value.
+    #
+    # Both are at COLUMN 0, on a line of their own, EXACTLY ONCE each:
+    # gate.ps1 counts the matches and treats more than one as an ambiguous
+    # answer (red), and a missing one as "the doctor could not be measured"
+    # (also red).
+    # WHICH FAMILY EACH COUNTER CONSUMES -- printed, because a counter read
+    # against the wrong family is a finding against nothing (table row 23).
+    #
+    #   DOCTOR_SUITES_PROBLEMS  every problem this doctor found, across EVERY
+    #                            family that adds one: the declaration family
+    #                            (decl_err + decl_gap), the registry uniqueness
+    #                            family, the gate-vs-registry family (DRIFT and
+    #                            orphans), the invariants family and the
+    #                            empty-registry case.
+    #   DOCTOR_SUITES_DECLARED  the number of rows the registry declares. It
+    #                            is a DENOMINATOR, not a problem count.
+    #
+    # The test-instance block, and what it does to the counters (changed by
+    # task-170, MEASURED, and it used to be wrong in the other direction):
+    #   - an instance that is SET but UNREACHABLE only prints: an instance
+    #     that is down is not a defect in the tree, so it adds 0 to either
+    #     counter, and the counters can be 0 while the instance is
+    #     unreachable;
+    #   - NO instance at all (GATE_BASE unset) is a REFUSAL: the doctor
+    #     cannot check the tree against anything, so it adds 1 to TOTAL and
+    #     exits non-zero, the way attackdrop-verify.py's refusal does. Before
+    #     this change it printed "no instance probed" and exited 0, which
+    #     was a green exit for a measurement that was not taken.
+    _decl_total = decl_err + decl_gap
+    _uniq_total = dup_ids + dup_files
+    _other_total = bad - _decl_total - _uniq_total
+    print(f"  doctor problem families: declaration={_decl_total}"
+          f" (false={decl_err} missing={decl_gap})"
+          f"  registry-uniqueness={_uniq_total}"
+          f" (dup id={dup_ids} dup file={dup_files})"
+          f"  other={_other_total}"
+          f" (registry drift, orphans, invariants, empty registry,"
+          f" no instance probed)"
+          f"  TOTAL={bad}")
+    print("  the test-instance block: an instance that is SET but unreachable"
+          " adds 0 to")
+    print("  the counters above (a server that is down is not a defect in the"
+          " tree);")
+    print("  NO instance at all (GATE_BASE unset) is a REFUSAL and adds 1.")
     print()
+    print(f"DOCTOR_SUITES_PROBLEMS={bad}")
+    print(f"DOCTOR_SUITES_DECLARED={len(suite_rows)}")
     print(f"doctor: {bad} problem(s)")
     return 1 if bad else 0
 
@@ -1910,13 +2206,188 @@ def cmd_start(_args) -> int:
     return 0
 
 
+def _windows_powershell_module_path() -> str:
+    """The module path a Windows PowerShell child should start with.
+
+    MEASURED 2026-10-24: the chain broke when it was started from HERE rather
+    than from a shell. python does not rebuild PSModulePath, so Windows
+    PowerShell 5.1 inherited the path of the PowerShell 7 that started pm.py.
+    PowerShell 7's `Microsoft.PowerShell.Utility` (7.0.0.0) was then the first
+    match in that path, it does not export `Get-FileHash`, and the build gate
+    died with "The term 'Get-FileHash' is not recognized" on a line that has
+    nothing to do with the build -- while every other cmdlet of that module was
+    still there, so nothing in the failure pointed at the environment.
+
+    The child gets Windows PowerShell's own directories, and only those: they
+    are ASCII, and the personal directory is under OneDrive, whose non-ASCII
+    part is mangled when the environment is handed to a child process.
+    """
+    system = os.environ.get("SystemRoot", r"C:\Windows")
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    parts = [
+        os.path.join(system, "System32", "WindowsPowerShell", "v1.0", "Modules"),
+        os.path.join(program_files, "WindowsPowerShell", "Modules"),
+    ]
+    return ";".join(p for p in parts if os.path.isdir(p))
+
+
 def cmd_gate(args) -> int:
-    runner = GATE
+    # The chain's output carries the CJK repository path. A pipe on this
+    # machine is CP950, so the text was written as Big5 and read back as
+    # UTF-8 -- "wz????" instead of the path. A PIPE gets UTF-8 (an agent reads
+    # it, and UTF-8 is what it reads); a CONSOLE keeps its own encoding,
+    # because the console is the reader's own terminal.
+    try:
+        if not sys.stdout.isatty():
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
+    # The gate that measures the CURRENT tree is the STARTUP CHAIN, not the
+    # runner alone.
+    #
+    # MEASURED 2026-10-24: this command ran `tools/verify/gate.ps1` and
+    # nothing else. pm/GATE.md:4 documents it as "build, deploy, every suite",
+    # and pm/WORKFLOW.md step 3 names the same command -- so the entry point
+    # that claims to measure the tree was measuring whichever instance happened
+    # to be running. An instance running an OLD build answers the suites just
+    # as well as a current one, green or red, so the one command an agent is
+    # told to run could report a verdict about a binary that is not in the
+    # tree. That is the same disease W-095 is about, with a different door.
+    #
+    # The entry is DECLARED in pm/PROJECT.yaml (`startup_chain_entry`), so it is
+    # read from there rather than written into this function: a path baked into
+    # the tool is a path that drifts away from the declaration, and this file
+    # already had one such copy (`GATE`, above).
+    entry = ""
+    try:
+        project = load_spec(PROJECT_FILE)
+        entry = str(project.get("startup_chain_entry") or "").strip()
+    except Exception:
+        entry = ""
+
+    if entry:
+        runner = os.path.join(ROOT, entry)
+    else:
+        # No declared entry: fall back to the runner, but say so. A silent
+        # fallback would put the chain's absence back under the reader's
+        # feet, which is how the old behaviour survived this long.
+        runner = GATE
+        print("startup_chain_entry is not declared in pm/PROJECT.yaml; "
+              "running the gate runner alone (no build, no deploy, no reopen)")
     if not os.path.exists(runner):
         print(f"gate runner not found at {runner}")
         return 1
-    return subprocess.call(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                            "-File", runner])
+
+    # The chain's output goes to a FILE, and is printed as the file grows.
+    #
+    # MEASURED 2026-10-24: this command used `subprocess.call`, which hands the
+    # child the caller's stdout -- a pipe whenever the caller pipes it. On
+    # Windows a child inherits EVERY inheritable handle of its parent, and the
+    # server that deploy.ps1 starts inherits that pipe's write end. The reader
+    # then waits for an EOF that never comes: `python tools/pm.py gate | Out-String`
+    # hangs for ever, with the gate actually finished. A file has no EOF to wait
+    # for, and tailing it also means the chain's progress is visible while it
+    # runs instead of at the end of a very long silence.
+    log_dir = os.path.join(os.environ.get("TEMP", ROOT), "maplebench-verify")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_path = os.path.join(log_dir, f"pm-gate-{stamp}.out.log")
+        err_path = os.path.join(log_dir, f"pm-gate-{stamp}.err.log")
+    except OSError as exc:
+        print(f"could not prepare the gate log directory: {exc}")
+        return 1
+
+    with open(out_path, "w", encoding="utf-8") as fout, \
+            open(err_path, "w", encoding="utf-8") as ferr:
+        env = os.environ.copy()
+        env["PSModulePath"] = _windows_powershell_module_path()
+        proc = subprocess.Popen(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", runner],
+            cwd=ROOT, stdout=fout, stderr=ferr, env=env)
+        _tail_child_output(proc, out_path, err_path)
+        code = proc.wait()
+
+    print(f"GATE_LOG      : {out_path}")
+    return code
+
+
+def _decode_log_bytes(data: bytes) -> str:
+    """Decode a step log's bytes the way the step wrote them.
+
+    MEASURED 2026-10-24: the step logs came back as mojibake -- the CJK
+    repository path as "wz????" and the SDK's Chinese summary as unreadable
+    bytes. A step started with Start-Process and a redirected stdout has no
+    console, so `[Console]::OutputEncoding` cannot be set on it and its output
+    lands in the file in the machine's ANSI code page (950 here). Reading that
+    as UTF-8 is what produced the replacement characters.
+
+    So: strict UTF-8 first, and the machine's own code page when the bytes are
+    not UTF-8. The code page is asked for explicitly rather than trusted to
+    `locale.getpreferredencoding`, which reports UTF-8 on a machine whose
+    console is still CP950.
+    """
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    fallback = locale.getpreferredencoding(False) or ""
+    if not fallback or fallback.lower().replace("-", "") == "utf8":
+        fallback = "mbcs"
+    try:
+        return data.decode(fallback)
+    except (UnicodeDecodeError, LookupError):
+        return data.decode(fallback, errors="replace")
+
+
+def _tail_child_output(proc, out_path: str, err_path: str) -> None:
+    """Print a child's redirected output as its file grows.
+
+    The child's output lands in files, not in a pipe, because the server the
+    chain starts inherits a pipe's write end and a reader waiting on that pipe
+    never sees EOF. Reading the FILES has no such problem, and the offsets make
+    it a tail rather than a reprint.
+    """
+    offsets = {out_path: 0, err_path: 0}
+    handles = {}
+    for path in (out_path, err_path):
+        try:
+            handles[path] = open(path, "rb")
+        except OSError:
+            handles[path] = None
+
+    def drain(path: str) -> None:
+        fh = handles.get(path)
+        if fh is None:
+            return
+        try:
+            fh.seek(offsets[path])
+            data = fh.read()
+        except OSError:
+            return
+        if not data:
+            return
+        offsets[path] += len(data)
+        text = _decode_log_bytes(data)
+        if text.strip():
+            sys.stdout.write(text)
+            sys.stdout.flush()
+
+    try:
+        while proc.poll() is None:
+            drain(out_path)
+            drain(err_path)
+            time.sleep(0.7)
+        drain(out_path)
+        drain(err_path)
+    finally:
+        for fh in handles.values():
+            if fh is not None:
+                try:
+                    fh.close()
+                except OSError:
+                    pass
 
 
 def main() -> int:
@@ -1951,7 +2422,12 @@ def main() -> int:
     sub.add_parser("check").set_defaults(fn=cmd_check)
     sub.add_parser("gate").set_defaults(fn=cmd_gate)
     sub.add_parser("start").set_defaults(fn=cmd_start)
-    sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("doctor")
+    p.add_argument("--spec", default=None,
+                   help="check this registry file instead of pm/SPEC.yaml "
+                        "(a copy, so a malformed registry can be fed to the "
+                        "doctor without editing the shared one)")
+    p.set_defaults(fn=cmd_doctor)
     sub.add_parser("coverage").set_defaults(fn=cmd_coverage)
     sub.add_parser("critical").set_defaults(fn=cmd_critical)
 

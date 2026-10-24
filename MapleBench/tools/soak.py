@@ -11,11 +11,13 @@ soak.py — MapleBench 自主驗證引擎
 所以每一條規則都必須是「如果這件事是真的，那這個數字就必須是某個形狀」。
 
 用法
-    python tools/soak.py --seconds 120            # 跑 120 秒
-    python tools/soak.py --seconds 60 --json out.json
+    GATE_BASE=<base> python tools/soak.py --seconds 120 --start-server
+    GATE_BASE=<base> python tools/soak.py --seconds 60 --json out.json --start-server
     python tools/soak.py --map f6/Map/Map0/000000002.img
 
-離開網路時它會自己把伺服器開起來、開好地圖檔。
+實例來自 GATE_BASE，開機的埠也來自 GATE_BASE，開機本身要 --start-server。
+埠上已經有東西在 listen 就明確失敗（印出埠、pid，並說明拒絕沿用）——
+量別人開的實例不叫量測（tools/verify/AGENTS.md rule 17）。
 """
 
 from __future__ import annotations
@@ -32,7 +34,71 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = "http://127.0.0.1:5590"
+# The instance comes from GATE_BASE and from nowhere else (task-139).  This file
+# used to carry a default of 5590, AND to launch its own server on 5590 --
+# two literals that could drift apart, and an adopt-what-is-there branch that
+# silently used whatever else was already listening on that port.  Now there is
+# one variable, and the port it names is the port this file launches on.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                os.pardir, os.pardir, "tools", "verify", "suites"))
+try:
+    from archivelib import require_gate_base
+except ImportError:
+    print(">>> RED: archivelib.py is missing at tools/verify/suites/archivelib.py")
+    raise SystemExit(1)
+
+BASE = None
+PORT = None
+
+
+def refuse_no_port():
+    """No port means no instance to measure -- refuse, do not guess.
+
+    The port has two jobs here: proving that the port is free (measuring
+    somebody else's instance is not a measurement, tools/verify/AGENTS.md
+    rule 17), and being the port --start-server launches on.  A GATE_BASE
+    that names no port can do neither, and an http:// URL with no port is
+    port 80 -- that is not a default, it is a guess (archivelib refuses a
+    default port for the same reason: an older instance answers every
+    request).
+
+    Why this is a refusal and not a crash: require_base() stored
+    urlparse(...).port in PORT, which is None when the URL names no port,
+    and port_owner()'s "%d" raised on None -- a traceback says nothing about
+    why there is nothing to measure, and reads as a broken tool.
+    """
+    print(">>> RED: GATE_BASE names no port: %r, so there is no instance to measure."
+          % (BASE,), flush=True)
+    print("       The port is what proves that port is free (measuring somebody",
+          flush=True)
+    print("       else's instance is not a measurement) and what --start-server",
+          flush=True)
+    print("       launches on; without it this tool can do neither.  An http://",
+          flush=True)
+    print("       URL with no port is port 80 -- that is not a default, it is a",
+          flush=True)
+    print("       guess.  Point GATE_BASE at an instance WITH a port:",
+          flush=True)
+    print("         $env:GATE_BASE = 'http://127.0.0.1:<port>'", flush=True)
+    raise SystemExit(2)
+
+
+def require_base():
+    """取得實例。刻意**不在** module level 呼叫 —— 那會擋掉 --help，讓「查說明」
+    變成一件得先設好環境變數才能做的事（task-145 修的就是這個回退）。
+    在 argparse 解析完 argv 之後才呼叫，所以 --help 走不到這裡。
+    冪等：已經解析過就直接回傳，所以任何入口（main、或被匯入後直接呼叫）
+    都不會拿到 None 當埠號。"""
+    global BASE, PORT
+    if BASE is not None:
+        return BASE
+    BASE = require_gate_base()
+    PORT = urllib.parse.urlparse(BASE).port
+    if PORT is None:
+        # No port means there is no "that port": refuse here, so nothing
+        # downstream can ever get None as a port number.
+        refuse_no_port()
+    return BASE
 NXRUN = r"C:\MUWORK\app\scoop\apps\dotnet-sdk\10.0.401\dotnet.exe"
 BIN = r"C:\MUWORK\GAME\MAPLESOTRY\wz工具\MapleBcnch-NX-audit\MapleBench\bin\Release\net10.0-windows"
 MPSHS = r"C:\MUWORK\GAME\MPSHS"
@@ -48,7 +114,7 @@ REACH_PX = 110
 # ---------------------------------------------------------------- HTTP
 
 def _req(path, body=None, timeout=120):
-    url = BASE + path
+    url = require_base() + path
     data = json.dumps(body).encode() if body is not None else None
     hdrs = {"Content-Type": "application/json"} if data else {}
     r = urllib.request.Request(url, data=data, headers=hdrs)
@@ -73,12 +139,65 @@ def alive():
         return False
 
 
-def ensure_server(open_nx=True):
-    """伺服器沒開就開一個，並把地圖檔載進去。回傳 True 表示是我開的。"""
-    if alive():
-        return False
+def port_owner(port):
+    """Who is listening on this port.  If the answer is unknown, return an
+    empty list, not 0 -- 0 is not a pid.
+
+    A port with no value is refused: the "%d" below raises on None, and a
+    traceback says nothing about why there is nothing to measure.
+    """
+    if port is None:
+        refuse_no_port()
+    ps = ("$c=Get-NetTCPConnection -State Listen -LocalPort %d "
+          "-ErrorAction SilentlyContinue; if($c){$c.OwningProcess}" % port)
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                             capture_output=True, timeout=30)
+        pids = sorted({int(t) for t in
+                       out.stdout.decode("ascii", "replace").split()
+                       if t.isdigit()})
+        if pids:
+            return pids
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(["netstat", "-ano"], capture_output=True, timeout=30)
+        for line in out.stdout.decode("ascii", "replace").splitlines():
+            f = line.split()
+            if (len(f) >= 5 and f[0] == "TCP" and f[1].endswith(":%d" % port)
+                    and f[3] == "LISTENING"):
+                return sorted({int(f[4])})
+    except Exception:
+        pass
+    return []
+
+
+def ensure_server(open_nx=True, start=False):
+    """只在 --start-server 且埠空閒時才自己開；回傳 True 表示是我開的。
+
+    埠上已經有東西就**明確失敗**，不沿用。量測器指向別人開的實例，就不是量測
+    （tools/verify/AGENTS.md rule 17 的家族）。這支檔以前是
+    `if alive(): return False` —— 埠已被占用就靜默沿用，而且埠號是檔案自己挑的。
+    現在開機的埠只能來自 GATE_BASE，開機只能來自 --start-server。
+    """
+    require_base()          # 冪等；被匯入後直接呼叫時也拿得到埠號
+    owners = port_owner(PORT)
+    if owners:
+        print(">>> RED: %s 的埠 %d 已經有東西在 listen（pid %s）。"
+              % (BASE, PORT, ", ".join(str(p) for p in owners)), flush=True)
+        print("       那不是我開的伺服器，所以拒絕沿用 —— 量別人的實例不叫量測。",
+              flush=True)
+        print("       要跑請先停掉那個 pid，或把 GATE_BASE 指到一個空閒的埠。",
+              flush=True)
+        raise SystemExit(2)
+    if not start:
+        print(">>> RED: %s 沒有在 listen，而這支檔沒有 --start-server，所以不開。"
+              % BASE, flush=True)
+        print("       明確的路徑："
+              "  GATE_BASE=<base> python tools/soak.py --start-server", flush=True)
+        raise SystemExit(2)
     subprocess.Popen(
-        [NXRUN, "MapleBenchX.dll", "--port", "5590", "--no-browser", "--no-warmup",
+        [NXRUN, "MapleBenchX.dll", "--port", str(PORT), "--no-browser", "--no-warmup",
          "--allow-multiple"],
         cwd=BIN, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
@@ -253,7 +372,8 @@ INPUTS = [
 
 
 def run(args):
-    started_server = ensure_server(open_nx=not args.no_open)
+    started_server = ensure_server(open_nx=not args.no_open,
+                                   start=args.start_server)
     mid = file_id(args.map_file)
     rng = random.Random(20261014)
 
@@ -399,8 +519,14 @@ def main():
                     default=["axe", "axe.img", "barehands", "dagger"],
                     help="兩種寫法都放進去，因為副檔名正規化本身就是被測的東西")
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--start-server", action="store_true",
+                    help="明確開機：只在 GATE_BASE 的埠空閒時才開，且開在那個埠。"
+                         "埠上已有東西就拒絕沿用並結束，不會靜默用別人的實例。")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+
+    # 實例在 argv 解析完之後才要求：--help 由 argparse 自己結束，不該走到這裡。
+    require_base()
 
     print(f"soak: {args.seconds:.0f}s，每場 {args.frames_per_session} 幀，"
           f"地圖 {len(args.maps)} 張", flush=True)

@@ -125,6 +125,23 @@ public sealed class MobSpriteService
                     dto.MobId = linked.ToString();
                     dto.ImagePath = targetPath;
                     image = target;
+                    // The PATH moves with the NODE.
+                    //
+                    // MEASURED 2026-10-24: `f5/9500135.img` carries only `info`,
+                    // and `info/link` = "7130010" -- whose image `f5/7130010.img`
+                    // carries `attack1`, `die1`, `hit1` and `stand`. Following the
+                    // link swapped the NODE but not the PATH: the action list was
+                    // enumerated off the linked image while every action's path
+                    // was built from the ORIGINAL image's path, so
+                    // `AnimationService.Describe` was handed
+                    // "f5/9500135.img/attack1" -- a path that does not exist --
+                    // and threw. The endpoint answered 404 "'attack1' not found
+                    // under 'f5/9500135.img'" for a mob whose art it had just
+                    // found, and the contract it documents ("an empty list, not
+                    // an error") was broken for EVERY mob that carries a link.
+                    // The same stale path fed the ball loop below, so a linked
+                    // mob's projectile art was never published either.
+                    imagePath = targetPath;
                 }
             }
 

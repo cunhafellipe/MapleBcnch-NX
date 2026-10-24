@@ -1,0 +1,33 @@
+# provenance: node-non-frames-corpus3.txt
+# corpus 3 (HELD OUT -- scored once, by a shape written before it existed)
+# what it is  : 18 lines, none of which is a node frame.
+# node version: v24.21.0
+# SCORING RULE, applies to every file in this directory:
+#   A corpus is scored ONCE, by a shape written BEFORE the corpus existed.
+#   The moment a shape is changed in response to a corpus, that corpus is
+#   training data and stops being evidence. Corpora 2, 3 and 4 exist so that
+#   a shape can be tested on something it was not fitted to.
+#   Each file declares EXPECT_LINES=<n>; crashshape-select.mjs asserts the
+#   body it loaded is exactly that long and refuses to report otherwise.
+#   Every line below the header is real node v24.21.0 output, captured from
+#   a program's stdout+stderr, character for character.
+# EXPECT_LINES=18
+
+    at foo (C:/x/file.js:1:2
+    at foo (file.js:1:2:3:4)
+    at x (C:/x/y.js:1:2:3)
+    at Object.<anonymous> (C:/x/a.js:10:5) [as handler]
+  at 10:30:00
+  warning: 3 of 4 checks failed
+  elapsed 12:34:56 total
+  ratio 5:3:2
+  at 3 of 12
+  step 7:12:00
+  PASS ball-art
+  BAD=0
+  VERDICT: ALL LADDERS PASS
+  >>> RED (3 of 5)
+  at 1:2 in 3 samples
+  frame 3 of 12 at 1:2
+  position 5:3
+  at x/y

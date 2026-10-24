@@ -1,0 +1,83 @@
+# provenance: node-crash-frames-corpus2.txt
+# corpus 2 (HELD OUT -- scored once, by a shape written before it existed)
+# what it is  : 10 crashes: class method, promise executor, unhandled rejection, three frames deep, process.nextTick, getter, top-level await, nested module function.
+# node version: v24.21.0
+# SCORING RULE, applies to every file in this directory:
+#   A corpus is scored ONCE, by a shape written BEFORE the corpus existed.
+#   The moment a shape is changed in response to a corpus, that corpus is
+#   training data and stops being evidence. Corpora 2, 3 and 4 exist so that
+#   a shape can be tested on something it was not fitted to.
+#   Each file declares EXPECT_LINES=<n>; crashshape-select.mjs asserts the
+#   body it loaded is exactly that long and refuses to report otherwise.
+#   Every line below the header is real node v24.21.0 output, captured from
+#   a program's stdout+stderr, character for character.
+# EXPECT_LINES=68
+
+    at C.go (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h1.js:1:23)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h1.js:2:9)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h2.js:1:31
+    at new Promise (<anonymous>)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h2.js:1:1)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h3.js:1:16)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at C.go (file:///C:/Users/e7896/AppData/Local/Temp/shapec_holdout/h4.mjs:1:23)
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_holdout/h4.mjs:2:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_holdout/h5.mjs:1:16
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+    at c (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h6.js:3:21)
+    at b (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h6.js:2:15)
+    at a (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h6.js:1:15)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h6.js:4:1)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h7.js:1:36
+    at process.processTicksAndRejections (node:internal/process/task_queues:85:11)
+    at get p (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h8.js:1:28)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h8.js:2:3)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_holdout/h9.mjs:2:7
+    at inner (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h10mod.js:1:25)
+    at Object.outer (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h10mod.js:2:19)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_holdout\h10.js:2:3)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47

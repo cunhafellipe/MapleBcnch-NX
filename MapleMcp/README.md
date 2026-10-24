@@ -41,28 +41,45 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 
 ---
 
-## 工具家族（2026-10-17：52 → 90）
+## 工具家族（2026-10-17：52 → 92）
 
-伺服器名稱 `maplebench-assets`。後端有 **234 條路由**；下面是 90 個工具，
-每個家族用 `kind`／`action` 參數分流，而不是一條路由一個工具 —— 234 個工具會把
+伺服器名稱 `maplebench-assets`。後端有 **234 條路由**；下面是 92 個工具，
+每個家族用 `kind`／`action` 參數分流，而不是一條路由一個工具 —— 234 條路由會把
 agent 淹死，比 52 個更難用。
 
-### 地圖 `wz_map_*` — 11 個
+**工具數字由 `node tools/probe/mcp-tool-census.mjs` 量出來**（掃原始碼，並對執行中的
+伺服器做 `tools/list` 握手，兩邊必須一致），**不要手寫**。家族清單用同一支工具的
+`--markdown` 產生。
+
+家族與數量（下面這段是工具自己的輸出，勿手寫）：
+
+```
+**92 tools** are auto-discovered once connected, in 9 families:
+  `wz_map_*` (22), `wz_asset_*` (24), `wz_sim_*` (12), `wz_archive_*` (8),
+  `wz_data_*` (6), `wz_job_*` (6), `wz_render_*` (6), `wz_diag_*` (5),
+  `wz_save_*` (3).
+  (source scan of `MapleMcp/**/*.cs`: 17 file(s) read, truncated=False)
+```
+
+### 地圖 `wz_map_*` — 22 個
 
 | 工具 | 作用 |
 |---|---|
 | `wz_map_capabilities` | 後端現在能做什麼、開了哪些封存 |
 | `wz_map_list` | 列出封存內的地圖（可搜尋） |
 | `wz_map_open` | 開啟地圖，回傳完整結構 |
-| `wz_map_create` | 從量測出的最小骨架建立新地圖 |
+| `wz_map_create` | 建立新地圖：從量測出的最小骨架，或**在封裝內建立**（.wz 與 NX 皆可） |
 | `wz_map_doc` | 已開啟地圖的結構摘要 |
 | `wz_map_node` | 讀取單一節點，**找出可寫的葉節點** |
 | `wz_map_palette` | 列出素材 set 與 `drawableEntries` |
 | `wz_map_place` | 放置圖塊／物件／foothold／傳送門 |
 | `wz_map_batch` | 多次編輯 = **單一 undo** |
 | `wz_map_validate` | 檢查地圖規則（斷鏈等） |
-| `wz_map_create` | **在封裝內建立新地圖**（.wz 與 NX 皆可） |
 | `wz_map_save` | 寫回磁碟 |
+| `wz_map_render` | 把一張地圖算成 PNG（圖塊層、foothold 線、角色的行走軌跡）；數字對但看不出來時用 |
+| `wz_map_render_mob` | 把一隻怪／NPC 某個 stance 的每一幀輸出成 PNG，並回報每一幀的 origin、delay、畫布大小 |
+| `wz_map_session_open` `wz_map_session_step` `wz_map_session_close` | 地圖編輯器的持續會話：放一個活角色上地圖、逐幀走、關掉釋放 |
+| `wz_map_simulate` `wz_map_simulate_batch` `wz_map_cast` `wz_map_advise` `wz_map_ground` `wz_map_patrol_mob` | 地圖物理：走不走得過去、地面在哪、走不動時怎麼修（見下面「模擬器」） |
 
 ### 封裝拆分 `wz_archive_*` — 8 個
 
@@ -72,18 +89,20 @@ agent 淹死，比 52 個更難用。
 用的是後端自己的序列化器，所以位元組與編輯器存檔一致。
 `_Canvas` 預設不拆（見 `Program.cs` 的說明），磁碟剩餘 < 8 GB 會停。
 
-### 通用資產 `wz_asset_*` — 22 個
+### 通用資產 `wz_asset_*` — 24 個
 
 `files` `open` `open_source` `close` `save_as` `add` `delete` `rename`
 `transfer` `tree` `search` `node` `children` `set_value` `set_values`
 `undo` `history` `changes` `export_img` `export_canvas`
-`replace_canvas` `sources`
+`replace_canvas` `sources` `create_empty`
+
+（清單裡 23 個；第 24 個是 `wz_asset_merge_nx`，它有自己的章節：NX 合併工具。）
 
 不依賴「目前選中的地圖」，直接操作任意 WZ/IMG/NX 節點。
 `wz_asset_sources` 需要設定 `MAPLEBENCH_SOURCES`；未設定會明確報錯，
 不會假裝成功。
 
-### 模擬器 `wz_map_simulate*` — 6 個（地圖物理，不是本專案的模擬器）
+### 模擬器（`wz_map_*` 的一部分）— 6 個（地圖物理，不是本專案的模擬器）
 
 `wz_map_simulate` `wz_map_simulate_batch` `wz_map_patrol_mob`
 `wz_map_cast` `wz_map_advise` `wz_map_ground`
@@ -120,7 +139,7 @@ agent 淹死，比 52 個更難用。
 `capabilities` `list` `detail` `write` `bulk` `search`，
 以 `kind` 分流：`skill` `mob` `npc` `string` `cashshop` `books`。
 
-**為什麼不直接用 `wz_asset_*`**：這五個域有自己的欄位驗證、自己的批次語義、
+**為什麼不直接用 `wz_asset_*`**：這六個域有自己的欄位驗證、自己的批次語義、
 自己的 DTO。繞過 `/api/node/value` 直寫，會寫出該域根本載不進去的值。
 
 ### 長時間工作 `wz_job_*` — 6 個（2026-10-17 新增）
@@ -141,7 +160,7 @@ agent 淹死，比 52 個更難用。
 **上限句**：算出一張圖只證明**這個節點解得出來**，
 不證明像素跟對標一致，也不證明這是對的圖。
 
-### 診斷與存檔 `wz_diag_*` `wz_save_*` — 10 個（2026-10-17 新增）
+### 診斷與存檔 `wz_diag_*` `wz_save_*` — 8 個（2026-10-17 新增）
 
 `wz_diag_health` `wz_diag_clientlog` `wz_diag_sim` `wz_diag_facts` `wz_diag_audit`
 `wz_save_preflight` `wz_save_commit` `wz_save_memory`

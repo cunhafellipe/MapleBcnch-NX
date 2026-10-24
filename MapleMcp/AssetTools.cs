@@ -137,4 +137,13 @@ public static class AssetTools
         var body = new { fileId, targetPath, backup = true };
         return commit ? MapClient.J(await client.PostAsync("api/files/save", body, ct)) : Preview("api/files/save", body);
     }
+
+    [McpServerTool(Name = "wz_asset_create_empty"), Description("Create a brand-new EMPTY .wz or .nx container at an explicit path, so fixtures can be built without touching a live client. The extension decides the format. Never overwrites, and refuses the folder the open archives live in. The container is opened and read back before it is given its name.")]
+    public static async Task<string> CreateEmpty(MapClient client, string path, CancellationToken ct,
+        string? mapleVersion = null, string? iv = null, short gameVersion = -1, bool commit = false)
+    {
+        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("An explicit target path is required.");
+        var body = new { path, mapleVersion, iv, gameVersion };
+        return commit ? MapClient.J(await client.PostAsync("api/files/create-empty", body, ct)) : Preview("api/files/create-empty", body);
+    }
 }

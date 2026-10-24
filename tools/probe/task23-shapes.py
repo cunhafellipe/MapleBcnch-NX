@@ -25,12 +25,17 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 os.pardir, 'verify', 'suites'))
 try:
-    from archivelib import archive_id
+    from archivelib import archive_id, require_gate_base
 except ImportError:
     print(">>> RED: archivelib.py is missing next to this suite")
     raise SystemExit(1)
 
-BASE = 'http://127.0.0.1:5100'
+# The instance comes from GATE_BASE and from nowhere else (task-139).  There is
+# deliberately no default port: this probe used to carry one, and an instance
+# older than this tree answers every one of these requests happily, so a
+# fallback turns "that instance is 27 product commits behind" into a per-probe
+# result that looks like a finding about this tree.
+BASE = require_gate_base()
 
 
 def get(path):

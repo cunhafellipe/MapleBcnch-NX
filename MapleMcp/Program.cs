@@ -44,7 +44,7 @@ public static class Program
                 };
 
                 options.ServerInstructions = """
-                    Nine surfaces over one MapleBench backend, 91 tools.
+                    Nine surfaces over one MapleBench backend, 92 tools.
                     All need the backend running (MapleBenchX.exe --browser
                     --port <p>), and the archives must be OPENED first.
 
@@ -91,9 +91,9 @@ public static class Program
                     rather than a formula you would have to trust. Ten hits kill
                     anything.
 
-                    GAME DATA DOMAINS. wz_data_* reaches skill, mob, npc, string
-                    and cash shop with their own field validation and their own
-                    bulk semantics. Use it rather than wz_asset_set_value for
+                    GAME DATA DOMAINS. wz_data_* reaches skill, mob, npc, string,
+                    books and cash shop with their own field validation and their
+                    own bulk semantics. Use it rather than wz_asset_set_value for
                     those: the generic node route will happily write a value the
                     domain cannot load.
 

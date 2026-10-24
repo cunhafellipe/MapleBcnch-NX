@@ -11,8 +11,13 @@ Quick facts:
   launched by `wz-mcp-map.cmd`. It forwards to the backend over HTTP.
 - **VS Code / Copilot agent mode:** `.vscode/mcp.json` is committed; it starts
   the server with `${workspaceFolder}/wz-mcp-map.cmd`.
-- **34 tools** are auto-discovered once connected: `wz_map_*` (11) and
-  `wz_asset_*` (23, including `wz_asset_merge_nx`).
+- **92 tools** are auto-discovered once connected, in 9 families:
+  `wz_map_*` (22), `wz_asset_*` (24), `wz_sim_*` (12), `wz_archive_*` (8),
+  `wz_data_*` (6), `wz_job_*` (6), `wz_render_*` (6), `wz_diag_*` (5),
+  `wz_save_*` (3).
+  (source scan of `MapleMcp/**/*.cs`: 17 file(s) read, truncated=False)
+  Counted by `node tools/probe/mcp-tool-census.mjs --brief` — do not hand-write
+  these numbers.
 - **Mutating tools default to `commit=false`** — preview, read the result, then
   commit. `wz_map_save` and `wz_asset_merge_nx` rewrite a whole archive.
 - **Do not trust a tool's own success report.** Verify with

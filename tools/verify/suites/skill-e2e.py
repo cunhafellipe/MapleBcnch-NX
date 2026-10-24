@@ -133,7 +133,28 @@ print(f"  standing at x={last['x']}, nearest mob {alive_mob['mobId']} at x={aliv
       f"hp {alive_mob['hp']}/{alive_mob['maxHp']}")
 # Every mob's HP before the cast, keyed by id -- so the victim can be looked up
 # afterwards instead of assumed to be the nearest one.
-hp_before_by_id = {m["mobId"]: m["hp"] for m in last["mobs"]}
+#
+# MEASURED 2026-10-24: that key is a DICT, so eleven mobs with the same id
+# collapse into one -- and this map carries ELEVEN instances of 2220100
+# (measured from the live frame: x = 2091, 2221, 2767, 2553, 2553, 2681, 2847,
+# 3043, 2006, 2210, 2451, 2435). The dict kept the LAST one's HP, while the
+# lookup after the cast took the FIRST one with that id, so the suite compared
+# two DIFFERENT animals and called the result "the struck mob's HP dropped
+# (2220100: 1000 -> 1000)". The id does not name an animal on this map, so the
+# id cannot be what names it.
+#
+# The damage event carries the position of the hit (MapSimDamageNumber.X), and
+# the hit lands on the animal that took it. The victim is therefore the
+# instance NEAREST the hit -- in the frame before the cast and in the cast
+# frame alike. The instances stand ~130px apart, so the nearest one is the
+# same animal in both frames even though they move a little between them.
+def nearest_instance(mobs, mob_id, hit_x):
+    same = [m for m in mobs if m.get("mobId") == mob_id]
+    if not same:
+        return None
+    if hit_x is None:
+        return same[0]
+    return min(same, key=lambda m: abs(m.get("x", 0) - hit_x))
 
 # ---- 2. THE SKILL BINDER -----------------------------------------------------
 print()
@@ -189,19 +210,25 @@ print("=== 7. the HP of the mob that ACTUALLY took the hit ===")
 # 2220100 at x=2091, and the skill's collision box covers the latter. That is
 # correct behaviour -- a skill's box picks the target, not distance -- and the
 # probe was asserting something else.
+#
+# And the id is not enough either: this map carries eleven 2220100, so the
+# victim is the instance NEAREST THE HIT, in both frames (see above).
 victim_id = damage[0]["mobId"] if damage else None
-victim = next((m for m in f["mobs"] if m.get("mobId") == victim_id), None)
+hit_x = damage[0].get("x") if damage else None
+victim = nearest_instance(f["mobs"], victim_id, hit_x)
+victim_before = nearest_instance(last["mobs"], victim_id, hit_x)
 hp_after = victim["hp"] if victim else None
-print(f"  the cast reported damage on mob {victim_id}")
-print(f"  mob {victim_id}: {hp_before_by_id.get(victim_id)} -> {hp_after}")
+hp_before = victim_before["hp"] if victim_before else None
+print(f"  the cast reported damage on mob {victim_id} at x={hit_x}")
+print(f"  mob {victim_id}: {hp_before} -> {hp_after}")
 Check("the struck mob's HP dropped",
-      hp_after is not None and hp_after < hp_before_by_id.get(victim_id, 10 ** 9),
-      f"{victim_id}: {hp_before_by_id.get(victim_id)} -> {hp_after}")
+      hp_after is not None and hp_before is not None and hp_after < hp_before,
+      f"{victim_id}: {hp_before} -> {hp_after}")
 
 if damage:
     v = damage[0]["value"]
     Check("the damage number is a real number, not the old 50000..750000 random",
-          1 <= v < 50000 or v < hp_before,
+          1 <= v < 50000 or (hp_before is not None and v < hp_before),
           f"value={v}")
 
 # ---- and it is bounded by the skill's own node --------------------------------

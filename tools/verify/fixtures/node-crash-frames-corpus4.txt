@@ -1,0 +1,107 @@
+# provenance: node-crash-frames-corpus4.txt
+# corpus 4 (HELD OUT -- scored once, by a shape written before it existed)
+# what it is  : 14 crashes: sort comparator, filter callback, reduce callback, setTimeout, worker_threads eval, exported function, default parameter, fs callback, process exit handler, top-level await rejection, Map.forEach, class getter, import.meta, template literal tag.
+# node version: v24.21.0
+# SCORING RULE, applies to every file in this directory:
+#   A corpus is scored ONCE, by a shape written BEFORE the corpus existed.
+#   The moment a shape is changed in response to a corpus, that corpus is
+#   training data and stops being evidence. Corpora 2, 3 and 4 exist so that
+#   a shape can be tested on something it was not fitted to.
+#   Each file declares EXPECT_LINES=<n>; crashshape-select.mjs asserts the
+#   body it loaded is exactly that long and refuses to report otherwise.
+#   Every line below the header is real node v24.21.0 output, captured from
+#   a program's stdout+stderr, character for character.
+# EXPECT_LINES=92
+
+    at C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u1.js:1:33
+    at Array.sort (<anonymous>)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u1.js:1:7)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u2.js:1:30
+    at Array.filter (<anonymous>)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u2.js:1:5)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at Timeout._onTimeout (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u4.js:1:30)
+    at listOnTimeout (node:internal/timers:685:17)
+    at process.processTimers (node:internal/timers:618:7)
+    at [worker eval]:1:7
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [worker eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at MessagePort.<anonymous> (node:internal/main/worker_thread:191:9)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:848:20)
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28)
+    at go (file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u6.mjs:1:29)
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u6.mjs:2:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u7.mjs:1:29
+    at f (file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u7.mjs:1:48)
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u7.mjs:2:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+    at C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u8.js:1:54
+    at FSReqCallback.readFileAfterClose [as oncomplete] (node:internal/fs/read/context:96:3)
+    at process.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u9.js:1:38)
+    at process.emit (node:events:514:28)
+    at process.exit (node:internal/process/per_thread:236:15)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u9.js:2:9)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u10.mjs:1:22
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+    at C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u11.js:1:44
+    at Map.forEach (<anonymous>)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u11.js:1:18)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at get v (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u12.js:1:26)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u12.js:2:9)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+    at file:///C:/Users/e7896/AppData/Local/Temp/shapec_fourth/u13.mjs:2:7
+    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+    at tag (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u14.js:1:23)
+    at Object.<anonymous> (C:\Users\e7896\AppData\Local\Temp\shapec_fourth\u14.js:2:4)
+    at Module._compile (node:internal/modules/cjs/loader:1929:14)
+    at Object..js (node:internal/modules/cjs/loader:2060:10)
+    at Module.load (node:internal/modules/cjs/loader:1651:32)
+    at Module._load (node:internal/modules/cjs/loader:1443:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47

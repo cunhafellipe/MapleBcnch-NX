@@ -446,6 +446,22 @@ public static class Endpoints
             return Results.Ok(save.Save(request));
         });
 
+        // A brand-new, EMPTY archive container.
+        //
+        // Every other route in this group opens something that already exists,
+        // so an agent that wanted a clean archive to build a fixture in had to
+        // carve one out of a real client folder -- which means writing into the
+        // live data root to get a scratch file. This is the entry point that
+        // does not need one.
+        //
+        // It refuses to overwrite, and it refuses the folder the open archives
+        // live in; both refusals are the service's own, and both are reported
+        // as a 400 with the reason.
+        api.MapPost("/files/create-empty", (CreateEmptyArchiveRequest request, EmptyArchiveService creator) =>
+        {
+            return Results.Ok(creator.Create(request));
+        });
+
         // What the process is holding, and a way to give it back.
         //
         // Browsing three sections of a v232 client took the process from 60 MB

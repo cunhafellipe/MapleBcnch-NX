@@ -453,12 +453,70 @@ function Run($name, $block) {
   }
   $lines = $text -split "`r?`n" | Where-Object { $_.Trim() }
   $bad = @($RED | Where-Object { $text.Contains($_) })
-  if ($text -match 'BAD=[1-9]') { $bad += 'BAD=n' }
+  # The COUNT, not the literal 'n'.
+  #
+  # MEASURED 2026-10-24: the gate printed ">>> RED (BAD=n)" for two suites. The
+  # 'n' was a placeholder that was never filled in, so the only number a reader
+  # ever saw for a failing suite was a letter.
+  #
+  # THE BAD CHANNEL READS THE VERDICT LINE, NOT THE WHOLE OUTPUT.
+  #
+  # MEASURED 2026-10-24: sim-health was RED in the gate and GREEN when run on
+  # its own, on the same instance, and the gate said "BAD=2" while the suite's
+  # own last line said "BAD=0". The suite's OUTPUT EXPLAINING ITSELF mentions
+  # the number: "the shipped judge still reported BAD=2 once (not attributed
+  # to this block)". The old channel was `$text -match 'BAD=[1-9]'` over the
+  # WHOLE output, so a sentence about a past run was read as this run's
+  # verdict. A suite that passes was red for having written about a number.
+  #
+  # The suites' convention is a STANDALONE line: `print(f"\nBAD={bad}")`. So
+  # the channel is narrowed to the lines that stand alone before the test, and
+  # prose with a number in it is not a verdict. Nothing is weakened: a
+  # standalone 'BAD=1' (contact-damage.py:120, the "this judge cannot run"
+  # marker) still reddens, and the '>>> RED' channel above still reads the
+  # whole output.
+  #
+  # THE SHAPE OF THIS LINE IS A CONTRACT, NOT A STYLE. pm.py's doctor reads the
+  # gate's red channels out of gate.ps1 by finding the pattern test that ADDS
+  # to $bad, and it takes the part of that pattern before the character class
+  # as the marker a suite may declare ('BAD='). The doctor takes the FIRST
+  # match in the file, so this comment must not spell that shape out -- a
+  # commented copy of it is picked up in preference to the code.
+  #
+  # MEASURED 2026-10-24: a first attempt at this change put the zero-check on
+  # a line of its own, so the doctor's pattern no longer matched the code, and
+  # the doctor reported 20 suites whose declared marker the gate does not read.
+  # The gate was fine and the DECLARATION was broken -- the same family of
+  # defect this doctor exists to catch, caused by the doctor itself.
+  #
+  # [1-9]\d* is the non-zero count: 'BAD=0' is a suite that PASSED and must
+  # not redden the gate, and 'BAD=12' is one suite with twelve problems, not
+  # one suite with one. The character class is kept -- the doctor reads the
+  # marker as the text before it, so a parenthesised group would hand it
+  # 'BAD=(' instead of 'BAD='.
+  $text = ($lines | Where-Object { $_ -match '^\s*BAD=\d+\s*$' }) -join "`n"
+  if ($text -match 'BAD=[1-9]\d*') { $bad += 'BAD=' + $Matches[0].Substring('BAD='.Length) }
   if ($bad) { "   >>> RED ($($bad -join ', '))"; $script:fail++; $script:redSuites += $name }
   else { "   ok" }
   $verdict = $lines | Where-Object {
     $_ -match 'VERDICT|ALL LADDERS PASS|passed,|BAD=|PASS:' } | Select-Object -Last 3
-  if ($verdict) { if (-not $bad) { $verdict | ForEach-Object { "   GREEN? $($_.Trim())" } } }
+  if ($bad) {
+    # A RED suite's own evidence is printed too.
+    #
+    # MEASURED 2026-10-24: the gate printed the red line and NOTHING else, so
+    # the only thing a reader could learn about a failing suite was that it
+    # failed -- not WHICH assertion failed. The suites say which: they print
+    # their own '>>>' marker on the assertion that did not hold. A gate that
+    # swallows that turns a ten-minute diagnosis into a re-run with a print
+    # statement added by hand.
+    $markers = @($lines | Where-Object { $_.Trim().StartsWith('>>>') } | Select-Object -Last 6)
+    if ($markers.Count -eq 0 -and -not $verdict) {
+      $markers = @($lines | Select-Object -Last 4)
+    }
+    $markers | ForEach-Object { "      $($_.Trim())" }
+    if ($verdict) { $verdict | ForEach-Object { "      $($_.Trim())" } }
+  }
+  elseif ($verdict) { $verdict | ForEach-Object { "   GREEN? $($_.Trim())" } }
   else { "   (read the tail):"; ($lines | Select-Object -Last 4) | ForEach-Object { "      $_" } }
 }
 
@@ -487,6 +545,13 @@ Run 'equipstats-verify' { python "$S\equipstats-verify.py" }
 Run 'equipset-verify' { python "$S\equipset-verify.py" }
 Run 'sheetfields-verify' { python "$S\sheetfields-verify.py" }
 Run 'sheet-verify'    { python "$S\sheet-verify.py" }
+
+# W-096. The empty-container creator: it makes a .wz and an .nx from nothing,
+# opens both through the app's own open path, and measures the three refusals
+# (no overwrite, no format/name mismatch, nothing written into the folder the
+# open archives live in). The last one is what keeps the data root clean, so
+# it is measured against the live folder rather than asserted in a comment.
+Run 'empty-archive'   { python "$S\empty-archive.py" }
 Run 'node-verify'    { python "$S\node-verify.py" }
 Run 'skill-e2e'    { python "$S\skill-e2e.py" }
 
@@ -562,12 +627,12 @@ Run 'browser-verify' { Push-Location $Root; node 'MapleBench/tools/browser-verif
 # All three numbers are printed, always, so a reader never has to infer one
 # from another.
 #
-# MEASURED 2026-10-23 on this tree: declared = 34 and the gate owns 33. The
+# MEASURED 2026-10-24 on this tree: declared = 35 and the gate owns 34. The
 # difference is save-audit, which SPEC.yaml marks `in_gate: false` because it
 # copies an archive and cannot be run against a server that already has one
 # open (the comment above says why). So the gate compares the number it RAN
 # against the number it OWNS, not against the raw declared total: comparing
-# 33 against 34 would redden a healthy tree every run, and a gate that cries
+# 34 against 35 would redden a healthy tree every run, and a gate that cries
 # wolf is worse than no gate.
 "GATE_SUITES_DECLARED=$declaredSuites"
 "GATE_SUITES_OWNED=$gateOwnedSuites"

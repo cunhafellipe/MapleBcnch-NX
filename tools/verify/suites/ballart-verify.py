@@ -273,14 +273,46 @@ ids = [m["id"] for m in cat]
 sample = ids[::max(1, len(ids) // 60)][:60]
 
 declared = []
+undescribed = []
 for mid in sample:
     for a in get("/api/simulate/mob-attacks", mobId=mid)["attacks"]:
         if a.get("type") == 2:
-            sp = get("/api/simulate/mob-sprite", mobId=mid)
-            actions = {x["name"]: len(x["frames"]) for x in sp.get("actions", [])}
             want = f"{a['action']}/ball"
+            try:
+                sp = get("/api/simulate/mob-sprite", mobId=mid)
+            except urllib.error.HTTPError as e:
+                # The endpoint answered 404 for a mob whose image EXISTS.
+                #
+                # MEASURED 2026-10-24: mob 9500135, whose f5/9500135.img
+                # carries only an `info` node (no action node at all), answers
+                #   "'attack1' not found under 'f5/9500135.img'."
+                # and the endpoint's own contract says it answers "200 with
+                # hasArt:false rather than 404" -- SimulatorEndpoints.cs:662.
+                # So this is a defect of the PORT's response shape, and it is
+                # counted as one.
+                #
+                # It used to KILL this file instead: one mob out of sixty
+                # raised, the traceback ended the suite, and the other
+                # fifty-nine measurements never ran. A suite that dies has no
+                # verdict, so the gate reported "the suite died" and nobody
+                # could tell a port defect from a broken harness. The defect
+                # is now counted, named, and the rest of the file still runs.
+                if e.code == 404:
+                    detail = e.read()[:200].decode("utf-8", "replace")
+                    undescribed.append((mid, a.get("action"), detail))
+                    bad += 1
+                    print(f"    {mid} {a.get('action')}: THE PORT COULD NOT DESCRIBE IT"
+                          f" -- HTTP 404 {detail}")
+                    break
+                raise
+            actions = {x["name"]: len(x["frames"]) for x in sp.get("actions", [])}
             declared.append((mid, a["action"], want in actions, actions.get(want, 0)))
             break
+if undescribed:
+    print(f"  {len(undescribed)} mob(s) the port answered 404 for. The endpoint"
+          " promises '200 with hasArt:false rather than 404'"
+          " (SimulatorEndpoints.cs:662), so each one is a defect of the port's"
+          " response shape, not of the archive.")
 
 have = [d for d in declared if d[2]]
 print(f"  {len(declared)} type-2 attacks in {len(sample)} sampled mobs; "

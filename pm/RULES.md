@@ -106,8 +106,19 @@ becomes `wz撌亙आ`. Discover the path with a glob instead.
 ▸ Two scripts died on `Push-Location` against a path that plainly existed.
 
 **R-17 — Three-way md5 before any claim: source, build output, and served.**
-`avatar.js` must stay `a1eb2eb47af42e07ee048762c2592456`. It is the regression
+`avatar.js` must stay `ba96b2d9727203279b8b784d256430b5`. It is the regression
 tripwire for a file this project does not otherwise touch.
+▸ The digest is the **CRLF→LF-normalised** one, and it is the one
+`pm/SPEC.yaml` declares. `a1eb2eb47af42e07ee048762c2592456` is the same content
+in CRLF form and was quoted here until 2026-10-24; `pm/SPEC.yaml:480-483`
+records both and why the byte-level raw invariant was removed on 2026-10-23.
+Normalising is what makes a working tree and a fresh checkout comparable, and
+all three legs have to use the same rule or the comparison is between two
+different rules.
+▸ All three legs must be compared by a rule that produces a path for each of
+them. The served leg is `/js/avatar.js`, not `/wwwroot/js/avatar.js`: ASP.NET
+Core serves the static web root AS the content root. Asking for the wrong one
+returns 404 and the tripwire fails on a file that IS being served.
 
 ---
 

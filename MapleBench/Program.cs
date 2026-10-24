@@ -139,6 +139,10 @@ public static class Program
         builder.Services.AddSingleton<UndoService>();
         builder.Services.AddSingleton<WzEditService>();
         builder.Services.AddSingleton<WzSaveService>();
+        // Creates a brand-new, empty archive container. It asks the session what
+        // is open, so it takes the session as a constructor argument and is a
+        // singleton for the same reason the rest of them are.
+        builder.Services.AddSingleton<EmptyArchiveService>();
         // Grafts candidate IMGs into an NX archive by reusing the session's
         // open and the save service's transaction; it holds no state of its own.
         builder.Services.AddSingleton<NxMergeService>();

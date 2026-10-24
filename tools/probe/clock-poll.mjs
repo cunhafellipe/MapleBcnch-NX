@@ -8,7 +8,24 @@
 // moved it -- and the only thing on the server that could have done so is the
 // clock.
 
-const BASE = process.env.WZ_SERVER ?? 'http://127.0.0.1:5100';
+// The instance comes from WZ_SERVER and from nowhere else (task-139).  The name
+// is NOT renamed: WZ_SERVER has measured callers (MapleMcp/MapClient.cs:32,
+// MapleMcp/ArchiveClient.cs:33, AGENTS.md:134, wz-mcp-map.cmd:21,
+// tools/probe/maple_mcp.py:59), so changing it would change a live convention.
+// What goes away is the DEFAULT PORT: an instance older than this tree answers
+// every one of these requests happily, and a probe that silently adopts it
+// reports the stale numbers as findings.
+const GATE = (process.env.WZ_SERVER || '').trim();
+if (!GATE) {
+  console.log('>>> RED: WZ_SERVER is not set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         $env:WZ_SERVER = 'http://127.0.0.1:<port>'");
+  console.log('       There is no default port on purpose: an older instance on the');
+  console.log('       usual port answers every one of these requests.');
+  process.exit(1);
+}
+// The trailing-slash strip is load-bearing: a doubled slash 404s every request.
+const BASE = GATE.replace(/\/+$/, '');
 const [, , mapId = '910020202'] = process.argv;
 
 const api = async (path, init) => {

@@ -65,6 +65,22 @@ function Add-Skip {
     Write-Output ("CASE {0}: SKIP  ({1})" -f $Id, $Why)
 }
 
+# A python tool that is not in this tree must not end the run, and must not
+# pass either.  The case is RECORDED -- as a SKIP, carrying the reason it was
+# skipped -- and the group keeps a case that ASSERTS the dependency is
+# present, so a missing tool is a visible fact and never a silent pass.
+# "SKIP is not PASS" is stated in the summary for the same reason: a skipped
+# case is not a green one.
+function Add-CaseOrSkip {
+    param([string]$Id, [string]$Expectation, [hashtable]$Result,
+          [bool]$Ok, [string]$Evidence)
+    if ($Result.Missing) {
+        Add-Skip -Id $Id -Why ('the tool is not in this tree: ' + $Result.Out)
+        return
+    }
+    Add-Case -Id $Id -Expectation $Expectation -Ok $Ok -Evidence $Evidence
+}
+
 # Run a tool as a child process so the real exit code is observed.
 #
 # THE EXIT CODE COMES FROM ProcessStartInfo.ExitCode, NEVER FROM
@@ -110,7 +126,7 @@ function Invoke-Tool {
     $err = ([string]$r.StdErr)
     if ($err.Trim() -ne '') { $out = $out + "`n" + $err }
 
-    return @{ Exit = $code; Out = $out }
+    return @{ Exit = $code; Out = $out; Missing = $false }
 }
 
 function Get-ToolField {
@@ -501,7 +517,16 @@ if ($haveGit -and $script:VerifyDotNet.Status -eq 'OK') {
 function Invoke-PythonTool {
     param([string]$Script, [string[]]$ToolArgs = @())
     $path = Join-Path $PSScriptRoot $Script
-    if (-not [System.IO.File]::Exists($path)) { throw ('tool not found: ' + $path) }
+    if (-not [System.IO.File]::Exists($path)) {
+        # A tool that is not in this tree is a FACT to record, not a reason to
+        # kill the run.  MEASURED 2026-10-23 (task-170, finding B1): the
+        # census tool was not tracked, so in a fresh clone this line THREW, the
+        # run died in the middle of the CENSUS group and printed no RESULT=
+        # line at all -- the harness had no verdict to give, which is worse
+        # than a red one.  The marker keeps every case in the list, where
+        # Add-CaseOrSkip records it as a SKIP with a reason.
+        return @{ Exit = 127; Out = ('>>> RED: tool not found: ' + $path); Missing = $true }
+    }
     $py = (Get-Command python -ErrorAction SilentlyContinue)
     if ($null -eq $py) { throw 'python is not on PATH' }
     $r = Invoke-CheckedProcess -FilePath $py.Source -ArgumentList (@($path) + $ToolArgs) -TimeoutSeconds 600
@@ -515,7 +540,7 @@ function Invoke-PythonTool {
     $out = ([string]$r.StdOut)
     $err = ([string]$r.StdErr)
     if ($err.Trim() -ne '') { $out = $out + "`n" + $err }
-    return @{ Exit = $code; Out = $out }
+    return @{ Exit = $code; Out = $out; Missing = $false }
 }
 
 $pyExe = (Get-Command python -ErrorAction SilentlyContinue)
@@ -538,25 +563,320 @@ if ($haveGit -and $havePython) {
     [System.IO.File]::WriteAllText($citeBad, '{"citations":[{"file":"cited.cs","line":1,"text":"a line that is on no line at all"}]}', $utf8NoBom)
 
     $rCiteSelf = Invoke-PythonTool -Script 'citation-check.py' -ToolArgs @('--self-test')
-    Add-Case -Id 'CITE-self-test-is-green' `
+    Add-CaseOrSkip -Result $rCiteSelf -Id 'CITE-self-test-is-green' `
         -Expectation 'the citation checker passes its own known-answer suite' `
         -Ok (($rCiteSelf.Exit -eq 0) -and ((Get-ToolField -Out $rCiteSelf.Out -Field 'CASES_FAIL') -eq '0')) `
         -Evidence ("exit=" + $rCiteSelf.Exit + ' CASES_PASS=' + (Get-ToolField -Out $rCiteSelf.Out -Field 'CASES_PASS') +
                    ' CASES_FAIL=' + (Get-ToolField -Out $rCiteSelf.Out -Field 'CASES_FAIL'))
 
     $rCiteGood = Invoke-PythonTool -Script 'citation-check.py' -ToolArgs @('--spec', $citeGood, '--repo', $citeRepo)
-    Add-Case -Id 'CITE-a-correct-citation-is-green' `
+    Add-CaseOrSkip -Result $rCiteGood -Id 'CITE-a-correct-citation-is-green' `
         -Expectation 'a citation whose quoted text really is on the cited line passes' `
         -Ok (($rCiteGood.Exit -eq 0) -and ((Get-ToolField -Out $rCiteGood.Out -Field 'CITATION_OK') -eq '1')) `
         -Evidence ("exit=" + $rCiteGood.Exit + ' CITATION_OK=' + (Get-ToolField -Out $rCiteGood.Out -Field 'CITATION_OK'))
 
     $rCiteBad = Invoke-PythonTool -Script 'citation-check.py' -ToolArgs @('--spec', $citeBad, '--repo', $citeRepo)
-    Add-Case -Id 'CITE-a-wrong-citation-goes-red' `
+    Add-CaseOrSkip -Result $rCiteBad -Id 'CITE-a-wrong-citation-goes-red' `
         -Expectation 'a citation whose quoted text is on no line at all fails' `
         -Ok (($rCiteBad.Exit -ne 0) -and ((Get-ToolField -Out $rCiteBad.Out -Field 'CITATION_NOT_FOUND') -eq '1')) `
         -Evidence ("exit=" + $rCiteBad.Exit + ' CITATION_NOT_FOUND=' + (Get-ToolField -Out $rCiteBad.Out -Field 'CITATION_NOT_FOUND'))
 } else {
     Add-Skip -Id 'CITE-*' -Why ('needs git and python; git=' + $haveGit + ' python=' + $havePython)
+}
+
+# --- probe-instance-census ------------------------------------------------
+# Four cases.  The last two exist because of a MEASURED asymmetry, not a guess.
+#
+# Measured by ablation on the census: its own --self-test DOES catch a PICKED
+# condition that can never fire (4 mismatches) and an is_defaulted that is
+# always False.  It does NOT catch the opposite direction -- widening the
+# PICKED kind gate so the tool reports things that are not defects passes with
+# ZERO mismatches.  So --self-test alone would wave through an over-reporting
+# tool, which is the same species as every "quiet when broken" row in this
+# directory's table.  ARM_DEVTOOLS is the arm that closes that direction: a
+# hard-coded Chrome DevTools port is a browser the script launched, not an
+# adopted instance, and a tool with the kind gate removed calls it PICKED.
+#
+# THE TOOL'S OWN PRESENCE IS A CASE (task-170, finding B1).  The census tool
+# was not tracked, so in a fresh clone it is simply not there, and the
+# harness used to THROW on it: the run died in the middle of this group and
+# printed no RESULT= line at all, so the harness had no verdict to give --
+# which is worse than a red one.  Now the group skips with a reason and this
+# case says whether the tool the group measures with is in the tree, so a
+# missing dependency is a visible FAIL rather than a silent gap.
+$censusTool = Join-Path $PSScriptRoot 'probe-instance-census.py'
+Add-Case -Id 'CENSUS-the-census-tool-is-present-in-this-tree' `
+    -Expectation 'the census tool this group measures with is in the tree' `
+    -Ok ([System.IO.File]::Exists($censusTool)) `
+    -Evidence ('path=' + $censusTool + ' present=' + [System.IO.File]::Exists($censusTool) +
+               ' (a missing tool is a FAIL here and a SKIP below, never a pass)')
+if ($havePython) {
+    # Get-ToolField anchors on StartsWith, so it can only reach a field that is
+    # the FIRST on its line.  The census prints "SELFTEST_PASS=17  SELFTEST_FAIL=0"
+    # on ONE line and "RESULT=UNPROVEN  (exit 2)" with a trailing note, so both
+    # of those read as absent.  Measured: with Get-ToolField, two cases went red
+    # on a tool that had answered correctly -- rule 3's "a case that fails for
+    # the WRONG reason is not a test".  This reads the token after '=' anywhere
+    # on the line, and says <absent> rather than returning null, so a field that
+    # is genuinely missing is visible instead of silently comparing unequal.
+    function Get-FieldToken {
+        param([string]$Out, [string]$Field)
+        $m = [regex]::Match($Out, '(?m)(?:^|\s)' + [regex]::Escape($Field) + '=(\S+)')
+        if ($m.Success) { return $m.Groups[1].Value }
+        return '<absent>'
+    }
+
+    $censusTree = Join-Path $root 'census-picks'
+    New-Item -ItemType Directory -Path (Join-Path $censusTree 'tools/probe') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $censusTree 'MapleBench/tools') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $censusTree 'MapleBench/tools/soak.py'), "BASE=require_gate_base()`n", $utf8NoBom)
+    # Five clean scripts, so the population clears the census's own refusal to
+    # conclude from fewer than five (that refusal is case CENSUS-refuses-*).
+    for ($i = 0; $i -lt 5; $i++) {
+        [System.IO.File]::WriteAllText((Join-Path $censusTree ("tools/probe/pad$i.mjs")),
+            "const server = process.argv[2];`nawait fetch(server + '/api/files');`n", $utf8NoBom)
+    }
+    # The one that MUST be reported: a defaulting instance, caller never names it.
+    [System.IO.File]::WriteAllText((Join-Path $censusTree 'tools/probe/picks.mjs'),
+        "const SERVER = process.env.WZ_SERVER ?? 'http://127.0.0.1:5590/api';`nawait fetch(SERVER);`n", $utf8NoBom)
+
+    $rCensusSelf = Invoke-PythonTool -Script 'probe-instance-census.py' -ToolArgs @('--self-test')
+    Add-CaseOrSkip -Result $rCensusSelf -Id 'CENSUS-self-test-is-green' `
+        -Expectation 'the census passes its own known-answer suite' `
+        -Ok (($rCensusSelf.Exit -eq 0) -and ((Get-FieldToken $rCensusSelf.Out 'SELFTEST_FAIL') -eq '0')) `
+        -Evidence ("exit=" + $rCensusSelf.Exit + ' SELFTEST_PASS=' + (Get-FieldToken $rCensusSelf.Out 'SELFTEST_PASS') +
+                   ' SELFTEST_FAIL=' + (Get-FieldToken $rCensusSelf.Out 'SELFTEST_FAIL'))
+
+    $rCensusPick = Invoke-PythonTool -Script 'probe-instance-census.py' -ToolArgs @('--root', $censusTree, '--quiet')
+    Add-CaseOrSkip -Result $rCensusPick -Id 'CENSUS-a-tree-that-picks-goes-red' `
+        -Expectation 'a tree holding one script that defaults its instance is RED, not clean' `
+        -Ok ($rCensusPick.Exit -ne 0) `
+        -Evidence ("exit=" + $rCensusPick.Exit + ' picked_files_printed=' +
+                   ([regex]::Matches($rCensusPick.Out, 'tools/probe/picks\.mjs')).Count)
+
+    # THE BROKEN-DIRECTION ARM.  --self-test cannot supply this one: widening
+    # the kind gate passes the census's own 17-fixture suite with 0 mismatches.
+    $censusDev = Join-Path $root 'census-devtools'
+    New-Item -ItemType Directory -Path (Join-Path $censusDev 'tools/probe') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $censusDev 'MapleBench/tools') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $censusDev 'MapleBench/tools/soak.py'), "BASE=require_gate_base()`n", $utf8NoBom)
+    for ($i = 0; $i -lt 5; $i++) {
+        [System.IO.File]::WriteAllText((Join-Path $censusDev ("tools/probe/pad$i.mjs")),
+            "const server = process.argv[2];`nawait fetch(server + '/api/files');`n", $utf8NoBom)
+    }
+    # A hard-coded 9222 is the Chrome DevTools port.  This script launched that
+    # browser; it is not adopting anybody's instance, so it must stay clean.
+    # The port is bound to a numeric constant rather than written straight into
+    # the URL, because a literal URL is EXPLICIT under the census's own rule and
+    # would never be defaulted -- and then this case could not see the broken
+    # direction at all.  Measured: with the literal-in-URL form, widening the
+    # kind gate (A3) still left this case GREEN, so the case proved nothing.
+    $devFixed = (@'
+const PORT = 9222;
+const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+console.log(list);
+'@) -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText((Join-Path $censusDev 'tools/probe/devtools-fixed.mjs'), $devFixed, $utf8NoBom)
+
+    $rCensusDev = Invoke-PythonTool -Script 'probe-instance-census.py' -ToolArgs @('--root', $censusDev, '--quiet')
+    Add-CaseOrSkip -Result $rCensusDev -Id 'CENSUS-a-hardcoded-devtools-port-is-not-an-instance' `
+        -Expectation 'a fixed Chrome DevTools port is a browser the script launched, so it must not be reported PICKED' `
+        -Ok (($rCensusDev.Exit -eq 0) -and ((Get-FieldToken $rCensusDev.Out 'RESULT') -eq 'CLEAN')) `
+        -Evidence ("exit=" + $rCensusDev.Exit + ' RESULT=' + (Get-FieldToken $rCensusDev.Out 'RESULT'))
+
+    # F4: the audit's verdict used to be printed and thrown away, so the tool
+    # said "treat any clean result as unproven" and then said RESULT=CLEAN.
+    $censusTiny = Join-Path $root 'census-tiny'
+    New-Item -ItemType Directory -Path (Join-Path $censusTiny 'tools/probe') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $censusTiny 'MapleBench/tools') -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $censusTiny 'MapleBench/tools/soak.py'), "BASE=require_gate_base()`n", $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $censusTiny 'tools/probe/only.mjs'),
+        "const server = process.argv[2];`nawait fetch(server);`n", $utf8NoBom)
+
+    $rCensusTiny = Invoke-PythonTool -Script 'probe-instance-census.py' -ToolArgs @('--root', $censusTiny, '--quiet')
+    Add-CaseOrSkip -Result $rCensusTiny -Id 'CENSUS-refuses-to-conclude-from-a-tiny-population' `
+        -Expectation 'a population too small to conclude from reports UNPROVEN, never CLEAN' `
+        -Ok (($rCensusTiny.Exit -ne 0) -and ((Get-FieldToken $rCensusTiny.Out 'RESULT') -eq 'UNPROVEN')) `
+        -Evidence ("exit=" + $rCensusTiny.Exit + ' RESULT=' + (Get-FieldToken $rCensusTiny.Out 'RESULT'))
+} else {
+    Add-Skip -Id 'CENSUS-*' -Why ('needs python; python=' + $havePython)
+}
+
+# =========================================================================
+# REGISTRY UNIQUENESS : a doctor that cannot see a duplicate is not a doctor
+# =========================================================================
+# pm.py's doctor is what the gate reads, so a defect the doctor cannot see
+# is a defect the gate cannot see.  MEASURED 2026-10-23 (task-140, arm
+# `dup-ladder`): a registry that declared the same row twice printed
+# "doctor: 0 problem(s)" and "DOCTOR_SUITES_PROBLEMS=0" and the gate stayed
+# green -- the duplicate was invisible to every check the doctor ran.
+#
+# THE FIXTURE.  Two registries built from the SAME source -- the repository's
+# own pm/SPEC.yaml -- differing in ONE thing: the second carries a verbatim
+# copy of the first row of the `suites:` block, so one id and one file are
+# each declared twice.  A row copied VERBATIM keeps its own verdict and its
+# own red_marker, so the copy cannot make the DECLARATION family red: the
+# only family the defect arm can turn on is the one under test.
+#
+# The row block is found BY LINE INDEX, because a regex that spans a block
+# of YAML has to carry its own proof that it captured the whole block, and a
+# capture group that starts at a format string captures nothing.
+#
+# The fixture is written under the temp directory and the doctor is pointed
+# at it with --spec: the working tree is not touched.
+#
+# The child's stdout carries CJK, so PYTHONIOENCODING is set in the PARENT
+# (the child inherits the environment) and restored afterwards.
+#
+# GATE_BASE is set to a DEAD, well-formed instance (task-170, finding F2).
+# The doctor refuses to run without one and exits 1, so with GATE_BASE
+# cleared every arm of this group would exit 1 and the exit code could not
+# MOVE between the arms -- the relative assertion below would have nothing
+# to compare.  A dead port is the right value: the doctor takes its normal
+# path, the connection is refused, the instance block only PRINTS (it adds
+# nothing to any counter), and the fixture still does not depend on a live
+# backend.
+if ($havePython) {
+    $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $specSrc = Join-Path $repoRoot 'pm/SPEC.yaml'
+    $prevIoEnc = $env:PYTHONIOENCODING
+    $prevGateBase = $env:GATE_BASE
+    $env:PYTHONIOENCODING = 'utf-8'
+    $env:GATE_BASE = 'http://127.0.0.1:59997'
+    $dupId = ''
+    $dupFile = ''
+    $ctlSpec = ''
+    $dupSpec = ''
+    $built = $false
+    try {
+        if (Test-Path -LiteralPath $specSrc) {
+            $specRaw = [System.IO.File]::ReadAllText($specSrc, [System.Text.Encoding]::UTF8)
+            $eol = if ($specRaw.Contains("`r`n")) { "`r`n" } else { "`n" }
+            $specLines = @($specRaw -split "`r?`n")
+            $suitesAt = -1
+            for ($i = 0; $i -lt $specLines.Count; $i++) {
+                if ($specLines[$i] -match '^suites:\s*$') { $suitesAt = $i; break }
+            }
+            $rowAt = -1
+            if ($suitesAt -ge 0) {
+                for ($i = $suitesAt + 1; $i -lt $specLines.Count; $i++) {
+                    if ($specLines[$i] -match '^\s+- id:\s') { $rowAt = $i; break }
+                }
+            }
+            if ($rowAt -ge 0) {
+                $rowEnd = $rowAt + 1
+                while ($rowEnd -lt $specLines.Count) {
+                    $ln = $specLines[$rowEnd]
+                    if (($ln -match '^\s+- id:\s') -or ($ln -match '^[A-Za-z_][A-Za-z0-9_]*:')) { break }
+                    $rowEnd++
+                }
+                $rowBlock = @($specLines[$rowAt..($rowEnd - 1)])
+                $dupId = ($rowBlock[0] -replace '^\s*- id:\s*', '').Trim().Trim('"')
+                $fileLine = @($rowBlock | Where-Object { $_ -match '^\s+file:' } | Select-Object -First 1)
+                if ($fileLine.Count -ge 1) { $dupFile = ($fileLine[0] -replace '^\s*file:\s*', '').Trim().Trim('"') }
+                $ctlSpec = Join-Path $root 'registry-copy.yaml'
+                $dupSpec = Join-Path $root 'registry-dup.yaml'
+                [System.IO.File]::WriteAllBytes($ctlSpec, [System.IO.File]::ReadAllBytes($specSrc))
+                $tail = @()
+                if ($rowEnd -lt $specLines.Count) { $tail = @($specLines[$rowEnd..($specLines.Count - 1)]) }
+                $newLines = @($specLines[0..($rowEnd - 1)]) + $rowBlock + $tail
+                [System.IO.File]::WriteAllText($dupSpec, ($newLines -join $eol), $utf8NoBom)
+                $built = (($dupId -ne '') -and ($dupFile -ne ''))
+            }
+        }
+        if ($built) {
+            $rCtl = Invoke-PythonTool -Script '../pm.py' -ToolArgs @('doctor', '--spec', $ctlSpec)
+            $rDup = Invoke-PythonTool -Script '../pm.py' -ToolArgs @('doctor', '--spec', $dupSpec)
+            $rRepo = Invoke-PythonTool -Script '../pm.py' -ToolArgs @('doctor')
+            $ctlTok = Get-FieldToken $rCtl.Out 'DOCTOR_SUITES_PROBLEMS'
+            $dupTok = Get-FieldToken $rDup.Out 'DOCTOR_SUITES_PROBLEMS'
+            $repoTok = Get-FieldToken $rRepo.Out 'DOCTOR_SUITES_PROBLEMS'
+            $ctlExit = $rCtl.Exit
+            $dupExit = $rDup.Exit
+            # The tokens are read as NUMBERS, and a token that is not a number
+            # is a token that cannot be compared -- TryParse says so instead
+            # of the cast raising and killing the whole run.
+            $ctlNum = -1
+            $dupNum = -1
+            $ctlNumOk = [int]::TryParse($ctlTok, [ref]$ctlNum)
+            $dupNumOk = [int]::TryParse($dupTok, [ref]$dupNum)
+            $dupTokenGreater = ($ctlNumOk -and $dupNumOk -and ($dupNum -gt $ctlNum))
+
+            # THE CONTROL.  A doctor that always reports a duplicate fails
+            # here.
+            #
+            # WHAT THE NEXT CASE DOES NOT DO (task-170, finding F1).  The
+            # comment here used to say "a copy mechanism that changed nothing
+            # fails the next case".  That was FALSE.  MEASURED 2026-10-23:
+            # with the doctor IGNORING --spec -- it reads the tree's own
+            # registry whatever the copy says -- the copy arm and the
+            # repository arm are then the SAME registry, so the relative case
+            # below still reads equal and stays GREEN.  What catches a copy
+            # that changed nothing is the DUPLICATE arm (the four cases after
+            # it): the duplicated registry is a different FILE, a doctor that
+            # ignores --spec finds no duplicate in the tree's registry, and
+            # those cases go red.  Two cases cannot both be the control for
+            # each other.
+            Add-CaseOrSkip -Result $rCtl -Id 'DOC-REG-a-copy-of-the-registry-reports-no-duplicate' `
+                -Expectation 'a registry that declares every id and every file once reports no duplicate' `
+                -Ok ($rCtl.Out -notmatch 'DUPLICATE SUITE') `
+                -Evidence ('exit=' + $rCtl.Exit + ' duplicate_lines=' +
+                           ([regex]::Matches($rCtl.Out, 'DUPLICATE SUITE')).Count + ' token=' + $ctlTok)
+
+            # The RELATIVE control: the copy must measure exactly what the
+            # registry itself measures.  A relative assertion, so it holds
+            # whether or not the repository's own registry is green today.
+            Add-CaseOrSkip -Result $rCtl -Id 'DOC-REG-a-copy-of-the-registry-measures-the-same-as-the-registry' `
+                -Expectation 'pointing the doctor at a byte-identical copy gives the same problem count as the registry itself' `
+                -Ok (($ctlTok -ne '<absent>') -and ($repoTok -ne '<absent>') -and ($ctlTok -eq $repoTok)) `
+                -Evidence ('copy_token=' + $ctlTok + ' repo_token=' + $repoTok +
+                           ' copy_exit=' + $ctlExit + ' repo_exit=' + $rRepo.Exit)
+
+            Add-CaseOrSkip -Result $rDup -Id 'DOC-REG-a-duplicated-suite-id-is-named' `
+                -Expectation 'the doctor names the id that two rows declare' `
+                -Ok ($rDup.Out -match ('ERROR\s+' + [regex]::Escape($dupId) + '\s+DUPLICATE SUITE ID')) `
+                -Evidence ('id=' + $dupId + ' exit=' + $dupExit)
+
+            Add-CaseOrSkip -Result $rDup -Id 'DOC-REG-a-duplicated-suite-file-is-named' `
+                -Expectation 'the doctor names the file that two ids declare' `
+                -Ok ($rDup.Out -match ('DUPLICATE SUITE FILE\s+' + [regex]::Escape($dupFile))) `
+                -Evidence ('file=' + $dupFile + ' exit=' + $dupExit)
+
+            # THE RELATIVE CONTROL, MEASURED AGAINST THE CONTROL ARM.
+            # These two cases used to assert ABSOLUTES ("exit != 0" and
+            # "token >= 1"), and an absolute is satisfied by ANY unrelated
+            # problem: with the tree already red, a doctor that sees no
+            # duplicate at all still passes both.  MEASURED 2026-10-23 at
+            # this tree: the doctor reports one problem of its own (the
+            # data-root-untouched invariant), so the copy arm is red BEFORE
+            # the duplicate is added and the EXIT CODE cannot move.  The
+            # graded token can move: it counts problems, so the duplicated
+            # registry reports STRICTLY MORE of them than the identical copy
+            # does.  Both relations are RELATIVE to the control arm, and
+            # neither is satisfied by a doctor that sees no duplicate at all.
+            Add-CaseOrSkip -Result $rDup -Id 'DOC-REG-a-duplicated-registry-makes-the-doctor-red' `
+                -Expectation 'the duplicated registry makes the doctor WORSE than the byte-identical copy: a different exit code, or a strictly larger problem token' `
+                -Ok (($dupExit -ne $ctlExit) -or $dupTokenGreater) `
+                -Evidence ('copy_exit=' + $ctlExit + ' dup_exit=' + $dupExit +
+                           ' copy_token=' + $ctlTok + ' dup_token=' + $dupTok +
+                           ' (relative to the control arm; the absolute exit!=0 was satisfied by any unrelated problem)')
+
+            Add-CaseOrSkip -Result $rDup -Id 'DOC-REG-the-problem-token-counts-the-duplicate' `
+                -Expectation 'the problem token is STRICTLY greater on the duplicated registry than on the byte-identical copy' `
+                -Ok $dupTokenGreater `
+                -Evidence ('copy_token=' + $ctlTok + ' dup_token=' + $dupTok +
+                           ' dup_exit=' + $dupExit + ' (relative to the control arm)')
+        } else {
+            Add-Skip -Id 'DOC-REG-*' -Why 'pm/SPEC.yaml has no `suites:` block with a row to duplicate'
+        }
+    } finally {
+        if ($null -eq $prevIoEnc) { Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue }
+        else { $env:PYTHONIOENCODING = $prevIoEnc }
+        if ($null -eq $prevGateBase) { Remove-Item Env:GATE_BASE -ErrorAction SilentlyContinue }
+        else { $env:GATE_BASE = $prevGateBase }
+    }
+} else {
+    Add-Skip -Id 'DOC-REG-*' -Why ('needs python; python=' + $havePython)
 }
 
 # Rule 10 sentinel: prove the harness observed the children's REAL exit
@@ -577,6 +897,14 @@ Add-Case -Id 'HARNESS-child-exit-codes-were-observed' `
 # --- summary --------------------------------------------------------------
 Write-Output ''
 Write-Output ('SELF TEST: pass={0} fail={1} skip={2}' -f $script:Pass, $script:Fail, $script:Skip)
+# SKIP IS NOT PASS.  A skipped case is a case that did not RUN, so the count
+# above is not a green count -- it says how many cases were ANSWERED.  Every
+# skip carries its reason (in the case list above), and this line says so in
+# the summary, so "not measured" cannot be read as "measured and fine"
+# (task-170, finding B1).
+if ($script:Skip -gt 0) {
+    Write-Output ('NOTE: SKIP IS NOT PASS -- ' + $script:Skip + ' case(s) were SKIPPED, so they are NOT counted as passing; the reason for each is in the case list above.')
+}
 Set-Field 'CASES_PASS' ([string]$script:Pass)
 Set-Field 'CASES_FAIL' ([string]$script:Fail)
 Set-Field 'CASES_SKIP' ([string]$script:Skip)

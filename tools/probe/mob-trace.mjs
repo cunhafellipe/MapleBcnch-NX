@@ -21,7 +21,30 @@ if (!mapPath) {
   process.exit(2);
 }
 
-const SERVER = serverArg ?? process.env.WZ_SERVER ?? 'http://127.0.0.1:5480';
+// The instance comes from the [WZ_SERVER] positional or from WZ_SERVER, and from
+// nowhere else (task-139).  Both names are KEPT because both have measured
+// callers: the positional is documented in the usage line above, and WZ_SERVER
+// is read by MapleMcp/MapClient.cs:32 and set by tools/probe/maple_mcp.py:89.
+// What goes away is the DEFAULT PORT.  Note what it used to be: 5480, the port
+// pm/GATE.md:27 lists as banned.  A probe that defaults to a banned port and
+// then talks to whatever is listening there is the worst form of this defect.
+const SERVER_ARG = (serverArg || '').trim();
+const SERVER_ENV = (process.env.WZ_SERVER || '').trim();
+if (SERVER_ARG && SERVER_ENV && SERVER_ARG !== SERVER_ENV) {
+  console.log(`>>> RED: the [WZ_SERVER] argument (${JSON.stringify(SERVER_ARG)}) and `
+    + `WZ_SERVER (${JSON.stringify(SERVER_ENV)}) name different instances. Pass one.`);
+  process.exit(1);
+}
+const SERVER_RAW = SERVER_ARG || SERVER_ENV;
+if (!SERVER_RAW) {
+  console.log('>>> RED: neither the [WZ_SERVER] argument nor WZ_SERVER is set, so there is no backend to measure.');
+  console.log('       Set it to the instance under test, for example:');
+  console.log("         node " + (process.argv[1] || 'this probe') + " <Map.nx> <mapId> http://127.0.0.1:<port>");
+  console.log('         or export WZ_SERVER before running it.');
+  console.log('       There is no default port on purpose: an older instance answers every one of these requests.');
+  process.exit(1);
+}
+const SERVER = SERVER_RAW.replace(/\/+$/, '');
 const DOTNET = process.env.DOTNET_EXE
   ?? 'C:/MUWORK/app/scoop/apps/dotnet-sdk/current/dotnet.exe';
 const DLL = process.env.MAPLE_MCP_DLL

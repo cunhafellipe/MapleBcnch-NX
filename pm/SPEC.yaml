@@ -10,12 +10,92 @@
 #
 # 路由數是 2026-10-16 實測的（Api/*.cs 裡 MapGet/MapPost 的第一段路徑），
 # 判官與其涵蓋面是掃 25 支 suite 腳本實際呼叫的端點前綴得出來的，不是推測。
+#
+# ★★★ 上面那個「25」是 2026-10-16 的數字，不是常數。它數的是「那天閘實際跑進去的
+# suite」。它**不是**磁碟上的腳本檔數，也**不是**本檔 suites: 區塊現在的筆數。
+# 這三件事是三個不同的母體；挑錯一個，就會把一句對的話改成另一句錯的話。
+#
+# 當時的證據（都在 repo 裡，隨版控一起進來）：
+#   JOURNAL/2026-10-16-1935-SEG7-skill-hotkey-letter-vs-id.md:184
+#     gate    RED SUITES: 0   （25 個 suite）    <- 閘自己的輸出行，不是人數的
+#   JOURNAL/2026-10-16-2036-SEG8-editor-coverage-and-save-audit.md:13-18
+#     234 條路由，25 個 gate suite，100% 只打 /api/simulate
+#       25 suites  /api/simulate      8 suites  /api/inspect
+#        3 suites  /api/files          2 suites  /api/skill-cast      1 suites  /api/node
+#   JOURNAL/2026-10-16-2140-SEG9-pm-v2-system.md:18
+#     234 條路由、25 個 suite……這是我手動掃出來的，工具裡沒有
+# ⇒ 那次涵蓋面普查是**手動**掃描。工具從來沒有產出過「25」，所以沒有任何指令能重跑
+#   出這個數 —— 它只能由上面三份紀錄佐證。這正是它必須帶著日期的理由：一個只有
+#   紀錄、沒有產生器的數字，寫成常數就等於宣稱它今天還成立。
+#
+# ★★ 要重算，只能重算「現在」那一欄，而且必須說明數的是哪個母體。下面三個數在
+#   **同一個 commit** 上就不一樣，不要混用。兩欄各有一個錨點，不要互相頂替。
+#
+#   ── 歷史欄：量於 commit 879a45bbc420f86af37b4941ba6ac1f5b94f8ea3（2026-10-23）
+#   ★ 那個 commit 上的三個數是 **34 / 34 / 33**，已經過期（今天是 35 / 35 / 34）。
+#     留著是為了標明「那天量到什麼」；2026-10-24 用同一套指令在**那個 commit 的
+#     blob** 上重跑，三個數原樣重現（34 / 34 / 33），所以這欄不是傳聞。
+#     ★ 下面這三條指令是**讀工作樹**的，所以今天在 repo 根跑會印出「現在欄」的
+#       值；要重現 34 / 34 / 33 得 checkout 那個 commit。
+#
+#   (1) 本檔宣告的判官數 —— 這才是 areas: 真正對應的母體
+#     python -c "import re;t=open('pm/SPEC.yaml',encoding='utf-8').read();b=t.split('\nsuites:\n',1)[1].split('\ninvariants:',1)[0];print(len(re.findall(r'^\s+- id: ',b,re.M)))"
+#       34
+#
+#   (2) 磁碟上 tools/verify/suites/ 的腳本檔（.py/.ps1/.mjs）
+#     (git ls-tree -r --name-only HEAD tools/verify/suites/ | Select-String -Pattern '\.(py|ps1|mjs)$').Count
+#       34
+#     這個目錄裡另有 3 個 .json（ballfighter / fighter / mobfly），不是腳本。
+#
+#   (3) 閘實際執行的數 —— (1) 減掉自宣告 in_gate: false 的 save-audit
+#     (Select-String -Path pm/SPEC.yaml -Pattern '^\s*in_gate:\s*false').Count
+#       1
+#     34 - 1 = 33
+#
+#   ── 現在欄：量於 2026-10-24 的工作樹（**還沒進版控**，所以錨不到任何 commit；
+#     HEAD 當時是 879a45bbc420f86af37b4941ba6ac1f5b94f8ea3，那個 commit 裡的
+#     數字是上一欄的 34 / 34 / 33。別把這欄錨到一個還不存在的 commit。）
+#     母體名稱寫在每一條前面：這三個母體各不相同，混用就會說錯話。
+#
+#   (1) 本檔宣告的判官數 —— 母體：declared-in-this-file
+#     ★ 這才是 areas: 真正對應的母體。
+#     python -X utf8 tools/pm.py doctor
+#       DOCTOR_SUITES_DECLARED=35
+#     （同一個數，用這支指令獨立重算，交叉核對）
+#     python -c "import re;t=open('pm/SPEC.yaml',encoding='utf-8').read();b=t.split('\nsuites:\n',1)[1].split('\ninvariants:',1)[0];print(len(re.findall(r'^\s+- id: ',b,re.M)))"
+#       35
+#
+#   (2) 磁碟上 tools/verify/suites/ 的腳本檔（.py/.ps1/.mjs）—— 母體：script-files-on-disk
+#     (Get-ChildItem tools/verify/suites -File -Include *.py,*.ps1,*.mjs -Recurse).Count
+#       35
+#     ★ 這個目錄裡另有 3 個 .json（ballfighter / fighter / mobfly），不是腳本。
+#     ★★ 歷史欄那條 git ls-tree 的指令量的是**版控裡的樹**，不是磁碟；今天它是 34，
+#        少的那一支是 tools/verify/suites/empty-archive.py（還沒進版控）。
+#        兩個母體今天差 1，要分清楚；寫「磁碟上」就必須用 Get-ChildItem 那條。
+#        (git ls-tree -r --name-only HEAD tools/verify/suites/ | Select-String -Pattern '\.(py|ps1|mjs)$').Count
+#          34
+#
+#   (3) 閘實際執行的數 —— 母體：executed-by-the-gate
+#     ★ 這是**執行者自己的清單**（閘的 Run 行），不是宣告的減法。
+#     (Select-String -Path tools/verify/gate.ps1 -Pattern "Run\s+'([^']+)'").Matches.Count
+#       34
+#     (Select-String -Path pm/SPEC.yaml -Pattern '^\s*in_gate:\s*false').Count
+#       1
+#     35 - 1 = 34
+#     ★ 宣告了但閘不跑的那一個是 save-audit（自宣告 in_gate: false）。
+#
+# ★ (1) 和 (2) 都是 35，卻**不是同一個集合**，相同的數字不代表相同的母體：
+#     宣告的 35 = tools/verify/suites/ 底下 33 支 + MapleBench/tools/ 底下 2 支
+#                 （sim-skills-check.mjs、browser-verify.mjs）；
+#     磁碟的 35 = tools/verify/suites/ 底下 33 支判官 + archivelib.py / archivelib.ps1
+#                 （那兩個是被 harness 載入的函式庫，本身不是判官）。
+#   這一格存在的理由就是：母體不明時，就算數字碰巧對了，這句話也還是錯的。
 
 areas:
   - id: save
     title: 存檔鏈路
     criticality: high
-    routes: ["/api/files/save", "/api/files/open", "/api/files/open-many", "/api/files/open-img-folder"]
+    routes: ["/api/files/save", "/api/files/open", "/api/files/open-many", "/api/files/open-img-folder", "/api/files/create-empty"]
     note: >
       壞掉會吃掉使用者的原始資料。README 的承諾在這裡。2026-10-16 實測：
       使用者的 16 個封存全是 .nx，所以實際走的是 SaveNx，不是 README 描述的
@@ -126,6 +206,7 @@ suites:
     red_marker: [">>> RED"]
     asserts: true
     areas: [simulate, mob]
+    note: 2026-10-24 實測：單跑 3 次有 1 次紅（閘內 14:54 也紅）。紅的不是樹——沒有 firstAttack 的 2220100 會沿 foothold 巡邏（實測 400 幀 x 1666→2068、1662→1501，一次還從玩家身上走過，距離 0.1px），而 stage 1 斷言禁止「任何移動」且宣稱「朝玩家」卻從不檢查方向；召喚點又是隨機的（100px 內）。**「flaky」已移除**：斷言改成量「沒有追逐」，三個合取——gapN ≤ 40px ∧ tailMax ≤ 40px ∧ closureFrac ≥ 0.10。離線套在 9 筆記錄上：6 筆 plain 全部 False、3 筆 firstAttack 全部 True，零重疊；單跑 10 次 exit 0，裁決字串只有一種（`PASS: it did not pursue -- no firstAttack, never struck`）。修法與理由見 W-103。
   - id: npc-label-check
     file: tools/verify/suites/npc-label-check.ps1
     runner: powershell
@@ -160,8 +241,7 @@ suites:
     red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
-    flaky: true
-    note: 2026-10-16 實測：單跑 BAD=0，在 gate 上下文曾 BAD=1，原因未查清。
+    note: 2026-10-24 實測：單跑與 gate 上下文都 BAD=0。「flaky」已移除——它不是 suite 的性質，是閘的紅燈通道在讀整段輸出，而這支 suite 的輸出會解釋自己，其中一句提到過去某次報過 BAD=2。閘現在只讀「獨立一行的 BAD=」；詳見 W-100 與 pm/TRAPS.md T-25。
   - id: npc-chat-frame
     file: tools/verify/suites/npcchat-frame-verify.py
     runner: python
@@ -406,6 +486,17 @@ suites:
     red_marker: [">>> RED", "BAD="]
     asserts: true
     areas: [simulate]
+  - id: empty-archive
+    file: tools/verify/suites/empty-archive.py
+    runner: python
+    verdict: "BAD="
+    red_marker: [">>> RED", "BAD="]
+    asserts: true
+    areas: [save]
+    note: >
+      建立空的 .wz 與 .nx，再用程式自己的 open 路徑開回來，兩邊都沒有 image。
+      同時量三個拒絕：不覆寫、格式與檔名不符、以及不寫進開著的封存所在的資料夾
+      （那一條是資料根不被污染的機制，不是註解）。
   - id: save-audit
     file: tools/verify/suites/save-audit.py
     runner: python
@@ -496,9 +587,33 @@ suites:
 # measured before the checkout was pinned and no longer reproduces. A stale
 # rule is worse than no rule: it sends someone to fix what is already fixed.)
 #
-# NOTE: this SPEC's YAML subset cannot carry a comment INSIDE a list item --
-# a comment line ends the mapping early, and the keys after it are silently
-# lost. So the explanation lives here, above the list, where it is read.
+# NOTE: this SPEC's YAML subset now SKIPS a comment INSIDE a list item, so the
+# keys after it survive.  MEASURED 2026-10-24 with pm.py's own parser
+# (pm.py:360-368 skips a comment line in a list, pm.py:384-395 skips one
+# inside a list item): a colon-less comment inside the first `areas` item
+# leaves the list at 16 rows with the item's keys intact; a comment that
+# contains a colon, a comment between two items, and a comment inside a
+# folded scalar body are skipped the same way.
+#
+# The kinds it still CANNOT carry are these two, and they are the reason the
+# explanation lives here, above the list, where it is read:
+#   * a comment line AT the list's own indent -- the level of the
+#     `areas:` / `suites:` key -- CLOSES that list, and the items after it
+#     are lost (MEASURED: 2 areas -> 1);
+#   * a trailing comment on the same line as a value becomes PART OF THE
+#     VALUE, because the scalar reader does not strip comments (MEASURED:
+#     `criticality: high  # note` parses as the string 'high  # note').
+#
+# MEASURED 2026-10-24, eight comment shapes, against the parser as it is now:
+#   carried:     a comment inside a list item (with or without a colon);
+#                a comment between two items at the same indent;
+#                a comment inside a folded scalar's body;
+#                a comment one indent deeper than a key.
+#   not carried: the two above.
+# A comment to the LEFT of a key, at the same indent, does NOT close the list
+# -- that case was measured too, and the list survived.  "AT the list's own
+# indent" is the claim that holds; "at or LEFT OF" was the earlier wording
+# and the LEFT OF half was never true.
 # --------------------------------------------------------------------------- #
 invariants:
   - id: avatar-md5
@@ -510,6 +625,7 @@ invariants:
     kind: mtime-newer-than
     path: 'C:\MUWORK\GAME\MPSHS'
     mtime: '2026-10-22 08:42:00'
+    exclude: ['Settings', 'Settings.*', 'screenshots', 'client-std*.log']
     why: >
       測試一律用副本。任何測試寫進這個目錄都是在改使用者的原始資料。
       2026-10-16 的 save-audit 每次都assert MPSHS 的 md5 前後一致。
@@ -537,6 +653,26 @@ invariants:
       然後重新跑 doctor 確認它綠。
       ★ 不要為了讓它綠而把 `mtime:` 往後推到「現在」—— 那等於把這道防護
       重新變成一個追不到任何寫入的擺設。
+      ★★★ `exclude:` 是這道防護**唯一**的例外，而且它必須被宣告在這裡，
+      理由也必須寫在這裡 —— 沒有宣告的排除就是暗門。
+      2026-10-24 實測：MPSHS 不只是「原始資料」，它同時是那個遊戲客戶端的
+      工作目錄，而客戶端依 src/Configuration.cpp:114-115 從**相對路徑**讀
+      `Settings`，所以**活著的客戶端本來就會改寫它**（2026-10-24 12:31:05
+      實測到一次改寫）。同一個目錄裡還有 98 張 beidou-client MCP harness 寫的
+      截圖 PNG 與兩個 client-*.log。
+      那些都不是「使用者的原始資料」—— 原始資料是那 16 個 .nx 封存。
+      一道分不出「原始資料」與「程式自己的執行期檔案」的防護，會把後者當成前者
+      回報，而**會亂叫的防護比沒有防護更糟**（pm/GATE.md）。
+      所以排除只列「確實不是原始資料」的東西，而且被排除掉的檔案**照樣會被印出來**：
+      doctor 會列出每個比參照值新的被排除檔案（相對路徑 + mtime），
+      讓「有人寫了東西」這件事看得到，只是不轉紅。
+      ★ 排除不放寬到封存本身：.nx、.bak、.orig 與其餘一切仍然受這道防護保護。
+      ★ 2026-10-24：harness 的 screenshotDir 已改成 MPSHS 以外的絕對路徑，
+      所以 `screenshots` 這條排除是為了**已經存在**的那 98 個檔案 ——
+      它們是 MCP 的產出、不是原始資料，而 agent 工具的搬移/刪除被 runtime
+      的工作區安全政策擋下，無法由我清掉。使用者可以自行刪除
+      `MPSHS\screenshots`、`MPSHS\client-stdout.log`、`MPSHS\client-stderr.log`；
+      刪掉之後這兩條排除就只剩 `Settings` 與 `Settings.*` 還有意義。
   - id: gate-has-verdict-markers
     kind: file-contains
     file: "tools/verify/gate.ps1"

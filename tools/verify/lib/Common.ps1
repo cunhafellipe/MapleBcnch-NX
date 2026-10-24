@@ -76,6 +76,50 @@ function Initialize-ConsoleEncoding {
     }
 }
 
+function Initialize-PowerShellModulePath {
+    <#
+      Pin $env:PSModulePath to THIS PowerShell's own module directories.
+
+      WHY: a child PowerShell inherits the module path of whatever started it,
+      and a module path that points at ANOTHER PowerShell edition breaks the
+      child in a way that reads like a bug in the script.
+
+      MEASURED 2026-10-24: the gate chain starts each step with Start-Process,
+      and the chain was itself started from python (pm.py). python does not
+      rebuild PSModulePath, so Windows PowerShell 5.1 inherited the path of the
+      PowerShell 7 that started pm.py. PowerShell 7's
+      `Microsoft.PowerShell.Utility` (7.0.0.0) was then the first match in
+      that path, and it does not export `Get-FileHash` -- so the build gate
+      died with "The term 'Get-FileHash' is not recognized as the name of a
+      cmdlet" on a line that has nothing to do with the build. Every other
+      cmdlet of that module was still there (`Select-Object`, `ConvertTo-Json`,
+      `Get-Date`), which is why nothing about the failure pointed at the
+      environment.
+
+      WHY IT IS SET HERE AND NOT ONLY IN THE CALLER: a module is autoloaded
+      when the command is first USED, not when the session starts, so setting
+      the path at the top of a script also repairs that script's own later
+      cmdlet calls.
+
+      WHY THE PERSONAL DIRECTORY IS NOT INCLUDED: it is under OneDrive, and
+      the non-ASCII part of it is mangled when the environment is handed to a
+      child process, which leaves a path that does not exist. These tools use
+      no user-installed modules, so the two system directories are enough, and
+      both are ASCII (R1, R16).
+    #>
+    $parts = @()
+    foreach ($p in @(
+            (Join-Path $PSHOME 'Modules'),
+            (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'))) {
+        if (-not $p) { continue }
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        $parts += $p
+    }
+    if ($parts.Count -gt 0) {
+        $env:PSModulePath = ($parts -join ';')
+    }
+}
+
 function Initialize-Verification {
     param(
         [Parameter(Mandatory = $true)][string]$Tool,

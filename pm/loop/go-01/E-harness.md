@@ -12,7 +12,7 @@
 
 ```
 node %LOCALAPPDATA%\hermes\cache\scratch\skillshape-verify.mjs
-  BASE=http://127.0.0.1:5591    預設就是這個
+  GATE_BASE=http://127.0.0.1:<port>  REQUIRED - there is no default port
   ONLY=1121008,2301002          只跑指定技能，快速看
   MULTIMOB=0                    跳過 nearest-N 那一段
 ```

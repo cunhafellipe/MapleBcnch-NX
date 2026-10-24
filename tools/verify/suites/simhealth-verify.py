@@ -25,6 +25,22 @@ BASE = require_gate_base()
 
 _MAP_ID = archive_id("Map.nx", BASE)
 MAP = f"{_MAP_ID}/Map/Map1/100000004.img"
+# Mob.nx is a PRECONDITION here, not a path.  The W-045 finding this file
+# judges is produced by the BACKEND from the archive that is open --
+# SimAuditService.cs:207/:215 -> CombatService.cs:2036 TryMobFrameOrigin
+# reads the roles of the open "Mob" archive -- so with Mob.nx closed the
+# backend cannot produce that finding, and "the finding is absent" would be a
+# FALSE failure: the case would fail for a reason that is not the product's.
+#
+# MEASURED 2026-10-23: on instance 5733 (Mob.nx closed) this file printed
+#   ">>> no mobHitOriginShift finding, but every sampled mob's hit1 differs ..."
+# and counted it as a problem, while that instance had no mob to judge at all.
+# The instance with Mob.nx open (5597) reported the finding in the same run.
+#
+# archive_id() already refuses loudly when an archive is not open -- the red
+# marker the gate reads, and a non-zero exit -- and it is the shape
+# attackdrop-verify.py:27 already uses for the same archive.
+_MOB_ARCHIVE_ID = archive_id("Mob.nx", BASE)
 
 bad = 0
 
@@ -149,8 +165,17 @@ if ca.get("mobWithoutAttackArt") is None:
 print("\n=== W-045: the hit pose's draw origin ===")
 sh = ca.get("mobHitOriginShift")
 if sh is None:
-    print("  >>> no mobHitOriginShift finding, but every sampled mob's hit1 differs "
-          "from stand (2220100 (27,58)->(28,65))")
+    # The numbers in the message are the W-045 SHEET's, not a measurement of
+    # this run: this file asked the backend whether the audit reported the
+    # finding, it did not measure a hit origin itself.  A hand-copied
+    # constant in a failure message reads as a measurement, so it is labelled
+    # as what it is (rule 21).  The measured values are printed in the other
+    # branch, where the finding carries them.
+    print("  >>> no mobHitOriginShift finding, and the W-045 sheet says every "
+          "sampled mob's hit1 differs from stand")
+    print("      (reference values, NOT measured by this run: 2220100 "
+          "(27,58)->(28,65) -- when the finding IS reported, the measured "
+          "examples are printed instead)")
     bad += 1
 else:
     print(f"  {sh['text']}")
