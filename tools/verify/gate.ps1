@@ -612,13 +612,53 @@ function Get-GateInstanceReport {
     $out += 'GATE_NEWEST_PRODUCT_COMMIT=none'
   }
 
-  # Stale: the binary was NOT built from the product code the tree holds now.
+  # Stale: is the binary OLDER than the product code this tree holds now?
+  #
+  # THE COMMIT COUNTS ABOVE ARE INFORMATION, NOT THE DECISION.  They compare
+  # commit DATES with the binary's build time, and a binary is built from the
+  # WORKING TREE -- so a commit that landed AFTER the build can already be
+  # INSIDE that binary (it was in the tree when the build ran).
+  #
+  # MEASURED 2026-10-25, the false positive this fixes: the instance on 5602
+  # ran a dll built 21:32:20; the commit that touched MapleBench/ landed
+  # 21:57:52, so the commit count said "1 product commit after the binary"
+  # and the gate printed GATE_INSTANCE_STALE=yes -- but the product SOURCES
+  # that commit carried were already in the tree at 15:46, and the 21:32
+  # build had them.  That instance was NOT stale, and the notice named a
+  # problem that did not exist.
+  #
+  # The question that matters is about the FILES, not the commits: is any
+  # product source file in this tree NEWER than the binary?
+  $productNewestSource = ''
+  $productNewestPath = ''
+  try {
+    $repoRootForSources = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $srcFiles = @()
+    foreach ($r in @((Join-Path $repoRootForSources 'MapleBench'),
+                     (Join-Path $repoRootForSources 'dependencies\MapleLib'))) {
+        if (-not (Test-Path -LiteralPath $r)) { continue }
+        $srcFiles += @(Get-ChildItem -LiteralPath $r -Recurse -File -Filter *.cs -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' })
+    }
+    if ($srcFiles.Count -gt 0) {
+        $newest = $srcFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $productNewestSource = $newest.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+        $productNewestPath = $newest.FullName
+    }
+  } catch { }
+  if ($productNewestSource -ne '') {
+    $out += ('GATE_NEWEST_PRODUCT_SOURCE={0}  {1}' -f $productNewestSource, $productNewestPath)
+  } else {
+    $out += 'GATE_NEWEST_PRODUCT_SOURCE=unknown'
+  }
+
   $stale = 'unknown'
-  if ($productNewer -ge 0) {
-    if ($productNewer -gt 0) { $stale = 'yes' } else { $stale = 'no' }
+  if ($productNewestSource -ne '' -and $null -ne $builtLocal) {
+    $newestTime = [datetime]::ParseExact($productNewestSource, 'yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+    if ($newestTime -gt $builtLocal) { $stale = 'yes' } else { $stale = 'no' }
   }
   $out += ('GATE_INSTANCE_STALE={0}' -f $stale)
-  $out += 'GATE_INSTANCE_STALE_SOURCE=the PRODUCT commit count above: the binary is stale when the tree holds product commits it was not built from'
+  $out += 'GATE_INSTANCE_STALE_SOURCE=the newest product SOURCE FILE in this tree against the binary''s build time -- the commit counts above are INFORMATION only, because a binary is built from the WORKING TREE, so a commit that landed after the build can already be inside it'
   return ($out -join "`n")
 }
 
@@ -633,8 +673,9 @@ if ($instanceReport -match '(?m)^GATE_INSTANCE_STALE=yes$') {
   $staleCount = ([regex]::Match($instanceReport, '(?m)^GATE_PRODUCT_COMMITS_AFTER_BINARY=(\d+)\s*$')).Groups[1].Value
   $staleBuilt = ([regex]::Match($instanceReport, '(?m)^GATE_INSTANCE_BINARY_BUILT=(.+)$')).Groups[1].Value.Trim()
   $staleNewest = ([regex]::Match($instanceReport, '(?m)^GATE_NEWEST_PRODUCT_COMMIT=(.+)$')).Groups[1].Value.Trim()
-  Write-Output (">>> STALE (the instance at {0} is running a binary built {1}, and {2} PRODUCT commit(s) landed in this tree after that build -- the newest is {3}; the verdicts below are about THAT INSTANCE, not necessarily about this tree) -- instance {0}" -f $Base, $staleBuilt, $staleCount, $staleNewest)
-  Write-Output 'GATE_INSTANCE_STALE_NOTICE=the instance is older than the tree'
+  $staleSource = ([regex]::Match($instanceReport, '(?m)^GATE_NEWEST_PRODUCT_SOURCE=(.+)$')).Groups[1].Value.Trim()
+  Write-Output (">>> STALE (the instance at {0} is running a binary built {1}, and this tree holds product source that is NEWER than that binary -- the newest is {2}; {3} product commit(s) also landed after the build, the newest being {4}. The verdicts below are about THAT INSTANCE, not necessarily about this tree.) -- instance {0}" -f $Base, $staleBuilt, $staleSource, $staleCount, $staleNewest)
+  Write-Output 'GATE_INSTANCE_STALE_NOTICE=the instance is older than the product source this tree holds'
 } else {
   Write-Output 'GATE_INSTANCE_STALE_NOTICE=none'
 }

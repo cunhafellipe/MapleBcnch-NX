@@ -216,15 +216,46 @@ which ignored the 22 renamed) was caught by the checker, not by the lead.
   GATE_COMMITS_AFTER_BINARY=5
   GATE_PRODUCT_COMMITS_AFTER_BINARY=0
   ```
-  The last line is the one that matters: the five commits after that
-  binary's build are all documentation and verification tooling, and NO
-  product commit is missing from the instance -- which is exactly the
-  distinction rule 17 asks for and which the gate could not previously make.
-  It also explains how this session produced a RED that was not the tree's
-  fault: the same gate, pointed at the owner's old instance on 5591 (dll
-  built 15:46 against a tree with 5 later commits), reported
-  `RED_SUITE=empty-archive` with `status=403 ... Access to the path ... is
-  denied` -- green against a fresh instance, red against the stale one.
+  The last line was supposed to be the one that matters, and **it was the
+  wrong measure**: a binary is built from the WORKING TREE, so a commit
+  dated after the build can already be INSIDE that binary. MEASURED: the
+  repo's newest product source is
+  `MapleBench/Services/EmptyArchiveService.cs` at 2026-10-24 15:46:17, and
+  the 5591 instance's `MapleBenchX.dll` was built at **15:46:31 — fourteen
+  seconds later**, so it contains it. The commit-date rule called both 5591
+  and 5602 "stale"; under the source-mtime rule **no instance on this
+  machine is stale**. The decision is now the source-mtime comparison, and
+  the commit counts are printed as INFORMATION with their source line saying
+  so. The rule has a positive control: a deliberately two-day-old binary
+  (2026-10-22 20:24:52) makes the gate print `GATE_INSTANCE_STALE=yes`.
+  **⇒ The 5591 `RED_SUITE=empty-archive` was NOT staleness.** Its text is
+  `status=403 body={"message": "Access denied.", "detail": "Access to the
+  path '...\\empty-....wz' is denied."}` — and **403 rather than 404 is
+  itself the evidence that the route WAS in that binary**. It is a
+  filesystem-permission refusal by that process, and the difference between
+  the two instances is **not established**. The lead's earlier claim that
+  "the same tree is green against a fresh instance and red against a stale
+  one" was the card's premise repeated as if it were a measurement; it was
+  refuted, and the correction is recorded in `FAILURES.md`.
+- **The gate's suites are not isolated from each other, and that is the root
+  of every red in this audit.** MEASURED 2026-10-25 03:0x, gate run against
+  a FRESH instance (`GATE_INSTANCE_STALE=no`, `GATE_PRODUCT_COMMITS_AFTER_BINARY=0`):
+  ```
+  === skill-test ===
+     >>> RED: skill-test -- 2.2 a cast takes the mob's hitCount x 100 HP (hp 1000 -> 1000; expected -100 for hitCount=1)
+  === contact-damage ===
+     >>> RED: contact-damage -- 1210103 (80): the hits are not all one number (every hit was 74; the reference's range holds 16 numbers)
+  ```
+  Both were green in the previous gate run (commit 413cc65, `RED SUITES: 0`).
+  The same shape as W-102 (the stop lands inside a ~2.25 px window), W-103
+  (the phase decides the verdict) and W9-KB (5 of 27 phases red): **a mob
+  is summoned at a RANDOM x within 100 px of the character
+  (`SimulatorEndpoints.cs:451-455`; the endpoint accepts no position), so a
+  suite that summons a mob measures a random placement.** A placement at the
+  edge of the range produces a different verdict — a cast that does not
+  reach, hits that all read one number instead of the reference's range of
+  16. Card W10-SHARED measures the distribution before anything is changed.
+
 - `tools/verify/eol-check.ps1`: a checker measured that HEAD's and the
   index's blobs of `MapleBench/tools/soak.py` are CRLF while the working
   tree is LF, and that the two numstat runs are EQUAL. If that holds,
