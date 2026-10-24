@@ -86,6 +86,42 @@ paths, 218 raw literals -- and the tree the 234 came from never entered
 version control. `pm/SPEC.yaml`'s header quoted 34/34/33 for a file that
 declares 35.
 
+### The SPEC's `areas:` block (commit be4f52a)
+
+The 6b block could NOT be pasted verbatim: `pm.py`'s scalar reader is
+one-value-per-line (`pm.py:291-296`), so a multi-line array makes `routes`
+a 46-character STRING and `cmd_coverage` then prints one backticked
+CHARACTER per route (measured: 228 characters where 132 belong). The
+block's CONTENT was applied in the SPEC's own single-line `routes:` shape
+instead, with its 17 comment lines verbatim.
+
+**The lead's own count, independent of the maker's:**
+
+```
+HEAD~1   areas=16  visible=74 (distinct 74)  comment_paths=0  (distinct 0)   union=74
+HEAD     areas=16  visible=62 (distinct 62)  comment_paths=24 (distinct 24)  union=86
+worktree areas=16  visible=62
+```
+
+That reconciles the maker's accounting exactly: the 74 route DECLARATIONS
+are unchanged (62 machine-visible + 12 whose old forms are named in
+comments, 24 path strings because each of the 12 names both its old and its
+restored form). **Zero were dropped.** The header states the 62 with its
+anchor (`dfc333b7`) and keeps the historical 34/34/33 column, now
+reproducible with `git show <rev>:...` and no checkout -- one of those
+commands had to be made pipe-free, because a PowerShell pipe rewrites LF to
+CRLF (544 LF -> 544 CRLF, 25410 -> 25954 bytes) and the reader then died
+with IndexError.
+
+**The acceptance ruling (the lead's, recorded because the wording had two
+readings):** the invariant is **"the DECLARED population is unchanged"** --
+74 declarations before and after, 0 dropped, the same 16 area ids, and the
+doctor reading exactly as before (`DOCTOR_SUITES_DECLARED=35`,
+`DOCTOR_SUITES_PROBLEMS=1`, exit 1). The machine-visible count falls from
+74 to 62 **by design**: the block moves 12 declarations into comments, and
+putting them back into `routes:` lines would be exactly the silent
+cross-area move the block refuses to make. Neither number was fudged.
+
 ## The method that produced this
 
 - A fresh instance was BUILT from the working tree for the gate run
