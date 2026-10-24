@@ -28,7 +28,8 @@ Initialize-Verification -Tool 'eol-check' -Checked @(
     'CRLF / bare-LF / bare-CR counts taken from the raw byte array of the working file',
     'the same census on the HEAD blob, read as raw bytes through git cat-file',
     'git diff HEAD --numstat to detect a whole-file rewrite (line-ending inflation)',
-    'a byte-level comparison of the working copy against the HEAD blob: same text with different bytes, and a working copy whose bare-LF endings were normalised away'
+    'a byte-level comparison of the working copy against the HEAD blob: same text with different bytes',
+    'the EOL PROFILE of the working copy against HEAD''s, on the bytes: whether the working copy has an ending HEAD has none of (the diff cannot show that, because git cleans the working copy before diffing, so an equal pair of numstats proves nothing about the endings)'
 )
 
 function Get-EolStats {
@@ -198,28 +199,55 @@ foreach ($p in $Path) {
         $eolRewrite = $false
     }
 
+    # THE ENDINGS CHANGED RELATIVE TO HEAD -- decided on the BYTES, because
+    # the diff cannot show it.
+    #
+    # MEASURED (task-179, wave 8 card EOL) on a fixture whose HEAD blob is
+    # 400 bare-LF endings and whose working copy has 58 CRLF among 342
+    # bare-LF ones, with ONE edited line:
+    #
+    #   git diff HEAD --numstat                      1  1
+    #   git diff HEAD --ignore-all-space --numstat   1  1     <- EQUAL
+    #
+    # The pair is EQUAL even though the endings changed, because with
+    # "text=auto eol=lf" git CLEANS the working copy's CRLF back to LF
+    # before diffing.  So an equal pair of numstats proves NOTHING about the
+    # endings: the bytes are the only instrument that can answer it.
+    #
+    # The test is a KIND test, not a count test: the working copy has an
+    # ending that HEAD has NONE of.  A count test would fire on a file that
+    # merely gained a line (the LF count grows), and it would fire on the
+    # repository's own stale checkouts.
+    $endingsChanged = (($h.CRLF -eq 0 -and $w.CRLF -gt 0) -or
+                       ($h.BareLF -eq 0 -and $w.BareLF -gt 0))
+
     # Three reasons to fail, each with its own message, because a FAIL here
     # does not always mean line-ending damage (rule 6).
     #   ratioInflated - git says many lines changed: the ratio heuristic.
-    #   normalised    - HEAD carried bare-LF endings, the working copy has
-    #                   none left and is CRLF. Decided on the BYTES, so it
-    #                   does not depend on the diff algorithm or the index.
+    #   normalised    - the endings were rewritten relative to HEAD: HEAD
+    #                   carried bare-LF endings and the working copy has
+    #                   none left and is CRLF, or the other way round, or the
+    #                   working copy has an ending HEAD has none of.  The old
+    #                   test could only see the first shape, so a rewrite that
+    #                   turned only SOME of the endings came out clean.
     #   eolRewrite    - the text is identical and the bytes are not.
     $ratioInflated = ($ratio -ge 0 -and $changed -gt 0 -and $ratio -gt $MaxChangedLineRatio)
-    $normalised = ($h.BareLF -gt 0 -and $w.BareLF -eq 0 -and $w.CRLF -gt 0)
+    $normalised = ($endingsChanged -and -not $textEqual)
     $failReason = ''
 
     Add-Detail ('  HEAD : crlf={0} bare_lf={1} bare_cr={2} lines={3} bytes={4}' -f $h.CRLF, $h.BareLF, $h.BareCR, $h.Lines, $h.Bytes)
     Add-Detail ('  DELTA: crlf={0} bare_lf={1} lines={2} numstat_added={3} numstat_deleted={4} changed_ratio={5} numstat={6}' -f `
         ($w.CRLF - $h.CRLF), ($w.BareLF - $h.BareLF), ($w.Lines - $h.Lines), $added, $deleted, $ratio, $numstatState)
     Add-Detail ('  TEXT: same_ignoring_line_endings={0} same_bytes={1}' -f $textEqual, $bytesEqual)
-    if ($normalised) { Add-Detail '  ENDINGS_NORMALISED: HEAD had bare-LF endings and the working copy has none; a whole-file rewrite normalised them' }
+    Add-Detail ('  ENDINGS: changed_relative_to_HEAD={0} (HEAD crlf={1} bare_lf={2} | working crlf={3} bare_lf={4})' -f `
+        $endingsChanged, $h.CRLF, $h.BareLF, $w.CRLF, $w.BareLF)
+    if ($normalised) { Add-Detail ('  ENDINGS_CHANGED: the working copy has an ending that HEAD has none of (HEAD crlf={0} bare_lf={1} | working crlf={2} bare_lf={3}); the diff cannot show it, because git cleans the working copy before diffing' -f $h.CRLF, $h.BareLF, $w.CRLF, $w.BareLF) }
     if ($eolRewrite) {
         Add-Detail '  INFLATED: the text is unchanged once line endings are normalised, but the bytes are different: the whole file was rewritten with different endings'
         $failed = $true
         $failReason = 'eol-rewrite'
     } elseif ($normalised) {
-        Add-Detail ('  INFLATED: the working copy has no bare-LF endings left while HEAD had {0}; the file was rewritten wholesale and its endings were normalised, so the diff is inflated. Use a byte level splice.' -f $h.BareLF)
+        Add-Detail ('  INFLATED: the working copy has an ending that HEAD has none of (HEAD crlf={0} bare_lf={1} | working crlf={2} bare_lf={3}); the endings were rewritten relative to HEAD and the diff cannot show it, because git cleans the working copy before diffing. Use a byte level splice.' -f $h.CRLF, $h.BareLF, $w.CRLF, $w.BareLF)
         $failed = $true
         $failReason = 'endings-normalised'
     } elseif ($ratioInflated) {
@@ -228,8 +256,8 @@ foreach ($p in $Path) {
         $failReason = 'ratio'
     }
     if ($failReason -ne '' -and $firstFailReason -eq '') { $firstFailReason = $failReason }
-    $summary += ('{0}: work crlf={1} bare_lf={2} | head crlf={3} bare_lf={4} | text_equal={5} eol_rewrite={6} normalised={7} changed_ratio={8} fail_reason={9}' -f `
-        $name, $w.CRLF, $w.BareLF, $h.CRLF, $h.BareLF, $textEqual, $eolRewrite, $normalised, $ratio, $failReason)
+    $summary += ('{0}: work crlf={1} bare_lf={2} | head crlf={3} bare_lf={4} | text_equal={5} eol_rewrite={6} normalised={7} endings_changed={8} changed_ratio={9} fail_reason={10}' -f `
+        $name, $w.CRLF, $w.BareLF, $h.CRLF, $h.BareLF, $textEqual, $eolRewrite, $normalised, $endingsChanged, $ratio, $failReason)
 }
 
 Set-Field 'SUMMARY' ($summary -join ' | ')
@@ -238,7 +266,7 @@ if ($failed) {
     # Rule 6: a FAIL here does not always mean line-ending damage. Name the
     # reason, so nobody has to infer it from the detail block.
     $failMessage = switch ($firstFailReason) {
-        'endings-normalised' { 'a file was rewritten wholesale; its line endings were normalised, so the diff is inflated' }
+        'endings-normalised' { 'a file''s line endings were rewritten relative to HEAD; the diff cannot show it, because git cleans the working copy before diffing, so the byte counts are the only evidence' }
         'ratio'              { 'a file changed more lines than the edit should; this is the changed-line-ratio heuristic, not proof of line-ending damage' }
         default              { 'a file was rewritten wholesale; the diff is line-ending inflation' }
     }

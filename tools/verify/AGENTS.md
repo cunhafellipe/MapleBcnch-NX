@@ -237,7 +237,26 @@ The two `CHILD_EXIT_` counters are the harness proving it read its
    ```
 
    Identical counts and `eol_rewrite=False` ⇒ the FAIL is the ratio heuristic,
-   not churn. Only a **difference** between the two numstat runs is real churn.
+   not churn. **But an EQUAL pair of numstats does NOT prove there is no
+   line-ending change** — MEASURED 2026-10-25 on a controlled fixture (a
+   scratch git repo outside this one: the HEAD blob has 400 bare-LF endings,
+   the working copy has the same text with every 7th line's ending turned
+   CRLF — 58 CRLF among 342 bare-LF — and one line edited; `.gitattributes`
+   says `* text=auto eol=lf`):
+   ```
+   git diff HEAD --numstat              -> 1  1
+   git diff HEAD --ignore-all-space     -> 1  1     <- EQUAL
+   HEAD blob    : 3092 bytes  CR= 0  LF=400
+   WORKING copy : 3157 bytes  CR=58  LF=400          <- the endings DID change
+   ```
+   The reason the pair is equal is the ATTRIBUTE: `text=auto eol=lf` makes git
+   CLEAN the working copy's CRLF back to LF before diffing, so the CR
+   difference never reaches the diff. **The detector that shipped before
+   2026-10-25 passed that file with `RESULT: PASS` and exit 0.**
+   **⇒ Only the BYTES can decide the endings question; the numstats cannot.**
+   `eol-check.ps1` now decides it on the bytes — a KIND test (the working copy
+   has an ending kind that HEAD has none of) — and reports
+   `fail_reason=endings-normalised` with both sides' counts.
    **Note the `HEAD`:** a bare `git diff` compares the working tree with the
    index, so on a file whose changes are already staged it comes back empty
    (rule 4).

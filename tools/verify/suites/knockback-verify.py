@@ -103,22 +103,86 @@ def new():
     return sid, None, None
 
 
-print("=== calibration: an UNHIT mob must not drift ===")
+print("=== calibration: an UNHIT mob must get NO impulse ===")
+# W-104 (2026-10-25, the gate's only red). The old control was "an UNHIT mob
+# must not drift", and its premise was FALSE. The plain mob PATROLS its own
+# foothold chain -- MapleBench/Api/SimulatorEndpoints.cs:222-227, "Mobs and NPCs
+# patrol their own foothold chain. Seeded, so a map's answer is reproducible."
+# -- so the control demanded the impossible, and it made the gate's verdict depend
+# on which suites ran before it.
+#
+# It was also measuring the wrong channel. The assertion below reads the frame's
+# own knockbackPx, the impulse the product computed (Mob.cpp:595-598), NOT the
+# mob's x: a struck mob also walks toward its attacker (Mob.cs:434-460) and that
+# walk is thousands of pixels, which is why the first version of this file could
+# not see it. A control that says "the mob did not move" therefore guarded a
+# quantity the assertion does not use.
+#
+# The control now says what the assertion needs: while NOTHING has been hit, NO
+# mob reports an impulse. MEASURED 2026-10-25 over 20 phases x 40 idle frames
+# (800 frames), the largest impulse reported was 0.000px, while those same frames
+# gave idle drift of 0.000px in 19 phases and 420.609px in the twentieth -- a mob
+# that leaves the map shifts every later index, so that drift was the distance
+# between two different instances, not movement. The impulse channel is stable;
+# the drift channel is not.
 sid, f, idx = new()
 before = f["mobs"][idx]["x"]
 drift = 0.0
 last = before
+max_kb = 0.0
 for _ in range(40):
     fr = step(sid)
     m = fr["mobs"][idx]
     drift = max(drift, abs(m["x"] - last))
     last = m["x"]
+    for other in fr["mobs"]:
+        kb = abs(other.get("knockbackPx") or 0.0)
+        if kb > max_kb:
+            max_kb = kb
 print(f"  instance #{idx} at x={before:.2f}, largest single-frame drift over 40 idle frames: {drift:.3f}px")
+print(f"  the largest knockback impulse ANY mob reported over those 40 frames: {max_kb:.3f}px")
 if drift > 0.01:
-    print(f"  >>> the control moved {drift:.3f}px, so 'it moved' would prove nothing")
+    print("  (the mob PATROLLED, or the frame's mob list shifted under the measurement -")
+    print("   the plain mob walks its own foothold chain, and a mob that leaves the map shifts")
+    print("   every later index. Neither is a defect in the product, and the assertion below")
+    print("   does not read the mob's x: it reads the frame's own knockbackPx.)")
+if max_kb > 0.001:
+    print(f"  >>> an UNHIT mob reported a {max_kb:.3f}px impulse, so 'it was knocked back' would prove nothing")
     bad += 1
 else:
-    print("  control holds: an unhit mob does not move")
+    print("  control holds: while nothing was hit, NO mob reported an impulse")
+
+# THE POSITIVE CONTROL ARM. The check above ("no impulse while nothing was hit")
+# would pass for a product that never reports an impulse at all, so the SAME
+# reader, on the SAME channel, must go NON-ZERO the moment a mob is hit. This arm
+# is where the control is ALLOWED to fail, and it must. If it does not, the
+# calibration above is vacuous and that is a RED.
+probe = 0.0
+probe_at = -1
+for attempt in range(4):
+    sid2, f2, idx2 = new()
+    if f2 is None:
+        continue
+    for k in range(45):
+        fr2 = step(sid2, {"attack": True})
+        hit = 0.0
+        for other in fr2["mobs"]:
+            kb = abs(other.get("knockbackPx") or 0.0)
+            if kb > hit:
+                hit = kb
+        if hit > 0.001:
+            probe = hit
+            probe_at = k
+            break
+    if probe > 0.001:
+        break
+if probe > 0.001:
+    print(f"  positive control: the same channel reads {probe:+.3f}px on a mob that WAS hit "
+          f"(frame {probe_at}), so the control above would have fired on it")
+else:
+    print("  >>> the impulse channel reads 0.000 even on a mob that was hit, so the "
+          "control above can never fail")
+    bad += 1
 
 print()
 print("=== the hit recoil ===")
