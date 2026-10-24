@@ -31,30 +31,40 @@
 # ★★ 要重算，只能重算「現在」那一欄，而且必須說明數的是哪個母體。下面三個數在
 #   **同一個 commit** 上就不一樣，不要混用。兩欄各有一個錨點，不要互相頂替。
 #
-#   ── 歷史欄：量於 commit 879a45bbc420f86af37b4941ba6ac1f5b94f8ea3（2026-10-23）
+#   ── 歷史欄（**歷史**欄，量的是「那天量到什麼」，不是現在的數）：錨點 commit
+#     879a45bbc420f86af37b4941ba6ac1f5b94f8ea3（2026-10-23）
 #   ★ 那個 commit 上的三個數是 **34 / 34 / 33**，已經過期（今天是 35 / 35 / 34）。
-#     留著是為了標明「那天量到什麼」；2026-10-24 用同一套指令在**那個 commit 的
-#     blob** 上重跑，三個數原樣重現（34 / 34 / 33），所以這欄不是傳聞。
-#     ★ 下面這三條指令是**讀工作樹**的，所以今天在 repo 根跑會印出「現在欄」的
-#       值；要重現 34 / 34 / 33 得 checkout 那個 commit。
+#     留著是為了標明「那天量到什麼」。2026-10-24 用下面這三條指令在**那個 commit 的
+#     blob** 上重跑（不 checkout、不動工作樹），三個數原樣重現（34 / 34 / 33），
+#     所以這欄不是傳聞。
+#     ★ 底下「現在欄」那三條指令是**讀工作樹**的，在今天的 repo 根跑會印出現在的
+#       值；要重現 34 / 34 / 33，用這一欄這三條（它們直接讀那個 commit 的 blob）。
+#     ★ 這一欄量的是**那個 commit 的版控樹**，不是「那天磁碟上的樣子」；那天的磁碟
+#       沒有量過，也不必猜。
 #
-#   (1) 本檔宣告的判官數 —— 這才是 areas: 真正對應的母體
-#     python -c "import re;t=open('pm/SPEC.yaml',encoding='utf-8').read();b=t.split('\nsuites:\n',1)[1].split('\ninvariants:',1)[0];print(len(re.findall(r'^\s+- id: ',b,re.M)))"
+#   (1) 本檔宣告的判官數 —— 母體：declared-in-this-file（at 879a45bb）
+#     python -c "import subprocess,re;t=subprocess.run(['git','show','879a45bb:pm/SPEC.yaml'],capture_output=True).stdout.decode('utf-8');b=t.split('\nsuites:\n',1)[1].split('\ninvariants:',1)[0];print(len(re.findall(r'^\s+- id: ',b,re.M)))"
 #       34
 #
-#   (2) 磁碟上 tools/verify/suites/ 的腳本檔（.py/.ps1/.mjs）
-#     (git ls-tree -r --name-only HEAD tools/verify/suites/ | Select-String -Pattern '\.(py|ps1|mjs)$').Count
+#   (2) 版控裡 tools/verify/suites/ 的腳本檔（.py/.ps1/.mjs）
+#       —— 母體：script-files-in-the-tree（at 879a45bb）
+#     (git ls-tree -r --name-only 879a45bb tools/verify/suites/ | Select-String -Pattern '\.(py|ps1|mjs)$').Count
 #       34
 #     這個目錄裡另有 3 個 .json（ballfighter / fighter / mobfly），不是腳本。
 #
-#   (3) 閘實際執行的數 —— (1) 減掉自宣告 in_gate: false 的 save-audit
-#     (Select-String -Path pm/SPEC.yaml -Pattern '^\s*in_gate:\s*false').Count
+#   (3) 閘實際執行的數 —— 母體：executed-by-the-gate（at 879a45bb）
+#     (git show 879a45bb:tools/verify/gate.ps1 | Select-String -Pattern "Run\s+'([^']+)'").Matches.Count
+#       33
+#     (git show 879a45bb:pm/SPEC.yaml | Select-String -Pattern '^\s*in_gate:\s*false').Count
 #       1
-#     34 - 1 = 33
+#     34 - 1 = 33   （宣告的判官數，減掉自宣告 in_gate: false 的 save-audit）
 #
-#   ── 現在欄：量於 2026-10-24 的工作樹（**還沒進版控**，所以錨不到任何 commit；
-#     HEAD 當時是 879a45bbc420f86af37b4941ba6ac1f5b94f8ea3，那個 commit 裡的
-#     數字是上一欄的 34 / 34 / 33。別把這欄錨到一個還不存在的 commit。）
+#   ── 現在欄：量於 2026-10-24，錨點 commit
+#     dfc333b76b4d9acde41ca026725ab31e4423b49b
+#     ★ 這一欄的數字當時**已經進版控**。上一版的這一欄寫的是「未進版控、錨不到
+#       任何 commit」，那是寫下當天的事實；HEAD 之後前進到 dfc333b7，錨點跟著換。
+#     ★ 這三個數量的是 suite / 腳本檔 / 閘的執行清單，與本檔 areas: 區塊無關；
+#       本檔之後再改 areas:，這三個數不會動。
 #     母體名稱寫在每一條前面：這三個母體各不相同，混用就會說錯話。
 #
 #   (1) 本檔宣告的判官數 —— 母體：declared-in-this-file
@@ -69,11 +79,12 @@
 #     (Get-ChildItem tools/verify/suites -File -Include *.py,*.ps1,*.mjs -Recurse).Count
 #       35
 #     ★ 這個目錄裡另有 3 個 .json（ballfighter / fighter / mobfly），不是腳本。
-#     ★★ 歷史欄那條 git ls-tree 的指令量的是**版控裡的樹**，不是磁碟；今天它是 34，
-#        少的那一支是 tools/verify/suites/empty-archive.py（還沒進版控）。
-#        兩個母體今天差 1，要分清楚；寫「磁碟上」就必須用 Get-ChildItem 那條。
+#     ★★ 版控裡的樹是**另一個母體**，要分清楚：今天（dfc333b7）它與磁碟相同，但
+#        這是巧合，不是規則；寫「磁碟上」就必須用 Get-ChildItem 那條。
 #        (git ls-tree -r --name-only HEAD tools/verify/suites/ | Select-String -Pattern '\.(py|ps1|mjs)$').Count
-#          34
+#          35
+#        ★★ 2026-10-23 這兩條差 1（少的那一支是 tools/verify/suites/empty-archive.py，
+#           當時還沒進版控）；dfc333b7 之後差 0，因為 empty-archive.py 已經進版控。
 #
 #   (3) 閘實際執行的數 —— 母體：executed-by-the-gate
 #     ★ 這是**執行者自己的清單**（閘的 Run 行），不是宣告的減法。
@@ -82,6 +93,8 @@
 #     (Select-String -Path pm/SPEC.yaml -Pattern '^\s*in_gate:\s*false').Count
 #       1
 #     35 - 1 = 34
+#     ★ 兩條獨立的算法給出同一個數：閘自己的 Run 行 = 34，宣告減去 in_gate: false
+#       = 34。這不是巧合，是交叉核對。
 #     ★ 宣告了但閘不跑的那一個是 save-audit（自宣告 in_gate: false）。
 #
 # ★ (1) 和 (2) 都是 35，卻**不是同一個集合**，相同的數字不代表相同的母體：
@@ -90,6 +103,22 @@
 #     磁碟的 35 = tools/verify/suites/ 底下 33 支判官 + archivelib.py / archivelib.ps1
 #                 （那兩個是被 harness 載入的函式庫，本身不是判官）。
 #   這一格存在的理由就是：母體不明時，就算數字碰巧對了，這句話也還是錯的。
+#
+# ── areas: 區塊的形狀（2026-10-24 量，對象是 commit dfc333b7 的路由表）────────
+#   ★ routes: 行裡的 62 條路徑，每一條都是**真的路由**，或是**真的路由群的前綴**
+#     （例：simulate 那一群底下有 43 條路由）。沒有任何一條指向不存在的東西。
+#     路由表不是用 regex 猜的：那是 MapleBenchX.dll 跑起來之後，路由器自己的
+#     endpoint table（237 個 endpoint / 227 條相異路徑）。
+#   ★ 另有 12 條宣告**留在註解裡**，因為它們的歸屬是檔案主人的決定，不是我的：
+#     11 條是「宣告在某個區、路由其實在別的群」（群名被宣告漏掉了），註解裡同時
+#     寫出「還原後的路徑」與「原本宣告的那條」；1 條完全沒有路由，註解標成
+#     flagged，要刪掉還是改指現有的查詢路由，由主人決定。
+#     ★ 這一段刻意**不寫任何 /api 字面值**：本檔的 /api 字面值只出現在三處——
+#       上面那段 2026-10-16 的 JOURNAL 引文（引用）、areas: 的 routes: 行與那 12 條
+#       註解（這才是宣告）、以及 invariants: 區塊描述判官行為的幾句（敘述）。
+#       只有中間那一處是「宣告」，「這個檔案宣告了哪些路徑」才會只有一個答案。
+#   ★ 這 12 條在註解裡，所以 pm.py 讀得到 areas: 區塊（16 個 area），但讀不到
+#     這 12 條宣告 —— tools/pm.py 的 SPEC 解析器會跳過註解行。
 
 areas:
   - id: save
@@ -103,17 +132,23 @@ areas:
   - id: node
     title: 節點瀏覽與編輯
     criticality: high
-    routes: ["/api/node", "/api/children", "/api/inspect", "/api/search", "/api/replace", "/api/edit", "/api/delete", "/api/clone", "/api/browse"]
+    routes: ["/api/node", "/api/children", "/api/inspect", "/api/search", "/api/replace", "/api/browse"]
+    # belongs to another area -- add the segment, then MOVE it:
+    #   /api/mapedit/edit      (was /api/edit)      -> area mapedit
+    #   /api/cashshop/delete   (was /api/delete)    -> area items
+    #   /api/cashshop/clone    (was /api/clone)     -> area items
     note: 編輯器每天在用的那條路。2026-10-16 起有第一個判官（node-verify, W-068）。
   - id: mapedit
     title: 地圖編輯器
     criticality: high
-    routes: ["/api/maps", "/api/mapasset", "/api/minimap", "/api/batch", "/api/validate", "/api/place", "/api/create", "/api/auto-foothold", "/api/foothold-chain", "/api/set-layer-ts", "/api/undo", "/api/redo", "/api/history", "/api/changes", "/api/palette"]
+    routes: ["/api/mapasset", "/api/undo", "/api/redo", "/api/history", "/api/changes", "/api/mapedit/maps", "/api/mapedit/minimap", "/api/mapedit/batch", "/api/mapedit/validate", "/api/mapedit/place", "/api/mapedit/create", "/api/mapedit/auto-foothold", "/api/mapedit/foothold-chain", "/api/mapedit/set-layer-ts", "/api/mapedit/palette"]
     note: 這個分支相對上游的招牌功能，也是 README 拿來對標的。
   - id: simulate
     title: 模擬器
     criticality: med
-    routes: ["/api/simulate", "/api/session", "/api/walk", "/api/character", "/api/step", "/api/cast", "/api/trace", "/api/geometry", "/api/advice", "/api/probe", "/api/capabilities", "/api/debug"]
+    routes: ["/api/simulate", "/api/session", "/api/simulate/walk", "/api/simulate/character", "/api/simulate/step", "/api/simulate/cast", "/api/simulate/trace", "/api/simulate/geometry", "/api/simulate/advice", "/api/simulate/probe", "/api/simulate/debug"]
+    # belongs to another area -- add the segment, then MOVE it:
+    #   /api/cashshop/capabilities (was /api/capabilities) -> area items
   - id: skill
     title: 技能
     criticality: med
@@ -121,11 +156,19 @@ areas:
   - id: mob
     title: 怪物
     criticality: med
-    routes: ["/api/mob", "/api/mob-sprite", "/api/mob-info", "/api/mob-attacks", "/api/mob-catalog"]
+    routes: ["/api/mob"]
+    # belong to another area -- add the segment, then MOVE them:
+    #   /api/simulate/mob-sprite  (was /api/mob-sprite)  -> area simulate
+    #   /api/simulate/mob-info    (was /api/mob-info)    -> area simulate
+    #   /api/simulate/mob-attacks (was /api/mob-attacks) -> area simulate
+    #   /api/simulate/mob-catalog (was /api/mob-catalog) -> area simulate
   - id: npc
     title: NPC
     criticality: med
-    routes: ["/api/npc", "/api/npc-chat", "/api/npc-name"]
+    routes: ["/api/npc"]
+    # belongs to another area -- add the segment, then MOVE it:
+    #   /api/simulate/npc-chat   (was /api/npc-chat)     -> area simulate
+    # /api/npc-name has NO route -- delete it, or point it at /api/inspect.
   - id: string
     title: 字串
     criticality: low
@@ -133,7 +176,7 @@ areas:
   - id: items
     title: 道具與商城
     criticality: med
-    routes: ["/api/items", "/api/item", "/api/icon", "/api/cashshop"]
+    routes: ["/api/cashshop", "/api/cashshop/items", "/api/cashshop/item", "/api/cashshop/icon"]
   - id: repair
     title: 修復服務
     criticality: low
@@ -161,7 +204,10 @@ areas:
   - id: render
     title: 繪製與預覽
     criticality: low
-    routes: ["/api/canvas", "/api/thumb", "/api/preview", "/api/raw", "/api/audio", "/api/scan", "/api/look", "/api/animation", "/api/portal-icons"]
+    routes: ["/api/canvas", "/api/thumb", "/api/preview", "/api/raw", "/api/audio", "/api/scan", "/api/animation"]
+    # belong to another area -- add the segment, then MOVE them:
+    #   /api/mapedit/portal-icons (was /api/portal-icons) -> area mapedit
+    #   /api/simulate/look         (was /api/look)         -> area simulate
 
 # --------------------------------------------------------------------------- #
 # 判官註冊表。gate.ps1 消費這份表，不再維護一份手寫清單。
