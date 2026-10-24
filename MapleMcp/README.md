@@ -43,9 +43,42 @@ dotnet build MapleMcp/MapleMcp.csproj -c Release
 
 ## 工具家族（2026-10-17：52 → 92）
 
-伺服器名稱 `maplebench-assets`。後端有 **234 條路由**；下面是 92 個工具，
-每個家族用 `kind`／`action` 參數分流，而不是一條路由一個工具 —— 234 條路由會把
-agent 淹死，比 52 個更難用。
+伺服器名稱 `maplebench-assets`。後端今天有 **227 條不同的路由路徑**、**237 個
+(method, path) 註冊**；下面是 92 個工具，每個家族用 `kind`／`action` 參數分流，
+而不是一條路由一個工具 —— 那麼多路由會把 agent 淹死，比 52 個更難用。
+
+**這兩個數是量出來的，不是手寫的**（2026-10-24，branch `map-generation-baseline`，
+commit `a83181cd63ead4875da514a5942e3230885e086a`；`git status --porcelain --
+MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那個 commit 位元組相同，
+數字對兩者都成立）：
+
+- **237 個 (method, path) 註冊** —— 母體：一個 HTTP 方法算一個註冊，也就是原始碼裡
+  每一個 `MapGet/MapPost/MapPut/MapDelete` 呼叫。
+
+      (Select-String -Path MapleBench/Api/*.cs -Pattern 'Map(Get|Post|Put|Delete|Patch)\s*\(\s*"([^"]*)"' -AllMatches).Matches.Count
+        237
+
+- **227 條不同的路由路徑** —— 母體：一條路徑算一條，方法再多也只算一條（路徑要套上
+  route group 的前綴，例如 `/api`）。這一欄需要解 group 前綴，用這支指令：
+
+      python C:\mbtest2\routes\extract-routes.py
+        registrations (method, path) : 237
+        distinct full paths : 227
+        distinct raw literals : 218
+
+  （這三行分別印在該指令輸出的 E1、E2、E3 三節裡。）
+  指令稿在 `C:\mbtest2\routes\extract-routes.py`，原始輸出在
+  `C:\mbtest2\routes\extract-routes.txt`；**兩者都還沒進版控**，要把這個數變成可
+  重跑的東西，得先把這支指令稿收進 repo。第三個母體是 **218 個原始字面值**（不套
+  group 前綴，也就是 `grep` 原始碼會看到的數字）：
+
+      (Select-String -Path MapleBench/Api/*.cs -Pattern 'Map(Get|Post|Put|Delete|Patch)\s*\(\s*"([^"]*)"' -AllMatches).Matches | ForEach-Object { $_.Groups[2].Value } | Sort-Object -Unique | Measure-Object | Select-Object -ExpandProperty Count
+        218
+
+- **舊的「234 條路由」**：那是 (method, path) 那一欄在 **2026-10-16/17** 那棵樹上的
+  數字，已經過期（今天 237）。而且那棵樹**從未進版控** —— git 歷史在 2026-10-12 之後
+  直接跳到 2026-10-19 —— 所以 234 沒有任何指令能重跑出來，只能靠上面那三個母體的
+  曲線去框住它。
 
 **工具數字由 `node tools/probe/mcp-tool-census.mjs` 量出來**（掃原始碼，並對執行中的
 伺服器做 `tools/list` 握手，兩邊必須一致），**不要手寫**。家族清單用同一支工具的
@@ -149,7 +182,17 @@ agent 淹死，比 52 個更難用。
 `repair.canvas-format` `repair.canvas-dir-link` `repair.donor-restore`
 `repair.genchoice`。
 
-這八個家族合計 56 條路由，形狀完全一樣（開始／進度／取消／結果）。
+這八個家族合計 **55 個 (method, path) 註冊 / 52 條路徑**，形狀完全一樣（開始／進度／取消／結果）。
+（2026-10-24 量，branch `map-generation-baseline` commit `a83181cd`；母體與指令見上面
+「後端今天有 227 條不同的路由路徑」那一段。這一組的前綴是 `/api/audit`、`/api/dump`、
+`/api/compose`、`/api/import`、`/api/repair`：
+
+    (Select-String -Path MapleBench/Api/*.cs -Pattern 'Map(Get|Post|Put|Delete|Patch)\s*\(\s*"/(audit|dump|compose|import|repair)' -AllMatches).Matches.Count
+      55
+
+52 條路徑那一欄由同一支指令稿解 group 前綴後得到；**舊的「56 條路由」不是任何母體的
+數** —— 這八個家族在 repo 裡每一個存在的 commit（2026-10-12 到今天）都是 55 / 52，
+所以那個 56 沒有產生器，也不該留著。）
 `repair.*` 會寫封存，所以 `start` 帶 `commit`。
 某個 kind 沒有某一階段時**拋錯並列出有的**，絕不偷偷換一條路由。
 

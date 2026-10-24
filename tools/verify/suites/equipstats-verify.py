@@ -82,3 +82,4 @@ for prefix, item, why in CASES:
         print("    every inc* node matches the archive exactly")
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

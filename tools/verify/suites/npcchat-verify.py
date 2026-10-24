@@ -113,3 +113,4 @@ for nid in CASES:
         bad += 1
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

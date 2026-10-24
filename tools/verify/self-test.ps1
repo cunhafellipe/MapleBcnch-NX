@@ -817,9 +817,18 @@ if ($havePython) {
             # ignores --spec finds no duplicate in the tree's registry, and
             # those cases go red.  Two cases cannot both be the control for
             # each other.
+            # The doctor must have ANSWERED, not merely printed nothing that
+            # looks like a duplicate.  A doctor that is DEAD -- prints nothing,
+            # exits 0 -- satisfies "-notmatch 'DUPLICATE SUITE'" on an EMPTY
+            # output, so this case used to go green over a detector that never
+            # ran.  That is the defect class F2 is about, in the very case the
+            # other cases are relative TO: a control that a dead detector
+            # satisfies cannot control anything.  $ctlNumOk is true only when
+            # the doctor's problem token is present AND numeric, so the case
+            # now needs an answer and the absence of a duplicate.
             Add-CaseOrSkip -Result $rCtl -Id 'DOC-REG-a-copy-of-the-registry-reports-no-duplicate' `
                 -Expectation 'a registry that declares every id and every file once reports no duplicate' `
-                -Ok ($rCtl.Out -notmatch 'DUPLICATE SUITE') `
+                -Ok ($ctlNumOk -and ($rCtl.Out -notmatch 'DUPLICATE SUITE')) `
                 -Evidence ('exit=' + $rCtl.Exit + ' duplicate_lines=' +
                            ([regex]::Matches($rCtl.Out, 'DUPLICATE SUITE')).Count + ' token=' + $ctlTok)
 

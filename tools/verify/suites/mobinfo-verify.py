@@ -71,3 +71,4 @@ print("episode head:")
 for line in ep.split(chr(10))[:5]:
     print("   ", line)
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

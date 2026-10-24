@@ -177,3 +177,4 @@ for _sid in _OPENED:
     _drop(_sid)
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

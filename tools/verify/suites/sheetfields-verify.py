@@ -77,3 +77,4 @@ if st2.get("watk") == st.get("watk"):
     bad += 1
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

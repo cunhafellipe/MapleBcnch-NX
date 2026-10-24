@@ -144,3 +144,4 @@ for _, nid, text in changes[:4]:
         print(f"  npc {nid}: {text[:36]!r} is one of its own lines")
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

@@ -50,12 +50,72 @@ if (!exe) {
   process.exit(2);
 }
 
-const child = spawn(exe, exeArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+// The spawn can fail in TWO ways, and they need different handling:
+//   * a path that does not exist  -> an 'error' event (ENOENT), handled below;
+//   * a path that exists but is not a program -> spawn() THROWS synchronously
+//     (EFTYPE on Windows).  MEASURED: without this try/catch the probe died
+//     with an uncaught 'node:internal/child_process' exception, and the
+//     caller could not tell that from a crash of its own.
+let child;
+try {
+  child = spawn(exe, exeArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+} catch (err) {
+  console.log('\nPROBE-STATE: child-never-started');
+  console.log(`ERROR: initialize: the child never started: ${(err.code ?? '') + ' ' + (err.message ?? '')}`.trim());
+  console.log(`the child never started: ${(err.code ?? '') + ' ' + (err.message ?? '')}`.trim());
+  process.exit(1);
+}
 const stderr = [];
 let buffer = '';
 const replies = new Map();
 
+// THE CHILD'S OWN STATE, because "a server that says nothing" and "a server
+// that never started" are different facts.  A runtime that cannot start at
+// all is visible in the child's stderr (the .NET 8 apphost trap that
+// AGENTS.md records: the system `dotnet` on PATH is SDK 8 and cannot run the
+// net10.0 MapleMcp binary), and a child that never started produces an
+// 'error' event rather than an exit.  The state is printed as a
+// PROBE-STATE line, so the caller can tell the three apart without
+// guessing.
+let childState = 'alive';        // alive | exited | never-started
+let childExit = null;            // { code, signal }
+let spawnError = null;
+
+// A pending reply is rejected the moment the child can no longer answer, so
+// a DEAD child fails in the second it dies instead of waiting out the reply
+// timeout.  MEASURED before this: a child that had already exited made the
+// probe sit for the full 120 s and then say "initialize: no reply in 120s",
+// which reads as "the server is broken" and names neither the exit nor the
+// stderr that says why.
+const pending = new Map();        // id -> { reject, method }
+const failPending = (why) => {
+  for (const [id, p] of [...pending]) {
+    pending.delete(id);
+    replies.delete(id);
+    p.reject(new Error(`${p.method}: ${why}`));
+  }
+};
+
+child.on('error', (err) => {
+  childState = 'never-started';
+  spawnError = err;
+  failPending(`the child never started: ${(err.code ?? '') + ' ' + (err.message ?? '')}`.trim());
+});
+child.on('exit', (code, signal) => {
+  childState = 'exited';
+  childExit = { code, signal };
+  failPending(`the server exited (code ${code}, signal ${signal}) before answering`);
+});
+
 child.stderr.on('data', (d) => stderr.push(d.toString()));
+// A child that never started takes stdin with it, and writing to it then
+// raises EPIPE.  MEASURED: without this handler the probe died with an
+// uncaught 'node:internal/child_process' error instead of reporting that
+// the child never started -- which is the very thing the caller needs to
+// know.
+let stdinError = null;
+child.stdin.on('error', (err) => { stdinError = err; });
+child.stdout.on('error', () => { /* the pipe died with the child */ });
 child.stdout.on('data', (d) => {
   buffer += d.toString();
   let nl;
@@ -85,9 +145,19 @@ const REPLY_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 120000);
 const send = (method, params) => new Promise((resolve, reject) => {
   const id = nextId++;
   replies.set(id, resolve);
+  pending.set(id, { reject, method });
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
   setTimeout(() => {
-    if (replies.has(id)) { replies.delete(id); reject(new Error(`${method}: no reply in ${REPLY_MS / 1000}s`)); }
+    if (replies.has(id)) {
+      replies.delete(id);
+      pending.delete(id);
+      const why = childState === 'exited'
+        ? `the server exited (code ${childExit?.code}, signal ${childExit?.signal}) before answering`
+        : childState === 'never-started'
+          ? 'the server never started'
+          : 'the server was still running and said nothing';
+      reject(new Error(`${method}: no reply in ${REPLY_MS / 1000}s (${why})`));
+    }
   }, REPLY_MS);
 });
 
@@ -179,9 +249,24 @@ try {
     }
   }
 
+  console.log('\nPROBE-STATE: answered');
   process.exit(0);
 } catch (e) {
-  console.log('\nERROR:', e.message);
+  // The STATE, printed first and on its own line: the caller needs to tell
+  // "the child never started" from "the child started and said nothing".
+  const state = childState === 'never-started' ? 'child-never-started'
+    : childState === 'exited' ? 'child-exited' : 'child-alive-silent';
+  console.log('\nPROBE-STATE:', state);
+  console.log('ERROR:', e.message);
+  if (spawnError) {
+    console.log(`the child never started: ${spawnError.code ?? ''} ${spawnError.message}`.trim());
+  }
+  if (stdinError && !spawnError) {
+    console.log(`the child's stdin failed: ${stdinError.code ?? ''} ${stdinError.message}`.trim());
+  }
+  if (childExit) {
+    console.log(`the child exited: code ${childExit.code} signal ${childExit.signal}`);
+  }
   if (stderr.length) console.log('--- server stderr ---\n' + stderr.join('').slice(0, 800));
   process.exit(1);
 }

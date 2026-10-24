@@ -184,3 +184,4 @@ elif not bad_stance and not no_box:
     print(f"  every one of them stands on art it actually has, with a real box")
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

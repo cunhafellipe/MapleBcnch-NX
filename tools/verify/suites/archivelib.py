@@ -17,6 +17,29 @@ import sys
 import urllib.request
 
 
+# The console code page on this machine is 950 (big5), and Python's stdout
+# follows it.  A suite that prints a name out of an archive -- an NPC name, a
+# string -- then dies with UnicodeEncodeError on the FIRST character the
+# code page cannot hold, and the run ends in a traceback that looks like a
+# product failure.
+#
+# MEASURED 2026-10-24: `python -B tools/verify/suites/npcname-verify.py`
+# WITHOUT PYTHONIOENCODING died with
+#   UnicodeEncodeError: 'cp950' codec can't encode character '\u7f57'
+# and exited 1; WITH PYTHONIOENCODING=utf-8 it printed BAD=0 and exited 0.
+# The gate sets that variable (tools/verify/gate.ps1:8), so the gate never saw
+# it -- which is exactly the shape of incident 2 (DOTNET_ROOT is not inherited
+# by Start-Process): the harness papers over a dependency the tool has.
+#
+# Every suite imports this module, so the fix is ONE place.  The same guard
+# is already used by tools/verify/open-archives.py.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:  # noqa: BLE001 - an old interpreter is not a reason to fail
+    pass
+
+
 def require_gate_base():
     """The backend URL every suite talks to, from GATE_BASE -- or a loud refusal.
 

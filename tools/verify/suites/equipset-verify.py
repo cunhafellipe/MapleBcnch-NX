@@ -138,3 +138,4 @@ else:
     print("  Head/Body/Hair/Face contribute nothing, as intended")
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

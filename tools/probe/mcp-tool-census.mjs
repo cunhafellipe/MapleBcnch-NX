@@ -155,13 +155,78 @@ function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
 }
 
+// --- the backend the server will use, and whether it answers --------------
+//
+// A handshake that produces no answer has THREE different causes, and from
+// "initialize: no reply in 120s" a reader cannot tell them apart:
+//
+//   (a) the server binary is missing, or is not a server at all;
+//   (b) the server started but could not reach its BACKEND;
+//   (c) the server started, the backend answered, and the server still did
+//       not reply to `initialize` -- that one IS a server defect.
+//
+// So the census measures the backend ITSELF, before it judges the handshake,
+// and then says which of the three happened, with the evidence.
+//
+// The backend URL is NOT written into this file: the server reads WZ_SERVER
+// and falls back to its own default, and that default is READ OUT of the
+// server's source (MapleMcp/MapClient.cs, `DefaultServer`), so it cannot rot
+// here.  When `--backend` is not given, the census SAYS which URL the server
+// will use instead of letting the run die in silence.
+const DEFAULT_SERVER_RE = /DefaultServer\s*=\s*"([^"]+)"/;
+
+function serverDefaultBackend() {
+  const dir = path.join(root, SCAN_DIR);
+  let names = [];
+  try { names = readdirSync(dir).filter((f) => f.endsWith(SCAN_EXT)); } catch { return null; }
+  for (const name of names) {
+    try {
+      const text = readFileSync(path.join(dir, name), 'utf8');
+      const m = text.match(DEFAULT_SERVER_RE);
+      if (m) return { url: m[1], file: `${SCAN_DIR}/${name}` };
+    } catch { /* an unreadable file: the next one may carry the constant */ }
+  }
+  return null;
+}
+
+/** The backend the server will use, and where that came from. */
+function backendInUse() {
+  if (backend) return { url: backend, source: 'the --backend flag' };
+  const fromEnv = process.env.WZ_SERVER;
+  if (fromEnv) return { url: fromEnv, source: 'the environment (WZ_SERVER)' };
+  const dflt = serverDefaultBackend();
+  if (dflt) return { url: dflt.url, source: `the server's own default (${dflt.file})` };
+  return { url: null, source: 'UNKNOWN: the server default could not be read' };
+}
+
+/** Does that backend answer?  A short GET, and the evidence is kept. */
+async function probeBackend(url) {
+  if (!url) {
+    return { url: null, answered: null, status: null, error: 'no backend URL to probe', ms: 0 };
+  }
+  const started = Date.now();
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 4000);
+  try {
+    const res = await fetch(url, { signal: ac.signal, redirect: 'manual' });
+    return { url, answered: true, status: res.status, error: null, ms: Date.now() - started };
+  } catch (err) {
+    const code = err?.cause?.code ?? err?.name ?? 'error';
+    return { url, answered: false, status: null, error: String(code), ms: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // --- the handshake: the repo's own probe, run as a child process ----------
 /**
  * Run tools/probe/mcp-probe.mjs and read its tools/list answer.
  * Returns { count, names, blocked, detail }.  `blocked` names the LAYER that
- * stopped the handshake, because "it failed" is not a measurement.
+ * stopped the handshake, because "it failed" is not a measurement -- and it
+ * names WHICH of the three causes it was, because "the server is broken" and
+ * "the server had no backend" are different facts with different owners.
  */
-function runHandshake(exe) {
+async function runHandshake(exe) {
   const probe = path.join(root, PROBE_REL);
   if (!existsSync(probe)) {
     return { count: null, names: [], blocked: 'probe missing', detail: probe };
@@ -172,6 +237,19 @@ function runHandshake(exe) {
   const env = { ...process.env };
   // The address is passed straight through.  Nothing is defaulted here.
   if (backend) env.WZ_SERVER = backend;
+
+  // WHICH backend will the server use, and does it answer?  Measured BEFORE
+  // the handshake, because the handshake's own answer ("no reply in 120s")
+  // cannot tell a server with no backend from a broken server.
+  const target = backendInUse();
+  const backendProbe = await probeBackend(target.url);
+
+  // A server whose backend does not answer still answers the handshake: the
+  // stdio transport is started with no startup gate (MapleMcp/Program.cs:
+  // 154-156).  So the backend is NOT a reason to cut the handshake short --
+  // cutting it would refuse a server that is merely slow.  The probe fails
+  // IMMEDIATELY when the child is dead (mcp-probe.mjs rejects a pending
+  // reply the moment the child exits), and that is where the wait goes.
   const res = spawnSync(process.execPath, [probe, exe], {
     env,
     encoding: 'utf8',
@@ -189,16 +267,66 @@ function runHandshake(exe) {
     const m = line.match(/^ {2}- ([A-Za-z0-9_]+)\s*$/);
     if (m) names.push(m[1]);
   }
+  const state = text.match(/^PROBE-STATE:\s*(\S+)/m)?.[1] ?? null;
   if (countMatch) {
-    return { count: Number(countMatch[1]), names, blocked: null, detail: '' };
+    return {
+      count: Number(countMatch[1]), names, blocked: null, detail: '',
+      backend: target, backendProbe, probeState: state,
+    };
   }
-  // Which layer stopped it?
+  // Which layer stopped it, and WHICH of the causes was it?
+  //
+  // MEASURED 2026-10-24, twice: the handshake does NOT depend on the
+  // backend.  `initialize` and `tools/list` answer in about a second with
+  // the backend REFUSING the connection, and in about a second with the
+  // backend ACCEPTING and never answering -- because the stdio transport is
+  // started with no startup gate (MapleMcp/Program.cs:154-156).  So a dead
+  // backend is NOT a cause of a handshake stall, and this tool must not
+  // claim that it is.  The backend is reported as CONTEXT.
+  //
+  // What the probe's own state DOES tell, and what the three causes are:
+  //   the child never started  -> the binary could not start (the .NET 8
+  //                               apphost trap AGENTS.md records is visible
+  //                               in the child's stderr)
+  //   the child exited         -> the server started and died
+  //   the child alive, silent  -> the server started and said nothing; if
+  //                               the backend answered as well, THAT is a
+  //                               server defect
   const err = text.match(/^ERROR: ([^\n]+)$/m);
-  let blocked = 'no tools/list answer';
-  if (err) blocked = err[1].includes('initialize') ? 'initialize' : 'tools/list';
-  else if (res.error) blocked = 'spawn';
-  else if (res.status !== 0) blocked = `probe exit ${res.status}`;
-  return { count: null, names, blocked, detail: err ? err[1] : text.slice(0, 400) };
+  const childStderr = (text.match(/--- server stderr ---\n([\s\S]*)/) ?? [])[1] ?? '';
+  const stderrHead = childStderr.trim().split('\n').slice(0, 3).join(' | ');
+  let blocked;
+  let detail;
+  if (state === 'child-never-started') {
+    blocked = 'the server binary could not start';
+    detail = (text.match(/the child never started: (.*)$/m)?.[1] ?? '').trim() || stderrHead;
+  } else if (state === 'child-exited') {
+    blocked = 'the server started and exited before answering';
+    detail = (text.match(/the child exited: (.*)$/m)?.[1] ?? '').trim()
+      + (stderrHead ? ` | stderr: ${stderrHead}` : '');
+  } else if (state === 'child-alive-silent') {
+    if (backendProbe.answered === true) {
+      blocked = `the server started, the backend ${backendProbe.url} answered `
+        + `(HTTP ${backendProbe.status}), and the server still did not reply to initialize`
+        + ' -- that IS a server defect';
+      detail = `the backend answered in ${backendProbe.ms} ms, so the refusal is the server's`;
+    } else {
+      blocked = 'the server started and said nothing';
+      detail = `the backend ${backendProbe.url} did not answer either, but MEASURED: this `
+        + 'handshake does NOT depend on the backend (initialize answers in ~1 s with the '
+        + 'backend refusing the connection and with it hanging), so the dead backend is '
+        + 'NOT the cause of the stall';
+    }
+  } else {
+    blocked = 'no tools/list answer';
+    detail = err ? err[1] : text.slice(0, 400);
+  }
+  return {
+    count: null, names, blocked, detail,
+    backend: target, backendProbe, probeState: state,
+    childStderr: childStderr.trim().slice(0, 600),
+    raw: text.slice(0, 600),
+  };
 }
 
 // --- the scan -------------------------------------------------------------
@@ -330,7 +458,7 @@ try {
 }
 
 const hs = handshakeExe
-  ? runHandshake(handshakeExe)
+  ? await runHandshake(handshakeExe)
   : { count: null, names: [], blocked: 'not requested (--handshake was not given)', detail: '' };
 
 const out = [];
@@ -370,9 +498,39 @@ for (const [fam, n] of [...fams.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)
 put('');
 
 put('=== HANDSHAKE (tools/list, via tools/probe/mcp-probe.mjs) ===');
+if (hs.backend) {
+  put(`  the backend the server will use: ${hs.backend.url ?? '(none)'}  <- ${hs.backend.source}`);
+  if (!backend) {
+    put('    (no --backend was given, so the server falls back to its own default;');
+    put('     pass --backend <url> to point it somewhere else)');
+  }
+  if (hs.backendProbe) {
+    const bp = hs.backendProbe;
+    if (bp.answered === true) {
+      put(`  the backend answered: HTTP ${bp.status} in ${bp.ms} ms`);
+    } else if (bp.answered === false) {
+      put(`  the backend DID NOT answer: ${bp.error} after ${bp.ms} ms`);
+    } else {
+      put(`  the backend could not be probed: ${bp.error}`);
+    }
+    put('  MEASURED: the handshake does NOT depend on the backend -- initialize');
+    put('  answers in ~1 s with the backend refusing the connection, and in ~1 s');
+    put('  with the backend accepting and never answering.  A dead backend is');
+    put('  therefore NOT a cause of a handshake stall, and it is reported here');
+    put('  as context, not as the verdict.');
+  }
+}
 if (hs.count === null) {
   put(`  count=(no answer)  blocked at: ${hs.blocked}`);
   if (hs.detail) put(`  detail: ${hs.detail.split(/\r?\n/)[0]}`);
+  // WHY it was refused, with the evidence.  "the handshake produced no
+  // answer" is a symptom; the causes have different owners.
+  if (hs.probeState) put(`  the probe's own state: ${hs.probeState}`);
+  if (hs.childStderr) {
+    put('  the server stderr:');
+    for (const line of hs.childStderr.split(/\r?\n/).slice(0, 6)) put(`    ${line}`);
+  }
+  put('  => ' + hs.blocked);
 } else {
   put(`  count=${hs.count}  names=${hs.names.length}`);
   const hsFams = new Map();

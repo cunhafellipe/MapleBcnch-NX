@@ -413,3 +413,4 @@ if hits:
           f"amount, which is why the entry is what this file judges on")
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

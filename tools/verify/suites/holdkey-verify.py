@@ -183,3 +183,4 @@ if damage:
               f"the cadence is the reference's")
 
 print(f"\nBAD={bad}")
+raise SystemExit(1 if bad else 0)

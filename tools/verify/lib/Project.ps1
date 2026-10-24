@@ -42,6 +42,75 @@ function Get-ProjectScalar {
     return $value.Trim()
 }
 
+function Get-ProjectIntList {
+    <#
+      A list of integers out of pm/PROJECT.yaml's flow-sequence form
+      (`banned_ports: [5480]`), or an empty array when the key is absent or
+      holds something else.
+
+      WHY A SECOND READER: Get-ProjectScalar returns ONE value, and for a
+      flow sequence it returns the string "[5480]" -- a string the caller
+      would have to parse, which is how a "banned port" ends up compared as
+      text.  The list is read here instead, once, so the comparison is
+      between two integers.
+
+      A value that appears in more than one command belongs in
+      pm/PROJECT.yaml, and this is the only code that reads it.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    $raw = Get-ProjectScalar -RepoRoot $RepoRoot -Key $Key
+    if ($null -eq $raw) { return @() }
+    $text = [string]$raw
+    if (-not $text.StartsWith('[') -or -not $text.EndsWith(']')) { return @() }
+    $inner = $text.Substring(1, $text.Length - 2)
+    if ([string]::IsNullOrWhiteSpace($inner)) { return @() }
+    $out = New-Object System.Collections.ArrayList
+    foreach ($part in $inner.Split(',')) {
+        $t = $part.Trim().Trim("'", '"')
+        $n = 0
+        if ([int]::TryParse($t, [ref]$n)) { [void]$out.Add($n) }
+    }
+    return @($out.ToArray())
+}
+
+function Get-ListeningPortOfProcess {
+    <#
+      The TCP ports a process is LISTENING on, read from the OS's own
+      connection table, or an empty array when it cannot be read.
+
+      WHY THE PORT AND NOT THE NAME: several copies of this server run at
+      once on this machine (a `dotnet MapleBenchX.dll` host, an apphost
+      MapleBenchX.exe, and private per-reviewer builds).  Name lookup
+      returns one of them and not necessarily the one serving the port
+      about to be measured against (tools/verify/AGENTS.md rule 17).  The
+      ban below is about a PORT, so the evidence has to be the port.
+
+      An empty result is NOT "no ports": it may mean the table could not be
+      read.  The caller must not treat the two as the same thing.
+    #>
+    param([Parameter(Mandatory = $true)][int]$ProcessId)
+
+    $ports = New-Object System.Collections.ArrayList
+    $readable = $true
+    try {
+        $conns = @(Get-NetTCPConnection -State Listen -OwningProcess $ProcessId -ErrorAction Stop)
+        foreach ($c in $conns) {
+            if ($null -ne $c -and $c.PSObject.Properties.Name -contains 'LocalPort' -and $c.LocalPort) {
+                [void]$ports.Add([int]$c.LocalPort)
+            }
+        }
+    } catch {
+        $readable = $false
+    }
+    return [pscustomobject]@{
+        Readable = $readable
+        Ports    = @($ports.ToArray() | Sort-Object -Unique)
+    }
+}
+
 function Get-ProjectMd5Invariants {
     <#
       Every `kind: md5` invariant in pm/SPEC.yaml, as objects with Id, File and
@@ -317,6 +386,11 @@ function Stop-MapleBenchInstances {
     $skipped = New-Object System.Collections.ArrayList
 
     $found = Get-MapleBenchInstanceCandidates -RepoRoot $RepoRoot
+    # The banned ports are DECLARED in pm/PROJECT.yaml and read here, never
+    # hard-coded: a value that appears in more than one command belongs in
+    # that file.  5480 is the owner's playable world; a deploy must not stop
+    # whatever is on it.
+    $bannedPorts = @(Get-ProjectIntList -RepoRoot $RepoRoot -Key 'banned_ports')
     foreach ($c in $found.Candidates) {
         $isThisRepo = $true
         if ($c.PSObject.Properties.Name -contains 'IsThisRepo') { $isThisRepo = [bool]$c.IsThisRepo }
@@ -326,6 +400,32 @@ function Stop-MapleBenchInstances {
             # must be the only instance answering on the gate's port.
             [void]$skipped.Add([pscustomobject]@{ Id = $c.Id; Name = $c.Name; Reason = $c.Reason })
             continue
+        }
+        # THE BANNED-PORT GUARD.  This used to be a rule in pm/GATE.md with
+        # no code behind it, so a deploy could stop the instance serving the
+        # owner's playable world.  The check is on the port the process is
+        # LISTENING on, because that is what the ban is about.
+        if ($bannedPorts.Count -gt 0) {
+            $listen = Get-ListeningPortOfProcess -ProcessId ([int]$c.Id)
+            if (-not $listen.Readable) {
+                # The port table could not be read.  An unreadable answer is
+                # NOT the same as "not banned" (rule 1: a tool that cannot
+                # measure must fail loudly), so the candidate is left alone
+                # and named.
+                [void]$skipped.Add([pscustomobject]@{
+                    Id = $c.Id; Name = $c.Name
+                    Reason = $c.Reason + ' -- its listening ports could not be read, so it could not be checked against the banned ports; not stopped'
+                })
+                continue
+            }
+            $hit = @($listen.Ports | Where-Object { $bannedPorts -contains $_ })
+            if ($hit.Count -gt 0) {
+                [void]$skipped.Add([pscustomobject]@{
+                    Id = $c.Id; Name = $c.Name
+                    Reason = $c.Reason + ' -- LISTENING ON BANNED PORT ' + ($hit -join ',') + ' (' + ($bannedPorts -join ',') + '); not stopped'
+                })
+                continue
+            }
         }
         $age = 'unknown'
         try {
