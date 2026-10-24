@@ -103,24 +103,44 @@ HEAD     areas=16  visible=62 (distinct 62)  comment_paths=24 (distinct 24)  uni
 worktree areas=16  visible=62
 ```
 
-That reconciles the maker's accounting exactly: the 74 route DECLARATIONS
-are unchanged (62 machine-visible + 12 whose old forms are named in
-comments, 24 path strings because each of the 12 names both its old and its
-restored form). **Zero were dropped.** The header states the 62 with its
-anchor (`dfc333b7`) and keeps the historical 34/34/33 column, now
-reproducible with `git show <rev>:...` and no checkout -- one of those
-commands had to be made pipe-free, because a PowerShell pipe rewrites LF to
-CRLF (544 LF -> 544 CRLF, 25410 -> 25954 bytes) and the reader then died
-with IndexError.
+**And then the checker refuted the lead's own reconciliation (chk-c, claim 3).**
+The lead wrote "Zero were dropped". That is true of the DECLARATIONS and FALSE
+of the PATH STRINGS, and the difference is the whole point:
+
+```
+OLD declared (HEAD~1)          : 74
+  still machine-visible now    : 40
+  named in a COMMENT line      : 12
+  rewritten (old name GONE)    : 22      <- the lead's first count missed this
+  OLD NAMES NOT NAMED ANYWHERE : 22 before the fix, 0 after it
+```
+
+The maker's own accounting was wrong in the same direction ("52 carried
+verbatim" is 40 + 12), and the 22 old flat names -- `/api/maps`, `/api/walk`,
+`/api/items`, `/api/cast`, `/api/icon` ... -- left the file entirely, because
+the real routes carry a group prefix (`/api/mapedit/maps`, `/api/simulate/walk`,
+`/api/cashshop/items`, ...). The new names are correct -- the checker derived
+the router's own table itself and found 41 exact routes + 21 real family
+prefixes + **0 pointing at nothing** -- but the OLD names were simply gone.
+
+**So the SPEC now names them again.** A table of the 22 pairs was written into
+the header, explicitly labelled "not a declaration" so that "which paths does
+this file declare" still has exactly one answer, and the header's own
+statement that "/api literals appear in only three places" was corrected to
+four (with the reason). Measured after the fix: **all 74 old names are named
+somewhere in the file, 0 missing; 62 machine-visible, 22 distinct old names
+in the mapping table, 22 distinct new names, every right-hand side a path.**
 
 **The acceptance ruling (the lead's, recorded because the wording had two
 readings):** the invariant is **"the DECLARED population is unchanged"** --
 74 declarations before and after, 0 dropped, the same 16 area ids, and the
 doctor reading exactly as before (`DOCTOR_SUITES_DECLARED=35`,
-`DOCTOR_SUITES_PROBLEMS=1`, exit 1). The machine-visible count falls from
-74 to 62 **by design**: the block moves 12 declarations into comments, and
-putting them back into `routes:` lines would be exactly the silent
-cross-area move the block refuses to make. Neither number was fudged.
+`DOCTOR_SUITES_PROBLEMS=1`, exit 1 with no instance; 0 problems with one).
+The machine-visible count falls from 74 to 62 **by design**: the block moves
+12 declarations into comments, and putting them back into `routes:` lines
+would be exactly the silent cross-area move the block refuses to make. Neither
+number was fudged -- and the one that WAS wrong (the lead's "zero dropped",
+which ignored the 22 renamed) was caught by the checker, not by the lead.
 
 ## The method that produced this
 

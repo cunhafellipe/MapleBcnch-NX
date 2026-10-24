@@ -113,12 +113,48 @@
 #     11 條是「宣告在某個區、路由其實在別的群」（群名被宣告漏掉了），註解裡同時
 #     寫出「還原後的路徑」與「原本宣告的那條」；1 條完全沒有路由，註解標成
 #     flagged，要刪掉還是改指現有的查詢路由，由主人決定。
-#     ★ 這一段刻意**不寫任何 /api 字面值**：本檔的 /api 字面值只出現在三處——
+#     ★ 這一段刻意**不寫任何 /api 字面值**：本檔的 /api 字面值只出現在四處——
 #       上面那段 2026-10-16 的 JOURNAL 引文（引用）、areas: 的 routes: 行與那 12 條
-#       註解（這才是宣告）、以及 invariants: 區塊描述判官行為的幾句（敘述）。
-#       只有中間那一處是「宣告」，「這個檔案宣告了哪些路徑」才會只有一個答案。
+#       註解（這才是宣告）、invariants: 區塊描述判官行為的幾句（敘述），
+#       以及下面那張「舊名 → 真路由」對照表（**不是宣告**，是改名記錄）。
+#       只有 areas: 的 routes: 行與那 12 條註解是「宣告」，
+#       「這個檔案宣告了哪些路徑」才會只有一個答案。
 #   ★ 這 12 條在註解裡，所以 pm.py 讀得到 areas: 區塊（16 個 area），但讀不到
 #     這 12 條宣告 —— tools/pm.py 的 SPEC 解析器會跳過註解行。
+#
+# ── 22 條「舊的扁平名」→ 真的路由（2026-10-24 對帳）────────────────────────
+#   2026-10-16 記下來的路由名是**扁平別名**（/api/maps、/api/walk、/api/items…），
+#   2026-10-24 對照路由器自己的表（237 個 endpoint / 227 條相異路徑）之後，發現
+#   其中 22 條的**真路由帶群前綴**。areas: 區塊改記真的那條。
+#   ★ 這 22 個舊名因此**不在檔裡了**（除了本節）—— 這不是漏，是改名。
+#     對帳（lead 自己量的，不是抄誰的）：舊的 74 條裡，40 條仍逐字可見、
+#     12 條在註解裡、22 條被改名 = 74；新的機器可見 62 條 = 40 + 22。
+#     一條宣告都沒有被丟掉，但有 22 個**舊字串**離開了檔案，
+#     所以本節把它們一個一個寫回來，讓「搜尋舊名」的人還找得到。
+#   ★ 這 22 個名**不是宣告**：宣告只有 areas: 的 routes: 行與那 12 條註解。
+#     本節是一張對照表，任何工具都不該把它算成宣告。
+#     /api/advice        -> /api/simulate/advice
+#     /api/auto-foothold -> /api/mapedit/auto-foothold
+#     /api/batch         -> /api/mapedit/batch
+#     /api/cast          -> /api/simulate/cast
+#     /api/character     -> /api/simulate/character
+#     /api/create        -> /api/mapedit/create
+#     /api/debug         -> /api/simulate/debug
+#     /api/foothold-chain-> /api/mapedit/foothold-chain
+#     /api/geometry      -> /api/simulate/geometry
+#     /api/icon          -> /api/cashshop/icon
+#     /api/item          -> /api/cashshop/item
+#     /api/items         -> /api/cashshop/items
+#     /api/maps          -> /api/mapedit/maps
+#     /api/minimap       -> /api/mapedit/minimap
+#     /api/palette       -> /api/mapedit/palette
+#     /api/place         -> /api/mapedit/place
+#     /api/probe         -> /api/simulate/probe
+#     /api/set-layer-ts  -> /api/mapedit/set-layer-ts
+#     /api/step          -> /api/simulate/step
+#     /api/trace         -> /api/simulate/trace
+#     /api/validate      -> /api/mapedit/validate
+#     /api/walk          -> /api/simulate/walk
 
 areas:
   - id: save
