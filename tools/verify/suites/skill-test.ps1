@@ -23,6 +23,14 @@ param(
   [switch]$ForceFail
 )
 
+# How many times section 2 will draw a placement and cast again when the cast
+# did not reach the mob it was aimed at.  MEASURED 2026-10-25 over 15 runs on
+# two instances: the cast reached the mob on the first attempt in 15 of 15
+# runs, so this is the safety net for the placement that does not -- and it is
+# NOT a retry of a failing assertion: a cast that damages nothing still fails
+# "2.1 a cast produces damage".
+$CastAttempts = 3
+
 
 # The archive's session id is resolved BY NAME, never hard-coded: the ids are
 # handed out in the order the archives were opened, so "f4" is Map.nx on one
@@ -136,6 +144,18 @@ function Nearest($frame, $mobId) {
   return ($ms | Sort-Object { [Math]::Abs([double]$_.x - [double]$frame.x) })[0]
 }
 
+# The instance at a PINNED x, so a read after a cast is about the mob the read
+# before it was about.  `Nearest` re-resolves "closest to the character" at
+# every call, and this map carries ELEVEN instances of 2220100 on FOUR levels
+# (the measured list is in the comment above), so that answer can change
+# between two reads -- and the instance it can pick on another level is one
+# no cast can strike.
+function Subject($frame, $mobId, [double]$x) {
+  $ms = @($frame.mobs | Where-Object { $_.mobId -eq $mobId })
+  if ($ms.Count -eq 0) { return $null }
+  return ($ms | Sort-Object { [Math]::Abs([double]$_.x - $x) })[0]
+}
+
 "=== 1. a skill that carries a hit count deals that many hits ==="
 $seed = New-Session 1710 -25
 $mob = @($seed.mobs | Where-Object { $_.kind -eq 'm' -and [Math]::Abs([double]$_.y - (-25)) -lt 3 } | Sort-Object { [Math]::Abs([double]$_.x - 1710) })[0]
@@ -161,7 +181,10 @@ Check "1.1 a cast deals damage" ($hits1 -ge 1) "damage entries=$hits1"
 Check "1.2 the cast puts the body in the skill pose" (Is-Casting $f) "action='$($f.action)'"
 
 $posFrames = 0; for ($i=0;$i -lt 80;$i++){ Step $s1.sessionId @{}; if (Is-Casting $script:Last) { $posFrames++ } }
-$m2 = Nearest $script:Last $mob.mobId
+# Read the SAME mob the pre-cast read was about: the subject is pinned to
+# the x it was measured at, so "the mob lost HP" is a statement about that
+# animal and not about whichever instance happened to be closest afterwards.
+$m2 = if ($m1) { Subject $script:Last $mob.mobId ([double]$m1.x) } else { Nearest $script:Last $mob.mobId }
 "  frames reporting action=skill: $posFrames / 80   (plan totalTime=67)"
 # The mob is normally DESTROYED here, not merely damaged: 2220100 has 350 HP and
 # a skill removes real damage off it now (W-061). $m2 is then $null, and
@@ -201,15 +224,58 @@ Check "2.0 the premise: the plan carries a hit count for $msId" ($pm.hitCount -g
 Check "2.0b the premise: the plan found a damage node for $msId" `
     (-not [string]::IsNullOrEmpty($pm.damageNode)) "damageNode='$($pm.damageNode)' damage=$($pm.damage)"
 
-$s2 = Approach 1710 -25 ([double]$mob.x - 30)
-$mA = Nearest $script:Last $mob.mobId
-"  standing at x=$($script:Last.x); mob hp before = $($mA.hp) (instance at x=$($mA.x))"
-Step $s2.sessionId @{ skillId = $msId }
-$f2 = $script:Last
-$hits2 = Count-Damage $f2
-"  CAST -> action=$($f2.action) skillStance='$($f2.skillStance)' damage=$hits2   <-- must be >= 1"
-for ($i=0;$i -lt 20;$i++){ Step $s2.sessionId @{} }
-$mB = Nearest $script:Last $mob.mobId
+# THE SUBJECT IS PINNED, AND THE CAST IS RE-DRAWN WHEN IT MISSES IT.
+#
+# `Nearest` answers "the instance of this mob closest to the character", and
+# this map carries ELEVEN instances of 2220100 on FOUR levels (the measured
+# list is in the comment above).  Two things can then go wrong in a way that
+# reads exactly like a broken rule:
+#   * the answer can CHANGE between the read before the cast and the read
+#     after it, so the two reads are two different animals;
+#   * the instance it picks can be on another level, and no cast can strike a
+#     mob on another level -- so the suite prints "hp 1000 -> 1000" for a
+#     cast that dealt damage to other mobs.
+# MEASURED 2026-10-25 over 15 runs on two instances: the subject was the
+# instance at x=2091 on level y=-25 every time, the cast struck it every
+# time, and the hit landed on idle frame 1 every time.  The cast is NOT a
+# draw; the SUBJECT was the part that could change.
+#
+# So the subject is pinned to the x it was measured at, and the damage entries
+# the cast itself produced are used to say whether the cast reached it.  When
+# it did not, the suite RE-DRAWS: walk back, cast again, up to $CastAttempts
+# times.  A placement that makes the requirement unmeasurable is measured
+# again, not reported as a violation.
+$subjectX = $null
+$mA = $null
+$mB = $null
+$hits2 = 0
+$struck = @()
+$attempts = 0
+$reachedCount = 0
+while ($attempts -lt $CastAttempts) {
+  $attempts++
+  $s2 = Approach 1710 -25 ([double]$mob.x - 30)
+  $mA = Nearest $script:Last $mob.mobId
+  if ($null -eq $mA) { "  attempt $($attempts): no mob of id $($mob.mobId) is in the frame"; continue }
+  $subjectX = [double]$mA.x
+  "  attempt $($attempts): standing at x=$($script:Last.x); subject x=$subjectX hp=$($mA.hp)"
+  Step $s2.sessionId @{ skillId = $msId }
+  $f2 = $script:Last
+  $hits2 = Count-Damage $f2
+  $struck = @($f2.damage | Where-Object { $_ -and $_.mobId -eq $mob.mobId } | ForEach-Object { [double]$_.x })
+  "  CAST -> action=$($f2.action) skillStance='$($f2.skillStance)' damage=$hits2   <-- must be >= 1"
+  "  the cast struck this mob at x=$(if ($struck.Count -eq 0) { '(none)' } else { ($struck -join ',') })"
+  # Wait for the cast on the cast's OWN clock, not on a guessed frame count.
+  # MEASURED: this skill's plan says totalTime=57 and the hit landed on idle
+  # frame 1, so the old 20-frame window was long enough -- but a window that
+  # is right by luck is not a measurement.
+  $wait = [Math]::Max(20, [int]$pm.totalTime)
+  for ($i=0;$i -lt $wait;$i++){ Step $s2.sessionId @{} }
+  $mB = Subject $script:Last $mob.mobId $subjectX
+  $reachedCount = @($struck | Where-Object { [Math]::Abs($_ - $subjectX) -le 8 }).Count
+  if ($reachedCount -ge 1) { break }
+  "  attempt $($attempts): the cast did not reach the subject (struck x=$(if ($struck.Count -eq 0) { '(none)' } else { ($struck -join ',') }), subject x=$subjectX) -- drawing again"
+}
 $hpB = if ($mB) { $mB.hp } else { 'destroyed' }
 "  mob hp after  = $hpB"
 # At least one, not exactly one: 10001009 carries `mobCount: 30`, so a cast whose
@@ -219,6 +285,14 @@ $hpB = if ($mB) { $mB.hp } else { 'destroyed' }
 Check "2.1 a cast produces damage" ($hits2 -ge 1) "damage entries=$hits2"
 Check "2.2 a cast takes the mob's hitCount x 100 HP" `
     (($mB -eq $null) -or ([int]$mB.hp -eq [int]$mA.hp - (100 * [int]$pm.hitCount))) "hp $($mA.hp) -> $hpB; expected -$((100 * [int]$pm.hitCount)) for hitCount=$($pm.hitCount)"
+# The named placement failure.  It fires only when the cast struck mobs and
+# none of them is the mob the suite measures: then the report says the cast
+# missed this mob, instead of leaving "hp 1000 -> 1000" to be read as "the
+# rule is broken".
+$struckText = if ($struck.Count -eq 0) { '(no mob of this id)' } else { ($struck -join ',') }
+$subjectText = if ($null -eq $subjectX) { '(no subject was found)' } else { "$subjectX" }
+Check "2.3 the cast reached the mob the suite measures" ($reachedCount -ge 1) `
+    "the cast struck x=$struckText and the pinned subject is at x=$subjectText after $attempts placement(s)"
 
 "=== 3. the cast LOCK: a second cast inside the pose is refused ==="
 $s3 = Approach 1710 -25 ([double]$mob.x - 30)

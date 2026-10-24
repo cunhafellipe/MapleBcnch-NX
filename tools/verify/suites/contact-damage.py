@@ -91,6 +91,27 @@ THREADS = 8
 # (MobPatrol.AttackCooldown), so this is ~61 frames per hit.
 HITS = 8
 
+# How many PLACEMENTS to draw before the sample is called too small to judge.
+#
+# The mob under test is SUMMONED, and the summon endpoint takes no position --
+# "N mobs at a random x within 100px of the character"
+# (MapleBench/Api/SimulatorEndpoints.cs:451-455) -- so WHERE it lands decides
+# how long the character can stay in contact with it, and that decides HOW
+# MANY hits there are to judge.  MEASURED 2026-10-25 over 10 runs of this
+# file against one instance, sample 1210103 (PADamage 80): 8 hits in 8 runs,
+# 2 hits in one run, 3 hits in another.
+#
+# A2 asks "are the hits all one number?".  On a 2-hit sample that question is
+# a coin flip -- the range holds 16 numbers, so two equal hits happen 1 time
+# in 16 -- and the failure reports "a frozen build" for a build that is fine.
+# The verdict then follows the DRAW rather than the build.
+#
+# => The sample size is CONTROLLED: a placement that cannot produce HITS hits
+# is RE-DRAWN (a fresh session is a fresh placement), and a placement that
+# still cannot is a NAMED failure about the placement -- never a verdict about
+# the damage rule, and never A2 on a short sample.
+PLACEMENT_ATTEMPTS = 6
+
 # The map to fight on. Same one the other simulation suites use: it is the one
 # this repository's own harnesses already know how to spawn on.
 MAP_IMAGE = "Map/Map1/100000004.img"
@@ -414,6 +435,11 @@ def is_hit_frame(sid, mob, frame):
        (`MapSimSessionStore.cs:1925` then `:1926`) and prints the cooldown the
        toucher had at that moment, so `cd=0` is the frame the hit landed on.
        This is the only way to see a hit that deals 0 -- the whole A3 case.
+
+    The log holds THIS frame's touches and nothing else: it is CLEARED at the
+    start of every frame (`MapSimSessionStore.cs:1840`) and refilled only
+    inside `if (toucher is not null)` (`:1930`).  So a touch the judge sees
+    here happened on the frame it is reading, not on an earlier one.
     """
     if mob is None:
         return False
@@ -473,16 +499,46 @@ print("\n=== every hit must be inside the reference's range (A1) ===")
 for why, image, pad in samples:
     mob_id = image[:-4] if image.endswith(".img") else image
     lo, hi, varies = reference_hits(pad)
+    # THE SAMPLE IS A MEASURED PRECONDITION, not an assumption.  See
+    # PLACEMENT_ATTEMPTS above: the placement is a draw, the number of hits
+    # follows it, and A2 must not be judged on a sample the suite did not
+    # control.
+    #
+    # The session lives in the try so that a RE-DRAWN placement can replace
+    # it: a fresh session is a fresh placement, because the summon endpoint
+    # puts the mob at a random x within 100px of the character.
     sid = start_session()
     try:
-        summon(sid, mob_id)
-        if not close_in(sid, mob_id):
+        hits, touches, attempts = [], 0, 0
+        touched = False
+        while attempts < PLACEMENT_ATTEMPTS:
+            attempts += 1
+            if attempts > 1:
+                drop(sid)
+                sid = start_session()
+            summon(sid, mob_id)
+            if not close_in(sid, mob_id):
+                continue
+            touched = True
+            hits, touches = collect(sid, mob_id, HITS)
+            if len(hits) >= HITS:
+                break
+
+        if not touched:
             Check(f"{mob_id} ever touched the character", False,
-                  f"no touch in 500 frames; the range [{lo}, {hi}] was never measured")
+                  f"no touch in 500 frames on any of {attempts} placement(s); "
+                  f"the range [{lo}, {hi}] was never measured")
             continue
-        hits, touches = collect(sid, mob_id, HITS)
+        if len(hits) < HITS:
+            Check(f"{mob_id} ({pad}): the sample reached {HITS} hits", False,
+                  f"only {len(hits)} hit(s) could be collected on {attempts} "
+                  f"placement(s): {hits}; the placement did not allow a "
+                  f"sustained contact, so the range [{lo}, {hi}] was measured "
+                  f"on a sample too small to judge -- this is not a verdict "
+                  f"about the damage rule")
+            continue
         print(f"  {mob_id}: PADamage={pad} range=[{lo}, {hi}] "
-              f"hits={hits} (touches={touches})")
+              f"hits={hits} (touches={touches}, placements={attempts})")
         outside = [h for h in hits if h < lo or h > hi]
         Check(f"{mob_id} ({pad}): {len(hits)} hits all inside [{lo}, {hi}]",
               hits and not outside,

@@ -248,13 +248,57 @@ which ignored the 22 renamed) was caught by the checker, not by the lead.
   ```
   Both were green in the previous gate run (commit 413cc65, `RED SUITES: 0`).
   The same shape as W-102 (the stop lands inside a ~2.25 px window), W-103
-  (the phase decides the verdict) and W9-KB (5 of 27 phases red): **a mob
-  is summoned at a RANDOM x within 100 px of the character
-  (`SimulatorEndpoints.cs:451-455`; the endpoint accepts no position), so a
-  suite that summons a mob measures a random placement.** A placement at the
-  edge of the range produces a different verdict — a cast that does not
-  reach, hits that all read one number instead of the reference's range of
-  16. Card W10-SHARED measures the distribution before anything is changed.
+  (the phase decides the verdict) and W9-KB (5 of 27 phases red).
+- **The hypothesis was HALF right, and the maker measured it rather than
+  assuming it (card W10-SHARED).**
+  - **`contact-damage.py`: the premise HOLDS.** The suite summons, the
+    placement decides the sample size: `1210103` (PADamage 80) collected
+    **8,8,2,8,8,3,8,8,8,8** hits over 10 old runs. A2 (`len(set(hits)) > 1`)
+    was being judged on a **2-hit sample**, where two equal hits happen 1 time
+    in 16 -- and the failure text says "a frozen build cannot pass", so a
+    HEALTHY build was being called a frozen one. The old judge printed the
+    same words for a 1-3 hit sample and for 8 equal hits, so the FAIL line
+    alone could not tell them apart. The sample size is now a **measured
+    precondition** (`PLACEMENT_ATTEMPTS=6`): a placement that cannot yield 8
+    hits is re-drawn (a fresh session is a fresh placement), and one that
+    still cannot is a **named placement failure**, not a verdict about the
+    damage rule. The re-draw fired for real:
+    `1210103 ... (touches=8, placements=2)`.
+  - **`skill-test.ps1`: the premise is REFUTED.** It does not summon. Over 25
+    runs the subject was always at x=2091 / y=-25, the character always at
+    2057.4773, and the hit always landed on idle frame 1 -- there is no
+    placement draw, and **the red did not reproduce on the instance that
+    produced it** (`VERDICT: skill-test 20 assertions, 0 failed`, exit 0).
+    Its real weakness is the **identity of the measured mob**: `Nearest`
+    re-resolves "the instance nearest the character" on every read, and the
+    map carries **eleven** instances of 2220100 across four levels, so the
+    two reads can be two different animals. The subject is now pinned to the
+    x it was measured at, the post-cast read waits on the cast's own clock
+    (plan `totalTime=57`), a missed subject is re-cast (up to 3), and a new
+    named check **2.3** states which mob was struck.
+  - **The assertions did not weaken.** Verified by me: the A1, A2 and 2.2
+    blocks are **byte-identical to HEAD**, indentation included
+    (`byte-identical block present in the new file: True` for each), and the
+    new 2.3 only ADDS a named check.
+  - **A positive control that can turn**: a deliberately edge placement (one
+    contact, then the body walks away -> a 1-hit sample) made the OLD rule
+    print "every hit was 344; ... so a frozen build cannot pass" -- a false
+    frozen-build verdict on a healthy build. The NEW rule does not judge A2
+    on that sample and re-draws instead.
+  - **After the fix the gate is green again**: `GATE_INSTANCE_STALE=no`,
+    `GATE_SUITES_RAN=34`, `RED SUITES: 0`, `GATE_EXIT=0` (12:00), and
+    6/6 standalone runs of each of the two suites are exit 0 with zero RED
+    lines.
+  - **NOT established:** the cause of the lead's `skill-test` red (it does
+    not reproduce), and a **different** red that did reproduce on 5611 with
+    the OLD contact-damage -- `7130020 (370): 8 hits all inside [296, 369]
+    -- outside the reference range: [0]`, i.e. a **0-damage hit on a
+    PADamage-370 mob**. That one is not root-caused (the touch log clears
+    every frame, `cd=0` means the dice really were rolled, and
+    `ContactDamage()` has three zero paths of which only the cooldown one
+    prints `cd>0`). It is not a placement draw and this change does not fix
+    it. **That is the next thing to chase.**
+
 
 - `tools/verify/eol-check.ps1`: a checker measured that HEAD's and the
   index's blobs of `MapleBench/tools/soak.py` are CRLF while the working
