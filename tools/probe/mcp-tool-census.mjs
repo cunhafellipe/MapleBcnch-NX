@@ -10,20 +10,27 @@
 //
 // EXIT CODES
 // ----------
-//   0  the census ANSWERED.  The static scan ran, and either no --handshake
-//      was asked for, or the handshake returned a real tools/list answer --
-//      agreement OR disagreement.  A disagreement is a measurement, and it is
-//      printed with a >>> RED marker beside the two answers.
-//   1  the census REFUSED.  --handshake was asked for and produced NO answer
-//      (the server binary is missing, the probe failed, the probe answered
-//      something that is not a tools/list).  A refusal is NOT a measurement:
-//      this run said nothing about the running server.  It used to exit 0,
-//      which made a broken handshake indistinguishable from a clean one -- the
-//      false green this exit code now prevents.
+//   0  the census ANSWERED, and the two answers AGREE.  The static scan ran,
+//      and either no --handshake was asked for, or the handshake returned a
+//      tools/list answer that MATCHES the source scan.
+//   1  the census could not give a TRUSTWORTHY answer about the running
+//      server, because --handshake was asked for and one of two things
+//      happened:
+//        (a) the handshake produced NO answer -- the server binary is missing,
+//            the probe failed, the probe answered something that is not a
+//            tools/list.  This run then said NOTHING about the running server.
+//        (b) the handshake answered, and the two answers DISAGREE.  The
+//            running server and the tree are not the same thing, so one of
+//            them is stale -- and a stale binary is not a measurement of the
+//            tree (tools/verify/AGENTS.md rule 17).
+//      Both used to exit 0, which made a broken handshake AND a stale binary
+//      indistinguishable from a clean run -- the false green this exit code
+//      now prevents.
 //   2  the population could not be enumerated at all (see ">>> RED" below).
 //
-// The rule behind them: exit 0 means "the census answered".  Anything that
-// stopped the census from answering is non-zero.
+// The rule behind them: exit 0 means "the census answered, and the two
+// answers agree".  Anything that stopped the census from answering, or that
+// left two answers that do not match, is non-zero.
 //
 // WHY THIS FILE EXISTS
 // --------------------
@@ -375,6 +382,12 @@ function runScan() {
     exclusions: exclusions.map((e) => ({
       path: path.relative(root, path.resolve(e.abs)).split(path.sep).join('/'),
       reason: e.reason,
+      // Whether this exclusion actually removed a member of the population, or
+      // named a file that was never in it (this script, an --out file outside
+      // the tree).  A document that says "minus the excluded files" has to say
+      // WHICH files, or the count it prints cannot be reproduced.
+      inPopulation: matched.some(
+        (m) => path.resolve(m).toLowerCase() === path.resolve(e.abs).toLowerCase()),
     })),
     matchedFiles: matched.length,
     populationFiles: inScope.length,
@@ -390,11 +403,17 @@ function runScan() {
 function markdownBlock(scan, hs) {
   const fams = new Map();
   for (const n of scan.names) fams.set(familyOf(n), (fams.get(familyOf(n)) ?? 0) + 1);
+  const excluded = scan.exclusions.filter((e) => e.inPopulation);
+  const excludedText = excluded.length
+    ? excluded.map((e) => `\`${e.path}\` (${e.reason})`).join(', ')
+    : 'none';
   const lines = [];
   lines.push(`**MCP tools: ${scan.names.length}**, in ${fams.size} families.  Counted by`);
   lines.push('`node tools/probe/mcp-tool-census.mjs --markdown`');
-  lines.push(`(source scan of \`${SCAN_DIR}/**/*${SCAN_EXT}\`: ${scan.scanned} file(s) read,`);
-  lines.push(`truncated=${scan.scanned === scan.populationFiles ? 'False' : 'True'}).  To ask a`);
+  lines.push(`(population: a FILESYSTEM WALK of \`${SCAN_DIR}/**/*${SCAN_EXT}\` -- census mode (c),`);
+  lines.push(` not a git tree -- minus \`${EXCLUDED_DIR_SEGMENTS.join('/')}/\`, minus the files this`);
+  lines.push(`tool was told to exclude (${excludedText}), and minus its own output file;`);
+  lines.push(`${scan.scanned} file(s) read, truncated=${scan.scanned === scan.populationFiles ? 'False' : 'True'}).  To ask a`);
   lines.push('running server the same question, add `--handshake <path-to-the-mcp-exe>`:');
   lines.push('the census then prints the handshake answer next to this one and says whether');
   lines.push('they agree.');
@@ -542,13 +561,13 @@ if (hs.count === null) {
 put('');
 
 put('=== THE TWO PATHS ===');
-let refused = false;
+let notTrustworthy = false;
 if (hs.count === null) {
   put(`  static=${scan.names.length}  handshake=(no answer)  AGREE=unknown  (${hs.blocked})`);
   if (handshakeExe) {
     // A REFUSAL is not a measurement.  The handshake was asked for and this
     // run learned NOTHING about the running server, so it must not exit 0.
-    refused = true;
+    notTrustworthy = true;
     put('  >>> RED: the handshake was asked for and produced no answer, so this run');
     put('     measured NOTHING about the running server.  A refusal is not a');
     put('     measurement, and it exits non-zero.');
@@ -564,6 +583,15 @@ if (hs.count === null) {
     put(`  only in the handshake : ${onlyHandshake.length ? onlyHandshake.join(',') : '(none)'}`);
     put('  >>> RED: the source scan and the running server disagree, so one of them');
     put('     is stale (a stale binary is not a measurement of the tree).');
+    if (handshakeExe) {
+      // The handshake WAS asked for, and it answered -- but the two answers do
+      // not match, so this run cannot say that the running server is this
+      // tree.  Exiting 0 would report a clean run over an unanswered
+      // question, which is the same false green the refusal case was.
+      notTrustworthy = true;
+      put('  >>> RED: the handshake was asked for and the two answers DISAGREE, so');
+      put('     this run cannot vouch for the running server.  It exits non-zero.');
+    }
   }
 }
 put('');
@@ -602,11 +630,13 @@ if (briefOnly) {
   console.log(briefBlock(scan));
   console.log(`  (source scan of \`${SCAN_DIR}/**/*${SCAN_EXT}\`: ${scan.scanned} file(s) read,`
     + ` truncated=${scan.scanned === scan.populationFiles ? 'False' : 'True'})`);
-  if (refused) {
+  if (notTrustworthy) {
     // the brief form carries no refusal text; it goes to stderr so the pasted
     // stdout stays a clean fragment.
-    process.stderr.write(`>>> RED: the handshake was asked for and produced no answer`
-      + ` (${hs.blocked}); this run measured nothing about the running server.\n`);
+    const why = hs.count === null
+      ? `the handshake was asked for and produced no answer (${hs.blocked}); this run measured nothing about the running server.`
+      : 'the handshake was asked for and the two answers disagree; this run cannot vouch for the running server.';
+    process.stderr.write(`>>> RED: ${why}\n`);
   }
 } else if (markdownOnly) {
   console.log(markdownBlock(scan, hs));
@@ -617,4 +647,4 @@ if (outFile) {
   writeFileSync(outFile, report + '\n', 'utf8');
   console.log(`\nWROTE ${outFile}  (${statSync(outFile).size} bytes)`);
 }
-if (refused) process.exitCode = 1;
+if (notTrustworthy) process.exitCode = 1;

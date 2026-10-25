@@ -158,8 +158,10 @@ Read `MapleMcp/README.md` for the tool table and safety model, and
 
 **MCP tools: 92**, in 9 families.  Counted by
 `node tools/probe/mcp-tool-census.mjs --markdown`
-(source scan of `MapleMcp/**/*.cs`: 17 file(s) read,
-truncated=False).  To ask a
+(population: a FILESYSTEM WALK of `MapleMcp/**/*.cs` -- census mode (c),
+ not a git tree -- minus `bin/obj/`, minus the files this
+tool was told to exclude (none), and minus its own output file;
+17 file(s) read, truncated=False).  To ask a
 running server the same question, add `--handshake <path-to-the-mcp-exe>`:
 the census then prints the handshake answer next to this one and says whether
 they agree.

@@ -948,7 +948,7 @@ public sealed class CombatService
     /// </para>
     /// </remarks>
     /// <summary>
-    /// W-084. How far the character reaches with the weapon in hand.
+    /// W-105. How far the character reaches with the weapon in hand.
     /// </summary>
     /// <remarks>
     /// <para>

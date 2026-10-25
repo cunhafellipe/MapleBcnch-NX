@@ -453,7 +453,7 @@ public static unsafe class NxWriter
         // ---- bitmap table, then bitmap data ----
         long bitmapOffset = w.Position;
         var bitmapOffsets = new List<long>();
-        foreach (byte[] _ in plan.Bitmaps)
+        foreach (BitmapPayload _ in plan.Bitmaps)
         {
             bitmapOffsets.Add(0);
             w.Write(0UL);
@@ -463,8 +463,8 @@ public static unsafe class NxWriter
         {
             w.Align(8);
             long at = w.Position;
-            w.Write((uint)plan.Bitmaps[i].Length);
-            w.Write(plan.Bitmaps[i]);
+            w.Write(plan.Bitmaps[i].Length);
+            plan.Bitmaps[i].WriteTo(w);
             bitmapOffsets[i] = at;
         }
 
@@ -641,7 +641,7 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
             node.CanvasWidth = (ushort)(bitmap?.Width ?? 0);
             node.CanvasHeight = (ushort)(bitmap?.Height ?? 0);
             node.BitmapIndex = (uint)plan.Bitmaps.Count;
-            plan.Bitmaps.Add(bitmap is null ? [] : EncodeWebp(bitmap, plan));
+            plan.Bitmaps.Add(BitmapPayload.Owned(bitmap is null ? [] : EncodeWebp(bitmap, plan)));
             return;
         }
 
@@ -665,11 +665,23 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
 
         var (offset, length) = nx.Canvas.EncodedRange;
         RequireFitsOneBuffer(length, "canvas");
-        byte[] encoded = new byte[length];
-        System.Runtime.InteropServices.Marshal.Copy(
-            new IntPtr(nx.Canvas.Archive.PointerAt(offset)), encoded, 0, (int)length);
-        plan.Bitmaps.Add(encoded);
-        plan.CanvasesCopied++;
+
+        // The payload is NOT copied here.  The archive it lives in is still mapped, and
+        // the bytes are written straight out of it when the bitmap block runs
+        // (BitmapPayload.WriteTo).  What this plan used to hold was a byte[] copy of
+        // every canvas in the archive: Mob.nx's canvases are 1,532,315,924 bytes, and
+        // MEASURED 2026-10-22 the save of Mob.nx peaked at 2,346.9 MB of PRIVATE memory
+        // because of them (task-71).  The copy bought nothing: the bytes are the same
+        // bytes the mapping holds, and they are written in the same order.
+        //
+        // The cost of not copying is a lifetime requirement, and it is stated here
+        // rather than left to be discovered: the source archive must stay MAPPED until
+        // the write has finished.  Every caller that reaches here holds the session
+        // gate for the whole write (WzSaveService.Save, NxMergeService), and closing
+        // an archive takes the same gate, so the mapping cannot be torn down underneath
+        // the writer.
+        plan.Bitmaps.Add(BitmapPayload.Mapped(nx.Canvas.Archive, offset, length));
+        plan.CanvasesPlanned++;
     }
 
     /// <summary>
@@ -678,11 +690,14 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The payload length is a <c>uint</c> read out of the archive, and the array it is
-    /// about to be copied into is a <c>byte[]</c>, so the copy is bounded twice: by
-    /// <see cref="int.MaxValue"/> for the conversion and by the CLR's array ceiling
-    /// (0x7FFFFFC4) for the allocation. Both limits fail with a message that says
-    /// nothing about the archive:
+    /// The payload length is a <c>uint</c> read out of the archive, and both callers
+    /// of this check are bounded by <see cref="int.MaxValue"/> -- for two different
+    /// reasons. The AUDIO path copies the payload into a <c>byte[]</c>, so it is
+    /// bounded twice: by int.MaxValue for the conversion and by the CLR's array
+    /// ceiling (0x7FFFFFC4) for the allocation. The CANVAS path does not copy any
+    /// more -- it writes the payload as one span, and a span's length is an int -- so
+    /// the same ceiling applies to it for one reason instead of two. Both limits fail
+    /// with a message that says nothing about the archive:
     /// </para>
     /// <list type="bullet">
     /// <item><description>over int.MaxValue: "Arithmetic operation resulted in an overflow."</description></item>
@@ -697,10 +712,18 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
     /// </para>
     /// <para>
     /// The ceiling is <see cref="MaxSingleBufferBytes"/>: the largest byte[] this runtime
-    /// will hand out. It bounds ONE payload. It is not the size of the archive -- a whole
-    /// archive is streamed out and the format's offsets are 64-bit -- and the archive-wide
-    /// limit is the separate <see cref="MaxInMemoryArchiveBytes"/>, which applies only to
-    /// the overload that builds one in memory.
+    /// will hand out, and the largest span it can address. It bounds ONE payload. It is
+    /// not the size of the archive -- a whole archive is streamed out and the format's
+    /// offsets are 64-bit -- and the archive-wide limit is the separate
+    /// <see cref="MaxInMemoryArchiveBytes"/>, which applies only to the overload that
+    /// builds one in memory.
+    /// </para>
+    /// <para>
+    /// MEASURED 2026-10-22 on <c>C:\mbtest2\payload-over-2gb.nx</c>: that archive's
+    /// oversized payload is an AUDIO payload (read out of the file: one bitmap entry of
+    /// 16 bytes and one audio entry), so the canvas path is not what refused it and
+    /// the audio path still refuses it. Dropping the canvas copy did not change what
+    /// this check refuses.
     /// </para>
     /// </remarks>
     private static void RequireFitsOneBuffer(uint length, string what)
@@ -870,16 +893,97 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
         internal uint AudioLength;
     }
 
+    /// <summary>
+    /// One canvas payload on its way into the archive: either bytes this writer
+    /// produced, or a range inside the source archive's mapping.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// There are two shapes because there are two sources. A canvas decoded from a
+    /// classic .wz is re-encoded to WebP and the result is ours, so it is kept as
+    /// bytes. A canvas that came out of an NX archive is already an encoded stream,
+    /// and the archive it lives in is still mapped -- so the payload is a
+    /// <b>(offset, length)</b> pair and the bytes are written straight out of the
+    /// mapping when the bitmap block runs.
+    /// </para>
+    /// <para>
+    /// <b>Why the mapped shape exists.</b> The plan used to hold a <c>byte[]</c> copy
+    /// of every canvas in the archive, and every one of those copies was alive at
+    /// the same time, because the plan is filled before anything is written. For
+    /// Mob.nx that is 1,532,315,924 bytes of canvas payload, and MEASURED
+    /// 2026-10-22 the save peaked at 2,346.9 MB of private memory with the copy
+    /// (task-71). The copy bought nothing: the bytes are the same bytes the
+    /// mapping holds, in the same order, and the output is byte-identical either
+    /// way -- verified with an independent NX reader, not with the writer's own
+    /// report.
+    /// </para>
+    /// <para>
+    /// <b>What the mapped shape requires.</b> The source archive has to stay mapped
+    /// for as long as the write runs. Every caller holds the session gate for the
+    /// whole write, and taking an archive out of the session takes the same gate,
+    /// so the mapping cannot be released underneath the writer. The archive
+    /// reference is kept here for the same reason: it keeps the object alive, so
+    /// the mapping cannot be collected while the pointer into it is still held.
+    /// </para>
+    /// </remarks>
+    private sealed class BitmapPayload
+    {
+        private readonly byte[]? _owned;
+        private readonly NxArchive? _archive;
+        private readonly long _offset;
+        private readonly uint _length;
+
+        private BitmapPayload(byte[]? owned, NxArchive? archive, long offset, uint length)
+        {
+            _owned = owned;
+            _archive = archive;
+            _offset = offset;
+            _length = length;
+        }
+
+        /// <summary>Bytes this writer produced (a classic .wz canvas, re-encoded).</summary>
+        internal static BitmapPayload Owned(byte[] bytes) => new(bytes, null, 0, 0);
+
+        /// <summary>A range inside a mapped archive, written without a copy.</summary>
+        internal static BitmapPayload Mapped(NxArchive archive, long offset, uint length) =>
+            new(null, archive, offset, length);
+
+        /// <summary>How many bytes go into the archive for this payload.</summary>
+        internal uint Length => _owned is not null ? (uint)_owned.Length : _length;
+
+        /// <summary>Writes the payload into the archive.</summary>
+        internal void WriteTo(NxSink w)
+        {
+            if (_owned is not null)
+            {
+                w.Write(_owned);
+                return;
+            }
+
+            if (_archive is null)
+            {
+                throw new InvalidOperationException(
+                    "A canvas payload has neither bytes nor a source archive, so it cannot be written.");
+            }
+
+            // Straight out of the mapping.  The span's length is an int, which is why
+            // RequireFitsOneBuffer still refuses a canvas payload larger than one
+            // buffer before it gets here.
+            byte* pointer = _archive.PointerAt(_offset);
+            w.Write(new ReadOnlySpan<byte>(pointer, (int)_length));
+        }
+    }
+
     private sealed class NxPlan
     {
         internal List<PlannedNode> Nodes { get; } = [];
-        internal List<byte[]> Bitmaps { get; } = [];
+        internal List<BitmapPayload> Bitmaps { get; } = [];
         internal List<byte[]> Audio { get; } = [];
         internal int Images { get; set; }
         internal int NextOrder;
         internal Dictionary<int, PlannedNode> ByOrigin { get; } = new();
         internal Dictionary<int, uint> BitmapByOrigin { get; } = new();
-        internal int CanvasesCopied;
+        internal int CanvasesPlanned;
         internal long TypeWidened { get; set; }
         internal int EncodingErrors { get; set; }
     }

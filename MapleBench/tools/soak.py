@@ -80,7 +80,13 @@ def refuse_no_port():
     print("       guess.  Point GATE_BASE at an instance WITH a port:",
           flush=True)
     print("         $env:GATE_BASE = 'http://127.0.0.1:<port>'", flush=True)
-    raise SystemExit(2)
+    # Exit 1, not 0 and not 2: this is the same refusal the shared resolver
+    # makes (tools/verify/suites/archivelib.py, require_gate_base: "GATE_BASE
+    # is not set, so there is no backend to measure" -> sys.exit(1)), and the
+    # two refusals are the same fact -- there is no instance to measure.  A
+    # reader that sees 1 knows the tool refused; 0 would read as a clean run
+    # that measured nothing.
+    raise SystemExit(1)
 
 
 def require_base():

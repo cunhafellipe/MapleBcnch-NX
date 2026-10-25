@@ -107,16 +107,32 @@ MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那�
 | `wz_map_palette` | 列出素材 set 與 `drawableEntries` |
 | `wz_map_place` | 放置圖塊／物件／foothold／傳送門 |
 | `wz_map_batch` | 多次編輯 = **單一 undo** |
-| `wz_map_validate` | 檢查地圖規則（斷鏈等） |
+| `wz_map_validate` | 依規則檢查一張開著的地圖，一次回報所有問題 |
 | `wz_map_save` | 寫回磁碟 |
 | `wz_map_render` | 把一張地圖算成 PNG（圖塊層、foothold 線、角色的行走軌跡）；數字對但看不出來時用 |
 | `wz_map_render_mob` | 把一隻怪／NPC 某個 stance 的每一幀輸出成 PNG，並回報每一幀的 origin、delay、畫布大小 |
-| `wz_map_session_open` `wz_map_session_step` `wz_map_session_close` | 地圖編輯器的持續會話：放一個活角色上地圖、逐幀走、關掉釋放 |
-| `wz_map_simulate` `wz_map_simulate_batch` `wz_map_cast` `wz_map_advise` `wz_map_ground` `wz_map_patrol_mob` | 地圖物理：走不走得過去、地面在哪、走不動時怎麼修（見下面「模擬器」） |
+| `wz_map_session_open` | 在地圖上放一個活角色，之後用 `wz_map_session_step` 一幀一幀走（自己試路線，不是問一次性的答案） |
+| `wz_map_session_step` | 活角色前進一幀（客戶端 60Hz）；方向、速度、跳躍狀態在呼叫之間保留 |
+| `wz_map_session_close` | 丟掉活角色、釋放它佔著的記憶體（閒置兩分鐘後也會自動丟） |
+| `wz_map_simulate` | 用客戶端的物理走一次地圖：走不走得過去、停在哪、為什麼停 |
+| `wz_map_simulate_batch` | 一次跑多張地圖，只列出走不過去的那些 |
+| `wz_map_cast` | 畫一張地圖所需的一切：角色的路徑、每一座梯子、每一個可用的傳送門、每個出生點下面有沒有地面 |
+| `wz_map_advise` | 角色停在哪就說哪裡不對：哪個 foothold 斷了鏈、link 是缺了還是撞牆、要延伸多遠 |
+| `wz_map_ground` | 問某個座標下面是什麼：哪些 foothold 蓋住它、多高、哪些是牆、有沒有能站的地面 |
+| `wz_map_patrol_mob` | 跑一次怪／NPC 的巡邏，回報會不會離開地圖；同一個 seed 重播一模一樣 |
 
 ### 封裝拆分 `wz_archive_*` — 8 個
 
-`capabilities` `scan` `open` `close` `children` `node` `export_img` `split`
+| 工具 | 作用 |
+|---|---|
+| `wz_archive_capabilities` | 後端在線嗎、已經開了哪些封存 |
+| `wz_archive_scan` | 列出某個資料夾下的 .wz/.ms，並標出哪些是 PKG1 指標檔 |
+| `wz_archive_open` | 開一個 .wz 或 .ms，回傳 session id、偵測到的格式與版本 |
+| `wz_archive_close` | 依 session id 關掉一個封存，釋放記憶體 |
+| `wz_archive_children` | 列出某個節點的子節點：名稱、種類、節點路徑 |
+| `wz_archive_node` | 讀一個節點：型別，若是影像還有屬性名稱 |
+| `wz_archive_export_img` | 把一個 image 節點用 MapleLib 的 writer 序列化成獨立的 .img 檔，並回報寫了多少位元組 |
+| `wz_archive_split` | 把封裝拆成一個資源一個 .img，寫到磁碟 |
 
 把 split client 的 67 GB `.wz` 封裝拆成一個資源一個 `.img`，
 用的是後端自己的序列化器，所以位元組與編輯器存檔一致。
@@ -124,12 +140,32 @@ MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那�
 
 ### 通用資產 `wz_asset_*` — 24 個
 
-`files` `open` `open_source` `close` `save_as` `add` `delete` `rename`
-`transfer` `tree` `search` `node` `children` `set_value` `set_values`
-`undo` `history` `changes` `export_img` `export_canvas`
-`replace_canvas` `sources` `create_empty`
-
-（清單裡 23 個；第 24 個是 `wz_asset_merge_nx`，它有自己的章節：NX 合併工具。）
+| 工具 | 作用 |
+|---|---|
+| `wz_asset_files` | 列出已載入的 WZ/IMG/NX 封存（id 要重用，不要猜路徑） |
+| `wz_asset_open` | 開一個 WZ、獨立 IMG 或 NX |
+| `wz_asset_open_source` | 開一個信任的來源別名（可選其中的 IMG 檔名） |
+| `wz_asset_sources` | 列出 `MAPLEBENCH_SOURCES` 設定的信任來源別名 |
+| `wz_asset_close` | 只卸載指定的封存（關掉前先看 `wz_asset_changes`） |
+| `wz_asset_save_as` | 存到指定的候選路徑，會留備份 |
+| `wz_asset_add` | 在記憶體裡新增一個子節點 |
+| `wz_asset_delete` | 在記憶體裡刪掉明確指定的節點 |
+| `wz_asset_rename` | 在記憶體裡改名（改名前先看參照） |
+| `wz_asset_transfer` | 在已載入的封存之間複製或搬移明確的子樹 |
+| `wz_asset_tree` | 把節點樹匯出成 JSON（深度有上限） |
+| `wz_asset_search` | 有上限的搜尋：名稱或值 |
+| `wz_asset_node` | 讀節點的中繼資料（型別、子節點） |
+| `wz_asset_children` | 列出已載入節點的子節點 |
+| `wz_asset_set_value` | 改一個既有的純量葉節點（型別必須相容） |
+| `wz_asset_set_values` | 用後端的批次操作，把同一個純量值設到 1–300 個葉節點 |
+| `wz_asset_undo` | 復原最近一次 session 操作（不一定是你這次做的） |
+| `wz_asset_history` | 讀後端的 undo/redo 紀錄（可能有別人的編輯） |
+| `wz_asset_changes` | 存檔或關閉前先看未存的變更 |
+| `wz_asset_export_img` | 把一個 image 子樹匯出成獨立的候選 IMG |
+| `wz_asset_export_canvas` | 把一個 canvas 解碼後匯出成候選 PNG |
+| `wz_asset_replace_canvas` | 把本機圖片塞進既有的 canvas（只在記憶體裡） |
+| `wz_asset_create_empty` | 造一個全新的空白 .wz 或 .nx 容器 |
+| `wz_asset_merge_nx` | 把獨立的 .img 檔合併進既有的 NX 封裝（見下面專章） |
 
 不依賴「目前選中的地圖」，直接操作任意 WZ/IMG/NX 節點。
 `wz_asset_sources` 需要設定 `MAPLEBENCH_SOURCES`；未設定會明確報錯，
@@ -137,8 +173,14 @@ MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那�
 
 ### 模擬器（`wz_map_*` 的一部分）— 6 個（地圖物理，不是本專案的模擬器）
 
-`wz_map_simulate` `wz_map_simulate_batch` `wz_map_patrol_mob`
-`wz_map_cast` `wz_map_advise` `wz_map_ground`
+| 工具 | 作用 |
+|---|---|
+| `wz_map_simulate` | 用客戶端的物理走一次地圖：走不走得過去、停在哪、為什麼停 |
+| `wz_map_simulate_batch` | 一次跑多張地圖，只列出走不過去的那些 |
+| `wz_map_patrol_mob` | 跑一次怪／NPC 的巡邏，回報會不會離開地圖 |
+| `wz_map_cast` | 畫一張地圖所需的一切：角色的路徑、梯子、傳送門、出生點 |
+| `wz_map_advise` | 角色停在哪就說哪裡不對、該怎麼修 |
+| `wz_map_ground` | 問某個座標下面是什麼 |
 
 **與 `wz_map_session_*` 一起看**：這六個走的是**地圖編輯器的物理**，
 回答「這張地圖角色走不走得過去」。要回答「施放技能之後怪剩幾滴血」，
@@ -148,16 +190,18 @@ MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那�
 
 | 工具 | 作用 |
 |---|---|
-| `wz_sim_open` | 開一個持續存在的現場角色，回傳 `sessionId` |
-| `wz_sim_step` | 前進 N 幀，帶方向鍵／跳／普攻／施法 |
-| `wz_sim_cast` | 只做一件事：下一幀要求施放某技能 |
-| `wz_sim_state` | 讀整個現場：角色狀態、每隻怪的 hp/maxHp、技能特效 |
-| `wz_sim_summon` / `wz_sim_despawn` | 放／收怪 |
-| `wz_sim_skills` | 綁定／清除熱鍵 |
-| `wz_sim_equip` | 換武器／整組裝備（**整組取代**，不是疊加） |
-| `wz_sim_control` | 無敵／復活／輸入開關 |
-| `wz_sim_catalog` | 唯讀探索：地圖清單、技能清單、技能計畫、外觀槽位、怪的資料 |
-| `wz_sim_probe` | 某個點下面是什麼 foothold、哪裡是牆 |
+| `wz_sim_open` | 放一個持續存在的現場角色，後續呼叫都用它回傳的 `sessionId` |
+| `wz_sim_step` | 讓現場角色前進 N 幀（預設 1，最多 60），並回報期間命中的揮擊 |
+| `wz_sim_cast` | 只要求下一幀施放某技能：最小的一次呼叫就回答「那次施放有沒有事」 |
+| `wz_sim_state` | 不推進地讀現場：角色在哪、hp/maxHp、現場的怪、熱鍵、腳下是什麼 |
+| `wz_sim_summon` | 在現場生出 N 隻怪（x 落在角色的 100px 內，落在地圖可走範圍外就掉到那裡） |
+| `wz_sim_despawn` | 收掉這個 session 召喚的全部怪，回報收掉幾隻 |
+| `wz_sim_skills` | 整組取代（或清空）現場的熱鍵表 |
+| `wz_sim_equip` | 換現場角色手上的東西 |
+| `wz_sim_control` | 切換現場的開關：無敵／復活／把輸入按住 |
+| `wz_sim_catalog` | 唯讀探索：可模擬的地圖、可召喚的怪、真正能施放的技能、外觀槽位、怪的資料 |
+| `wz_sim_probe` | 某個點下面是什麼 foothold、哪裡是牆、有沒有能站的地面 |
+| `wz_sim_close` | 丟掉現場 session、釋放它佔著的記憶體，並回報它本來在不在 |
 
 **檔案 id 不穩定**：路徑開頭的 `fN` 是封存的**工作階段 id**，依開啟順序發號。
 實測同一個 `Map.nx` 在一次執行是 `f4`，下一次是 `f25`。寫死會得到
@@ -169,15 +213,43 @@ MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那�
 
 ### 遊戲資料域 `wz_data_*` — 6 個（2026-10-17 新增）
 
-`capabilities` `list` `detail` `write` `bulk` `search`，
-以 `kind` 分流：`skill` `mob` `npc` `string` `cashshop` `books`。
+| 工具 | 作用 |
+|---|---|
+| `wz_data_capabilities` | 一次回報五個網域現在能做什麼（Skill.wz／Mob.wz／Npc.wz／String.wz／db） |
+| `wz_data_list` | 瀏覽一個網域（以 `kind` 分流，見下表） |
+| `wz_data_detail` | 讀一筆的完整內容（以 `kind` 分流，見下表） |
+| `wz_data_write` | 改一筆並提交（以 `kind` 分流，見下表） |
+| `wz_data_bulk` | 對很多筆套同一個操作，**先預覽**（以 `kind` 分流，見下表） |
+| `wz_data_search` | 一次搜尋客戶端知道的所有 id 與名稱（跨物品、怪、技能、NPC、地圖） |
+
+**四個分流工具的 `kind` 各自不同，四組都不一樣**（來源：`MapleMcp/DataDomainTools.cs`
+的常數 `ListKinds`／`DetailKinds`／`WriteKinds`／`BulkKinds`）：
+
+| 接受的 `kind` | 工具 | 來源 |
+|---|---|---|
+| `skill` `mob` `npc` `string` `books` `cashshop` | `wz_data_list` | `MapleMcp/DataDomainTools.cs:65`（`ListKinds`） |
+| `skill` `mob` `npc` `string` `item` | `wz_data_detail` | `MapleMcp/DataDomainTools.cs:66`（`DetailKinds`） |
+| `skill` `npc` `string` | `wz_data_write` | `MapleMcp/DataDomainTools.cs:67`（`WriteKinds`） |
+| `skill` `npc` `string` | `wz_data_bulk` | `MapleMcp/DataDomainTools.cs:68`（`BulkKinds`） |
+
+另外兩個不靠這組 `kind` 分流：`wz_data_capabilities` 不收參數；
+`wz_data_search` 的 `kind` 是 **String.wz 的種類**（`item` `mob` `skill` `npc` `map`，
+用來縮小範圍），不是上面那組分流種類。
 
 **為什麼不直接用 `wz_asset_*`**：這六個域有自己的欄位驗證、自己的批次語義、
 自己的 DTO。繞過 `/api/node/value` 直寫，會寫出該域根本載不進去的值。
 
 ### 長時間工作 `wz_job_*` — 6 個（2026-10-17 新增）
 
-`capabilities` `start` `progress` `result` `report` `cancel`，
+| 工具 | 作用 |
+|---|---|
+| `wz_job_capabilities` | 這台伺服器能驅動的工作家族、八種 `kind`、每個階段背後的路由、每個 start 路由接受的選項 |
+| `wz_job_start` | 以 `kind` 開始八個工作家族之一 |
+| `wz_job_progress` | 以 `kind` 輪詢一個工作中的工作 |
+| `wz_job_result` | 以 `kind` 讀一個已完成工作的結果 |
+| `wz_job_report` | 以 `kind` 讀另一個終態讀取：audit/dump 的發現報告、compose 的帳本、repair 的掃描判詞、repair.genchoice 的逐項衝突報告 |
+| `wz_job_cancel` | 要求任何 `kind` 的工作停下來 |
+
 以 `kind` 分流八個工作家族：`audit` `dump` `compose` `import`
 `repair.canvas-format` `repair.canvas-dir-link` `repair.donor-restore`
 `repair.genchoice`。
@@ -198,15 +270,30 @@ MapleBench/Api/ MapleMcp/` 是空的，所以工作樹的路由原始碼與那�
 
 ### 算圖與輸出 `wz_render_*` — 6 個（2026-10-17 新增）
 
-`view` `preview` `thumb` `animation` `dump` `export`。
+| 工具 | 作用 |
+|---|---|
+| `wz_render_view` | 把**一個** canvas 節點算成 PNG 內嵌回傳（base64），寬高從 PNG 檔頭讀 |
+| `wz_render_preview` | 一次列出某個節點底下的所有 canvas：影格、尺寸、路徑 |
+| `wz_render_thumb` | 任何節點取一張代表用的 PNG（自己的 canvas，或底下找到的第一個） |
+| `wz_render_animation` | 檢視一個動畫節點（影格、延遲、原點） |
+| `wz_render_dump` | 把一個 dump 產物下載成檔案（`canvas`／`sound`／`link`／`csv`） |
+| `wz_render_export` | 把一個子樹匯出成檔案（`img`／`node-img`／`json`／`xml`／`xml-zip`／`images`） |
 
 **上限句**：算出一張圖只證明**這個節點解得出來**，
 不證明像素跟對標一致，也不證明這是對的圖。
 
 ### 診斷與存檔 `wz_diag_*` `wz_save_*` — 8 個（2026-10-17 新增）
 
-`wz_diag_health` `wz_diag_clientlog` `wz_diag_sim` `wz_diag_facts` `wz_diag_audit`
-`wz_save_preflight` `wz_save_commit` `wz_save_memory`
+| 工具 | 作用 |
+|---|---|
+| `wz_diag_health` | 三個便宜的健康檢查一次回報：版本與授權、模擬器自己的診斷、行程佔了多少記憶體 |
+| `wz_diag_clientlog` | 讀／清／追加瀏覽器頁面自己的 console 報告 |
+| `wz_diag_sim` | 模擬器與動畫稽核自己的 `/debug` 路由（以 `kind` 分流） |
+| `wz_diag_facts` | 後端對**單一節點**能斷言的事實 |
+| `wz_diag_audit` | 客戶端完整性稽核的報告（`plan=true` 時是它會看什麼） |
+| `wz_save_preflight` | 後端自己對一個封存的拒絕預覽 |
+| `wz_save_commit` | 就地存檔（`POST /api/files/save`） |
+| `wz_save_memory` | 行程手上資源的四個把手：現在有什麼、釋放它、記憶體壓力下檢查、切換唯讀／可編輯 |
 
 **存檔的真相**：封存一旦開啟就是 process 生命期的記憶體映射，
 `preflight` 乾淨**不等於**存檔會成功；`commit=true` 是整個封裝重寫

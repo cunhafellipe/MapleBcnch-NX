@@ -316,7 +316,7 @@ public sealed record SkillCastPlan(
     int CollisionCount,
     int TotalTime,
     /// <summary>
-    /// W-084. How many mobs one cast hits, from the skill's own <c>mobCount</c>.
+    /// ADR-0007. How many mobs one cast hits, from the skill's own <c>mobCount</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -396,7 +396,7 @@ public sealed record SkillCastPlan(
     /// </remarks>
     bool Projectile,
     /// <summary>
-    /// W-084. The reach multiplier, the skill's <c>range</c> divided by 100.
+    /// ADR-0007. The reach multiplier, the skill's <c>range</c> divided by 100.
     /// </summary>
     /// <remarks>
     /// <c>SkillData.cpp:77</c> <c>float hrange = (float)sub["range"].get_real(100.0) / 100;</c>
@@ -1658,7 +1658,7 @@ public sealed class SkillCastService
                 }
             }
 
-            // ---- W-084/W-089: how many mobs, how many times, and how far.
+            // ---- ADR-0007/W-089: how many mobs, how many times, and how far.
             //
             //   SkillData.cpp:69   mobcount = sub["mobCount"].get_integer(1)
             //   SkillData.cpp:68   attackcount = sub["attackCount"].get_integer(1)
@@ -1836,7 +1836,7 @@ public sealed class SkillCastService
     /// or not a number.
     /// </summary>
     /// <remarks>
-    /// W-084. OrdinalIgnoreCase, because this archive carries lower-case-k names
+    /// W-061. OrdinalIgnoreCase, because this archive carries lower-case-k names
     /// such as <c>incLUk</c> and an exact-case read silently drops a real value
     /// (TRAPS T-10).
     /// </remarks>
