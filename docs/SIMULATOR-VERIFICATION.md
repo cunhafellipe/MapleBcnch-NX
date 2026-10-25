@@ -38,8 +38,18 @@ CharStats.cpp:54-56
 ```
 
 **這個 `300` 來自 v95，`250` 才是被保留下來的值。** ADR-0007 把 `300 : 250`
-當成 v83 參照引用了。凡是引用行的鄰近註解提到 v9x / v145 / 反編譯 / IDA 位址的，
+當成 v83 參照引用了（該 ADR 現已補上版本註記，說明當時引用的是 v95 形狀）。
+凡是引用行的鄰近註解提到 v9x / v145 / 反編譯 / IDA 位址的，
 **那個數字就要獨立判定它是哪一版的**。
+
+**那 port 端實際是什麼？** `CombatService.ProjectileRange`
+（`CombatService.cs:1015-1022`）對弓／弩回 300、其它回 250；這個值由
+`MapSimSessionStore.SetEquipped`（:3168）與 `MapSimSessionStore.BuildStatus`
+（:3252）寫進 `PlayerStatus.ProjectileRange`。
+**這個 300/250 是為相容而保留的 v95 形狀，不是 v83 規則**：task-70 的三面普查
+（1,220 張武器圖、整個 v83 字串池、9 個同時含 250 與 300 的函式）全部讀完，
+**v83 自己的射程機制仍然未知**。落差紀錄在
+`pm/work/W-105-the-300-250-weapon-reach-is-a-v95-shape-with-no.md`。
 
 ### 0.4 參考源在哪
 

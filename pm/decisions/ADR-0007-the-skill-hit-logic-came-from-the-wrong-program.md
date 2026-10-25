@@ -102,3 +102,34 @@ sibling citation as suspect.
 mob BEHIND (character faces right, gap 93), cast -> mobHp 1000   miss
 turn to face it (gap 95),                cast -> mobHp  900   hit
 ```
+
+## Version note (2026-10-25) -- the 300:250 quoted above is a v95 shape, not a v83 rule
+
+The `CharStats.cpp:57` line quoted under "What the reference actually does" was
+read, when this ADR was written, as the reference's rule.  It is not one.
+
+Two measurements, and they are the two the code now carries:
+
+- The reference source's own comment at `CharStats.cpp:54-56` attributes the
+  300 to v95 (`CSkillInfo::GetShootSkillRange`, 0x709650) and calls 250 "the
+  previous fallback".  A v95 number sitting in a v83-shaped client is not a
+  v83 number.
+- task-70 (`C:\mbtest2\task78-v83-combat-truths.md`) measured, with three
+  complete censuses, that the v83 client has no reach table at all -- 1,220
+  weapon images with no reach-named node, the whole v83 string pool with no
+  reach-ish name, and all 9 functions holding both 250 and 300 read, none of
+  them a weapon-type to reach table.  The function the port's comment used to
+  cite here, `0x5CA659`, is a price / production-cost table, not a range
+  function.  **The v83 client's own reach mechanism is therefore UNKNOWN.**
+
+**The decision above is not overturned.**  It was about the hit BOX -- which
+rectangle, which multiplier, how many targets -- and that is a separate
+question task-70 did not overturn.  What changes is the status of the 300:250
+pair: it is a **v95 shape kept for compatibility**, and the port's numbers are
+unchanged (`CombatService.ProjectileRange` still returns 300 for a bow or a
+crossbow and 250 otherwise).  The divergence is recorded in
+`pm/work/W-105-the-300-250-weapon-reach-is-a-v95-shape-with-no.md`.
+
+The historical text above is left exactly as it was written.  An ADR records
+what was decided and why; rewriting it would hide the mistake this note
+exists to record, and the mistake is the useful part.

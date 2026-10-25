@@ -2375,11 +2375,13 @@ public sealed class MapSimSessionStore
 		// value. Null, never 0 (R-5).
 		if (plan.Damage is null) return;
 
-		// ---- W-084. The box, the multiplier, the targets: the reference's own.
+		// ---- ADR-0007. The box, the multiplier, the targets: the reference's own.
+		// (the tag said W-084, which is the hit-effect item; ADR-0007 is this
+		//  rewrite -- the skill hit logic that came from the wrong program.)
 		//
 		// What this method used to be is a port of MapleNecrocer's `Skill.cs` -- a
 		// program pm/PARITY.md does not accept -- and it was wrong in the ways that
-		// matter: `Skill.cs:168-178` MultiStrike used as a DAMAGE GATE (63 of 66
+		// matter: `Skill.cpp:168-178` MultiStrike used as a DAMAGE GATE (63 of 66
 		// skills hit nothing), an `+18` offset that is in no reference, and "the
 		// first mob whose box overlaps, then stop".
 		//
@@ -2392,6 +2394,17 @@ public sealed class MapSimSessionStore
 		//                                hrange is forced to 1.0 because that reach is
 		//                                absolute (:433)
 		//   CharStats.cpp:57     projectilerange = bow/crossbow ? 300 : 250
+		//
+		// VERSION (W-105): the 300/250 pair on that line is a v95 SHAPE, not a v83
+		// rule.  The reference source's own comment at CharStats.cpp:54-56 says the
+		// 300 comes from v95 (CSkillInfo::GetShootSkillRange, 0x709650) and that
+		// "other weapons keep the previous 250 fallback".  The v83 client's own
+		// reach mechanism is UNKNOWN: task-70 (receipt
+		// C:\mbtest2\task78-v83-combat-truths.md) measured, with three complete
+		// censuses, that the v83 client has no reach table at all, and that
+		// 0x5CA659 is a price / production-cost table rather than a range function.
+		// The port keeps the pair for compatibility; the divergence is recorded in
+		// pm/work/W-105-the-300-250-weapon-reach-is-a-v95-shape-with-no.md.
 		//
 		// So on this archive -- which carries BOTH lt and rb on every skill level --
 		// a melee cast's box IS the skill's lt/rb, and the character's reach is the
@@ -3139,11 +3152,18 @@ public sealed class MapSimSessionStore
 		// re-derived by recalc_stats in either reference. Dropping it here made an
 		// equipped character mortal mid-test with no visible cause.
 		rebuilt.Invulnerable = session.Status.Invulnerable;
-		// W-084: the REACH follows the weapon in hand, because the reach is the
+		// W-105: the REACH follows the weapon in hand, because the reach is the
 		// character's and a bow reaches further. CharStats.cpp:57
 		//   projectilerange = Weapon::is_bow_or_crossbow(weapontype) ? 300 : 250;
 		// with the type read as `equipid / 10000` (WeaponData.cpp:28-29) and
 		// BOW = 145, CROSSBOW = 146 (Character/Inventory/Weapon.h).
+		// VERSION: that 300/250 pair is a v95 SHAPE, not a v83 rule -- the
+		// reference source's own comment at CharStats.cpp:54-56 says the 300
+		// comes from v95 and that "other weapons keep the previous 250 fallback".
+		// The v83 client's own reach mechanism is UNKNOWN (task-70, receipt
+		// C:\mbtest2\task78-v83-combat-truths.md); the port keeps the pair for
+		// compatibility.  See
+		// pm/work/W-105-the-300-250-weapon-reach-is-a-v95-shape-with-no.md.
 		// Lost on rebuild otherwise, which is how it read 250 with a bow on.
 		rebuilt.ProjectileRange = CombatService.ProjectileRange(session.EquippedWeapon);
 		session.Status = rebuilt;
@@ -3222,10 +3242,13 @@ public sealed class MapSimSessionStore
 	private PlayerStatus BuildStatus(IReadOnlyDictionary<string, string>? items)
 	{
 		var status = new PlayerStatus();
-		// W-084: seed the reach from the main hand, so a session opened WITH a bow
+		// W-105: seed the reach from the main hand, so a session opened WITH a bow
 		// reaches like one. `SetEquipped` re-derives it on every change; this is the
 		// path that builds the FIRST sheet, where an unarmed 250 would otherwise be
 		// baked in and the weapon set later would have to correct it.
+		// The value is 300 for a bow or a crossbow and 250 otherwise -- a v95 shape
+		// kept for compatibility, not a v83 rule (W-105, and the VERSION note on
+		// the CharStats.cpp:57 citation in ApplySkillHits).
 		status.ProjectileRange = CombatService.ProjectileRange(
 			items is not null && items.TryGetValue(WeaponSlot, out string? hand) ? hand : null);
 		if (items is null) return status;

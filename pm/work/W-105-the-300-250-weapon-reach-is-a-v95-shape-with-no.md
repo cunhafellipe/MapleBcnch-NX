@@ -112,38 +112,54 @@ changed lines that are NOT '///' comments : 0
 
 ## What is still open (measured)
 
-`git grep -n 'CharStats.cpp:57'` after this card, whole repo:
+**CLOSED by task-175 (2026-10-25).**  The four sites listed as "still present
+it as a reference rule" below were fixed: `MapSimSessionStore.cs` (both
+comment blocks), `PlayerStatus.cs` (the citation block), `docs/SIMULATOR-VERIFICATION.md`
+(the verbatim quote KEPT, with the port's status and "v83's reach mechanism
+is unknown" added next to it), and `ADR-0007` (a DATED VERSION NOTE APPENDED,
+its historical text byte-for-byte unchanged -- an ADR records what was decided
+and why, and the wrongness is the useful part of that record; the DECISION
+itself, which was about the hit BOX, is not overturned).
+
+The stale citation found while reading those files is closed too:
+`PlayerStatus.cs`'s "This port uses 250 -- the fallback, not the v95 number"
+was a false statement about the product's own behaviour (the value comes from
+`CombatService.ProjectileRange`, which returns **300** for a bow or crossbow:
+`MapSimSessionStore.SetEquipped` sets it, `BuildStatus` sets it) and now
+describes what the code actually does.
+
+`git grep -n 'CharStats.cpp:57'` after task-175, whole repo, and what each
+survivor is:
 
 ```
-MapleBench/Services/Simulate/MapSimSessionStore.cs:2394:    //   CharStats.cpp:57     projectilerange = bow/crossbow ? 300 : 250
-MapleBench/Services/Simulate/MapSimSessionStore.cs:3143:    // character's and a bow reaches further. CharStats.cpp:57
-MapleBench/Services/Simulate/PlayerStatus.cs:64:    /// <c>CharStats.cpp:57</c>  <c>projectilerange = ...</c>
-pm/decisions/ADR-0007-the-skill-hit-logic-came-from-the-wrong-program.md:51:// CharStats.cpp:57   projectilerange = is_bow_or_crossbow ? 300 : 250;
+MapSimSessionStore.cs:2396   port comment, now carries the version note
+MapSimSessionStore.cs:3156   port comment, now carries the version note
+MapSimSessionStore.cs:3251   port comment, now carries the version note
+PlayerStatus.cs:90           a verbatim source quote inside a <code> block, with the note adjacent
+ADR-0007:51                  the HISTORICAL original, left byte-for-byte alone
+ADR-0007:108                 the appended dated version note
+W-105 (this file)            its own record, which quotes the old text on purpose
 ```
 
-`CombatService.cs` no longer appears: the defect this card was given is gone
-from the file it was given.  The four remaining hits split in two.
+⇒ **No site left in the repository presents the 300/250 split as the
+reference rule.**  The `CombatService.cs` remark (the site this item was
+opened for) carries the note too.
 
-**Still present it as a reference rule** (need another card -- outside task-71's
-write scope): `MapSimSessionStore.cs:2386-2394` (a comment block deriving the
-reach from `Skill.cpp:441-456` and `CharStats.cpp:57`, no version note);
-`MapSimSessionStore.cs:3142-3146` (the same citation, no version note);
-`ADR-0007:50-51` (the same two lines, under "What the reference actually does").
+### STILL OPEN
 
-**Already correct** (they carry the version note; they were not the defect):
-`PlayerStatus.cs:68-75` ("The 300 is not a v83 number ... must not be read as
-saying the v83 client reached 300"); `docs/SIMULATOR-VERIFICATION.md:30-42`
-("這個 300 來自 v95，250 才是被保留下來的值").
-
-**Two stale citations found while reading those files** (also out of scope):
-`PlayerStatus.cs:69-74` says "This port uses **250** -- the fallback, not the
-v95 number", which is true only with no bow equipped --
-`MapSimSessionStore.cs:3148` and `:3229` set the field from
-`CombatService.ProjectileRange`, which returns **300** for a bow or crossbow.
-And `CombatService.cs:951` and `PlayerStatus.cs:59` both tag the reach with
-`W-084.`, but `pm/work/W-084-*.md` is "A mob's hit effect was published for one
-frame" -- a different subject, and no item in `pm/work/` covers the weapon
-reach.  The tags point at nothing.
+1. **The v83 reach mechanism itself is still unknown.**  That is the real
+   open question, and no amount of editing a comment closes it: task-70's
+   three censuses (1,220 weapon images, the whole name string pool, and the
+   nine functions containing both 250 and 300) all found no v83 range table,
+   and `0x5CA659` is a price / production-cost value.  The reference's own
+   comment attributes the 300 to v95.  ⇒ A v83-shaped mechanism may exist
+   and has not been found yet.
+2. **Six reach tags still say `W-084.`** -- `CombatService.cs:951` and
+   `SkillCastService.cs:319/399/879/1661/1839`.  `pm/work/W-084-*.md` is
+   "A mob's hit effect was published for one frame" -- a different subject --
+   and the tag never named a reach item (W-084 was ADDED, not renamed, in
+   `dfff4d4`).  These point at nothing.  A separate card (W11-TAGS) owns
+   them, because task-175's write scope forbade both files.
 
 ## The priority number
 

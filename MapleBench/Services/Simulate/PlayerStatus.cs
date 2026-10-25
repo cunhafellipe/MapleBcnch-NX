@@ -56,22 +56,44 @@ public sealed class PlayerStatus
     private const int BaseMaxHp = SimTuning.PlayerHp;
 
     /// <summary>
-    /// W-084. How far the character reaches, and the only number the skill hit box
+    /// W-105. How far the character reaches, and the only number the skill hit box
     /// is built from.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>CharStats.cpp:57</c>  <c>projectilerange = Weapon::is_bow_or_crossbow(weapontype) ? 300 : 250;</c>
-    /// <c>CharStats.cpp:468</c> <c>get_range() { return Rectangle&lt;int16_t&gt;(-projectilerange, -5, -75, 25); }</c>
-    /// <c>CharStats.cpp:371</c> <c>add_projectilerange</c> widens it from a passive.
+    /// <b>Version status: the v83 side of this number is NOT established.</b>
+    /// The 300/250 pair is a <b>v95 shape</b> kept for compatibility, and it is
+    /// not a v83 rule.  The reference source's own comment at
+    /// <c>CharStats.cpp:54-56</c> says the 300 comes from v95
+    /// (CSkillInfo::GetShootSkillRange, 0x709650) and that "other weapons keep
+    /// the previous 250 fallback".  The v83 client's own reach mechanism is
+    /// <b>unknown</b>: task-70 measured, with three complete censuses, that the
+    /// v83 client has no reach table at all, and that <c>0x5CA659</c> is a
+    /// price / production-cost table rather than a range function.  The
+    /// divergence is recorded in
+    /// <c>pm/work/W-105-the-300-250-weapon-reach-is-a-v95-shape-with-no.md</c>.
     /// </para>
     /// <para>
-    /// <b>The version note that line needs.</b> The 300 is not a v83 number: that
-    /// file's own comment at :54-56 says the 300 comes from v95
-    /// (CSkillInfo::GetShootSkillRange, 0x709650) and that "other weapons keep
-    /// the previous 250 fallback". This port uses <b>250</b> — the fallback, not
-    /// the v95 number — so the reach below is the pre-v95 value and the citation
-    /// must not be read as saying the v83 client reached 300.
+    /// <b>What this port actually holds, read from the code.</b>  The default is
+    /// <b>250</b> (this property's initializer), and a sheet that has a weapon in
+    /// hand is then given the value by <c>CombatService.ProjectileRange</c>
+    /// (<c>CombatService.cs:1015-1022</c>, which returns <b>300</b> for a bow or
+    /// a crossbow -- equip id prefix 145 or 146 -- and 250 otherwise): at
+    /// <c>MapSimSessionStore.SetEquipped</c> (:3168) when the equipment changes,
+    /// and at <c>MapSimSessionStore.BuildStatus</c> (:3252) when the first sheet
+    /// is built.  <b>So a character holding a bow reaches 300</b>, and that 300
+    /// is the v95 shape kept for compatibility, not a v83 number; the 250 is the
+    /// fallback the reference's own comment names.
+    /// </para>
+    /// <para>
+    /// The citations, each with its version status:
+    /// <c>CharStats.cpp:57</c>
+    /// <c>projectilerange = Weapon::is_bow_or_crossbow(weapontype) ? 300 : 250;</c>
+    /// (the v95 shape above);
+    /// <c>CharStats.cpp:468</c> <c>get_range() { return Rectangle&lt;int16_t&gt;(-projectilerange, -5, -75, 25); }</c>
+    /// (the box this reach is the width of);
+    /// <c>CharStats.cpp:371</c> <c>add_projectilerange</c> widens it from a
+    /// passive -- not modelled here, nothing in this port carries buffs.
     /// </para>
     /// <para>
     /// This is what the skill-hit rewrite rests on: the reach belongs to the
