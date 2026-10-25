@@ -18,6 +18,15 @@ the MCP server, what the tools are, and the rules you must not break.
 | `docs/MAP-STRUCTURE.md` | Map structure spec, reverse-engineered from real maps. |
 | `docs/CLI-AND-MCP.md` | Current state of the CLI and MCP surfaces. |
 | `tools/` | Verification tools (probes, visual checks) — not product code. |
+| `pm/` | Project management: work items, roadmap, open problems, status. |
+
+**Which document governs what?** This repo carries six rule-bearing
+documents (plus seven ADRs), and they do not all have the same standing.
+`pm/CONVENTIONS.md` is the
+map: it says where to start reading, which file is authoritative for each
+kind of question, and who wins when two of them disagree. Read it before you
+edit anything. It deliberately **repeats no rule** — it only points at the
+one that holds it, so it cannot drift out of date with the rules themselves.
 
 ---
 
