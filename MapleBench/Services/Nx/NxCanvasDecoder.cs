@@ -119,6 +119,19 @@ public static class NxCanvasDecoder
     /// bitmap's row stride differs from <c>width * 4</c>, and Skia is free to pick either
     /// depending on how the image was decoded. Row-by-row with an explicit stride is the only
     /// version of this that is correct in both cases.
+    ///
+    /// The copy also has to undo premultiplication. Skia's WebP decoder returns
+    /// <c>SKAlphaType.Premul</c> -- verified directly, a stored pixel of straight
+    /// B=76 G=129 R=218 A=113 comes back as B=34 G=57 R=97 -- while the rest of this
+    /// decoder, and the format, speak straight BGRA. Nothing downstream compensates:
+    /// WzPngProperty re-encodes these bytes as WZ pixels, and nlnx/bitmap.cpp hands the
+    /// payload to WebPDecodeBGRAInto, which is straight too. So a premultiplied buffer
+    /// copied verbatim is colour x alpha presented as colour.
+    ///
+    /// Every opaque canvas hides it -- alpha 255 makes the two forms identical -- which is
+    /// why a 543,760-node archive read back bit-exact while a hand-fading a mob to death
+    /// came back black. Verified on a 203x142 frame at alpha 113: RGB came back at 0.44 of
+    /// the authored value, which is 113/255 exactly.
     /// </remarks>
     private static byte[] ToBgra(SKBitmap bitmap, int expected)
     {
@@ -128,6 +141,7 @@ public static class NxCanvasDecoder
             throw new InvalidDataException("A decoded canvas produced no pixel buffer.");
         }
 
+        bool premultiplied = bitmap.AlphaType == SKAlphaType.Premul;
         var destination = new byte[expected];
         unsafe
         {
@@ -140,6 +154,34 @@ public static class NxCanvasDecoder
                 for (int y = 0; y < bitmap.Height; y++)
                 {
                     Buffer.MemoryCopy(source + (long)y * bitmap.RowBytes, dest + (long)y * rowBytes, rowBytes, rowBytes);
+                }
+
+                if (premultiplied)
+                {
+                    // Un-premultiply in place: colour = premultiplied * 255 / alpha, rounded
+                    // to nearest. alpha 0 has no colour to recover, so RGB is set to 0 there,
+                    // which is what every other straight-alpha producer does.
+                    for (int i = 0; i < destination.Length; i += 4)
+                    {
+                        int alpha = destination[i + 3];
+                        if (alpha == 255)
+                        {
+                            continue;
+                        }
+                        if (alpha == 0)
+                        {
+                            destination[i] = 0;
+                            destination[i + 1] = 0;
+                            destination[i + 2] = 0;
+                            continue;
+                        }
+                        // 255 * 255 + 127 is the widest this can get, so int is not at risk.
+                        for (int c = 0; c < 3; c++)
+                        {
+                            destination[i + c] = (byte)Math.Min(
+                                255, (destination[i + c] * 255 + alpha / 2) / alpha);
+                        }
+                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using MapleLib.WzLib;
 using MapleLib.WzLib.WzProperties;
 
@@ -56,9 +56,24 @@ public static class WzNodeFactory
                 // A canvas with no PNG cannot be written back, so seed a 1x1.
                 // WzPngProperty.SetValue compresses immediately, so the new
                 // property needs no reader or parent link of its own.
+                //
+                // The seed is encoded as Format2 (Bgra32) rather than left to
+                // SetValue's format detection. A 1x1 blank detects as Format257
+                // (Bgra5551, 5 bits per colour), and because a later
+                // replace_canvas preserves whatever format the canvas already
+                // carries, that seed decided the final format of the whole
+                // image. Measured on a 217x127 dragon frame: seeded this way the
+                // replace produced Format513, keeping 182 of 4,335 colours.
+                // Every mob frame in the v83 reference archives is Format2, and
+                // seeding with it keeps a replace lossless.
                 WzPngProperty png = new();
                 using (System.Drawing.Bitmap blank = new(1, 1))
-                    png.SetValue(blank);
+                {
+                    MbPngCodec.EncodeResult seed =
+                        MbPngCodec.Encode(blank, WzPngFormat.Format2);
+                    png.SetCompressedBytes(
+                        seed.Compressed, blank.Width, blank.Height, seed.Format);
+                }
                 canvas.PngProperty = png;
                 return canvas;
             }

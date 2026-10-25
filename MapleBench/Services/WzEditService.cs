@@ -1,4 +1,4 @@
-﻿using MapleLib.WzLib;
+using MapleLib.WzLib;
 using MapleLib.WzLib.WzProperties;
 using MapleBench.Models;
 
@@ -1080,8 +1080,22 @@ public sealed class WzEditService
             }
             else
             {
-                // A brand new canvas has no format to preserve.
-                target.SetValue(bitmap);
+                // A brand new canvas has no format to preserve, and letting
+                // MapleLib auto-detect is what made this lossy: a 1x1 blank
+                // seeds as Format257 and a full sprite auto-detected as
+                // Format513 (Bgra4444). Measured on a real 217x127 dragon
+                // frame, Format257 kept 508 of 4,335 colours (max delta 4) and
+                // Format513 kept 182 (max delta 8).
+                //
+                // Every mob frame measured in the v83 reference archives is
+                // Format2 (Bgra32), so a canvas built from scratch is encoded
+                // as Format2 too. An existing canvas still keeps its own format
+                // through the branch above.
+                MbPngCodec.EncodeResult fresh =
+                    MbPngCodec.Encode(bitmap, WzPngFormat.Format2);
+                target.SetCompressedBytes(
+                    fresh.Compressed, bitmap.Width, bitmap.Height, fresh.Format);
+                formatWarning = fresh.Warning;
             }
 
             if (existing == null)

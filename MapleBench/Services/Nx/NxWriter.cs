@@ -744,6 +744,12 @@ private static void PlanCanvas(WzCanvasProperty canvas, NxPlan plan, PlannedNode
             // System.Drawing's bitmap is converted through PNG on the way to Skia. That is a
             // needless intermediate in principle, but Skia has no direct bridge to GDI+ and
             // PNG is the one common denominator both libraries agree on losslessly.
+            // The decode is left on Skia's default (Bgra8888/Premul) on purpose. Measured on a
+            // known pixel -- straight B=76 G=129 R=218 A=113 -- an encode from a premultiplied
+            // bitmap, from an SKCodec Unpremul buffer, and from a hand-unpremultiplied buffer
+            // all wrote the same WebP, and it reads back as (76, 129, 218, 113) within one unit.
+            // Skia's encoder unpremultiplies on the way out, so making the buffer straight here
+            // only adds a second multiply.
             using var pngStream = new MemoryStream();
             bitmap.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
             using var decoded = SKBitmap.Decode(pngStream.ToArray());
