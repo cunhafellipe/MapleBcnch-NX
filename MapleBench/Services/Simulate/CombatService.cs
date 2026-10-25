@@ -951,17 +951,65 @@ public sealed class CombatService
     /// W-084. How far the character reaches with the weapon in hand.
     /// </summary>
     /// <remarks>
-    /// <c>CharStats.cpp:57</c>:
-    /// <c>projectilerange = Weapon::is_bow_or_crossbow(weapontype) ? 300 : 250;</c>
-    /// and the type is the first four digits of the equip id
-    /// (<c>WeaponData.cpp:28</c> <c>int32_t prefix = equipid / 10000;</c>), with
-    /// <c>BOW = 145</c> and <c>CROSSBOW = 146</c>
-    /// (<c>Character/Inventory/Weapon.h</c>).
     /// <para>
-    /// Not read from the archive: the reference does not either, it divides the id.
-    /// <c>CharStats.cpp:371</c> <c>add_projectilerange</c> widens it further from a
-    /// passive (<c>PassiveBuffs.cpp:98,114</c> read the buff's own `range` node),
-    /// and nothing in this port carries buffs, so that half is not modelled.
+    /// <b>Version status: the v83 side of this number is NOT established.</b>
+    /// The 300/250 split this method implements is a <b>v95 shape</b>, kept here
+    /// for compatibility. It is not a v83 rule, and nothing in this file may be
+    /// read as saying the v83 client reached 300.
+    /// </para>
+    /// <para>
+    /// What the reference source says about its own line, read verbatim from
+    /// <c>clean-client\src\Character\Stats\CharStats.cpp:54-57</c>:
+    /// </para>
+    /// <code>
+    /// // v95 CSkillInfo::GetShootSkillRange (0x709650) gives bow/crossbow shoot
+    /// // attacks a base reach of 300 and adds skill 3000002's range bonus
+    /// // (远程箭, +15 per level). Other weapons keep the previous 250 fallback.
+    /// projectilerange = Weapon::is_bow_or_crossbow(weapontype) ? 300 : 250;
+    /// </code>
+    /// <para>
+    /// The source's own comment attributes the 300 to v95 and calls 250 "the
+    /// previous fallback". A v95 number sitting in a v83-shaped client is not a
+    /// v83 number, so this line cannot be used as a v83 reference.
+    /// </para>
+    /// <para>
+    /// MEASURED, task-70 (receipt
+    /// <c>C:\mbtest2\task78-v83-combat-truths.md</c>, sections 1 and 7): the v83
+    /// client has NO reach table at all. Three complete censuses agree -- data
+    /// (1,220 weapon images under <c>Character/Weapon</c>, 0 nodes named
+    /// range/reach/projectile/dist/distance), names (the whole v83 string pool,
+    /// 0 hits for reach/projectile/melee/attackrange/shootrange/weaponrange),
+    /// and numbers (all 9 functions holding both 250 and 300 were read; none is
+    /// a weapon-type to reach table). The function this note used to cite,
+    /// <c>0x5CA659</c>, is NOT a range function: it computes a price /
+    /// production-cost value and compares it against a meso limit.
+    /// <b>So the v83 client's own reach mechanism is still unknown</b>, and the
+    /// 300/250 below is a port value with no v83 first-hand basis.
+    /// </para>
+    /// <para>
+    /// The weapon TYPE comes from the equip id prefix, which is the v95
+    /// reference's rule (<c>WeaponData.cpp:28-29</c>
+    /// <c>int32_t prefix = equipid / 10000;</c>), with <c>BOW = 145</c> and
+    /// <c>CROSSBOW = 146</c> (<c>Character/Inventory/Weapon.h</c>). task-70
+    /// looked for a reach table, not for the weapon type, so whether the v83
+    /// client derives the type the same way is not established either.
+    /// </para>
+    /// <para>
+    /// Not read from the archive, on either side: the v83 client reads weapon
+    /// data from one place only (<c>Character/Weapon/%08d.img</c>, task-70
+    /// section 7.1) and none of those 1,220 images carries a reach node, and
+    /// the v95 reference divides the id rather than reading a node either.
+    /// The passive half (<c>CharStats.cpp:371</c> <c>add_projectilerange</c>,
+    /// which widens it further from a passive -- <c>PassiveBuffs.cpp:98,114</c>
+    /// read the buff's own `range` node) is not modelled here either: nothing
+    /// in this port carries buffs.
+    /// </para>
+    /// <para>
+    /// The divergence is recorded as a work item:
+    /// <c>pm/work/W-105-the-300-250-weapon-reach-is-a-v95-shape-with-no.md</c>.
+    /// <b>This note changes no behaviour</b>: the method still returns 300 for
+    /// a bow or crossbow and 250 otherwise. Changing those numbers needs its
+    /// own card.
     /// </para>
     /// </remarks>
     public static int ProjectileRange(string? weaponId)
